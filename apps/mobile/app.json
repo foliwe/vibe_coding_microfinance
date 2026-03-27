@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "Credit Union Mobile",
+    "slug": "credit-union-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ]
+  }
+}

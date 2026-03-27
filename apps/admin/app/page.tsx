@@ -1,0 +1,112 @@
+import { AdminShell } from "../components/admin-shell";
+import { ChartBars } from "../components/chart-bars";
+import { SectionCard } from "../components/section-card";
+import { StatCard } from "../components/stat-card";
+import { getAdminDashboardData } from "../lib/dashboard-data";
+import { compactCurrency, prettyCurrency } from "../lib/format";
+
+export default async function AdminDashboardPage() {
+  const { alerts, isLive, profile, summary } = await getAdminDashboardData();
+
+  return (
+    <AdminShell
+      currentBranchLabel="All branches"
+      currentUserName={profile.full_name}
+      role="admin"
+      statusBadge={isLive ? "Live Supabase" : "Mock preview"}
+      title="Admin Dashboard"
+      subtitle="Institution-wide performance, branch totals, approval pressure, and risk signals."
+    >
+      <div className="grid grid-4">
+        <StatCard label="Total Branches" value={String(summary.branchCount)} />
+        <StatCard label="Total Members" value={compactCurrency(summary.totalMembers)} />
+        <StatCard label="Total Savings" value={prettyCurrency(summary.totalSavings)} tone="success" />
+        <StatCard label="Pending Approvals" value={String(summary.pendingApprovals)} tone="warning" />
+      </div>
+
+      <div className="grid grid-4">
+        <StatCard label="Total Deposits" value={prettyCurrency(summary.totalDeposits)} />
+        <StatCard label="Total Loans" value={prettyCurrency(summary.totalLoans)} />
+        <StatCard
+          label="Outstanding Principal"
+          value={prettyCurrency(summary.outstandingPrincipal)}
+        />
+        <StatCard label="Interest Collected" value={prettyCurrency(summary.interestCollected)} />
+      </div>
+
+      <div className="grid grid-2">
+        <SectionCard
+          title="Collections By Branch"
+          description="Admin sees consolidated branch-by-branch totals for savings, deposits, and loan activity."
+        >
+          <ChartBars
+            data={summary.branchPerformance.map((branch) => ({
+              label: branch.name,
+              value: Math.round((branch.totalSavings + branch.totalDeposits) / 100000),
+              suffix: " x100k",
+            }))}
+          />
+        </SectionCard>
+        <SectionCard
+          title="Approvals And Alerts"
+          description="Pending cash activity and open exceptions that need central attention."
+        >
+          <div className="list">
+            {alerts.map((transaction) => (
+              <div className="list-item" key={transaction.id}>
+                <div>
+                  <strong>{transaction.id.toUpperCase()}</strong>
+                  <p className="muted">
+                    {transaction.memberName} · {transaction.type} · {prettyCurrency(transaction.amount)}
+                  </p>
+                </div>
+                <span className="chip">{transaction.status}</span>
+              </div>
+            ))}
+            <div className="list-item">
+              <div>
+                <strong>VAR-0003</strong>
+                <p className="muted">Bamenda Central variance review open</p>
+              </div>
+              <span className="chip">exception</span>
+            </div>
+          </div>
+        </SectionCard>
+      </div>
+
+      <SectionCard
+        title="Branch Performance Table"
+        description="Each branch row carries consolidated savings, deposits, loans, and outstanding principal."
+      >
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Branch</th>
+              <th>Manager</th>
+              <th>Members</th>
+              <th>Savings</th>
+              <th>Deposits</th>
+              <th>Loans</th>
+              <th>Outstanding</th>
+              <th>Pending</th>
+            </tr>
+          </thead>
+          <tbody>
+            {summary.branchPerformance.map((branch) => (
+              <tr key={branch.id}>
+                <td>{branch.name}</td>
+                <td>{branch.managerName}</td>
+                <td>{branch.memberCount}</td>
+                <td>{prettyCurrency(branch.totalSavings)}</td>
+                <td>{prettyCurrency(branch.totalDeposits)}</td>
+                <td>{prettyCurrency(branch.totalLoans)}</td>
+                <td>{prettyCurrency(branch.outstandingPrincipal)}</td>
+                <td>{branch.pendingApprovals}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </SectionCard>
+    </AdminShell>
+  );
+}
