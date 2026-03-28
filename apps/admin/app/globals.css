@@ -24,9 +24,9 @@
     --border: 36 40% 76%;
     --input: 36 40% 76%;
     --ring: 166 78% 24%;
-    --chart-1: 166 78% 24%;
-    --chart-2: 154 50% 44%;
-    --chart-3: 33 88% 46%;
+    --chart-1: #0d6b56;
+    --chart-2: #3f8d78;
+    --chart-3: #a36322;
     --chart-4: 12 70% 58%;
     --chart-5: 268 42% 60%;
     --radius: 0.9rem;
@@ -42,40 +42,10 @@
     --warning-soft: #ffe4c0;
   }
 
-:root {
-  --bg: #f5efe6;
-  --panel: #fffdf9;
-  --panel-alt: #efe3cf;
-  --line: #dbc8ad;
-  --text: #23180a;
-  --muted: #735d41;
-  --accent: #0d6b56;
-  --accent-soft: #d2ece4;
-  --warning: #995200;
-  --warning-soft: #ffe4c0;
-  --chart-1: #0d6b56;
-  --chart-2: #3f8d78;
-  --chart-3: #a36322;
-}
-
-
   * {
     @apply border-border;
     box-sizing: border-box;
   }
-
-  body {
-    @apply bg-background text-foreground;
-  }
-html,
-body {
-  margin: 0;
-  padding: 0;
-  background: linear-gradient(180deg, #f7f1e7 0%, #efe3cf 100%);
-  color: var(--text);
-  font-family: var(--font-montserrat), system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-}
-
 
   html,
   body {
@@ -83,7 +53,11 @@ body {
     padding: 0;
     background: linear-gradient(180deg, #f7f1e7 0%, #efe3cf 100%);
     color: var(--text);
-    font-family: Georgia, "Times New Roman", serif;
+    font-family: var(--font-montserrat), system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+
+  body {
+    @apply bg-background text-foreground;
   }
 
   a {
