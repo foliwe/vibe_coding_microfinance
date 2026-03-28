@@ -1,3 +1,47 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 42 40% 94%;
+    --foreground: 31 55% 9%;
+    --card: 36 100% 99%;
+    --card-foreground: 31 55% 9%;
+    --popover: 36 100% 99%;
+    --popover-foreground: 31 55% 9%;
+    --primary: 166 78% 24%;
+    --primary-foreground: 48 50% 98%;
+    --secondary: 39 52% 89%;
+    --secondary-foreground: 31 55% 9%;
+    --muted: 39 42% 86%;
+    --muted-foreground: 33 28% 35%;
+    --accent: 164 51% 87%;
+    --accent-foreground: 166 78% 18%;
+    --destructive: 6 80% 46%;
+    --destructive-foreground: 48 50% 98%;
+    --border: 36 40% 76%;
+    --input: 36 40% 76%;
+    --ring: 166 78% 24%;
+    --chart-1: 166 78% 24%;
+    --chart-2: 154 50% 44%;
+    --chart-3: 33 88% 46%;
+    --chart-4: 12 70% 58%;
+    --chart-5: 268 42% 60%;
+    --radius: 0.9rem;
+
+    /* Backwards-compatible aliases used by existing layout styles */
+    --bg: #f5efe6;
+    --panel: #fffdf9;
+    --panel-alt: #efe3cf;
+    --line: #dbc8ad;
+    --text: #23180a;
+    --accent-soft: #d2ece4;
+    --warning: #995200;
+    --warning-soft: #ffe4c0;
+  }
+
 :root {
   --bg: #f5efe6;
   --panel: #fffdf9;
@@ -14,10 +58,15 @@
   --chart-3: #a36322;
 }
 
-* {
-  box-sizing: border-box;
-}
 
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
 html,
 body {
   margin: 0;
@@ -27,16 +76,27 @@ body {
   font-family: var(--font-montserrat), system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
 
-input,
-select,
-textarea,
-button {
-  font: inherit;
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(180deg, #f7f1e7 0%, #efe3cf 100%);
+    color: var(--text);
+    font-family: Georgia, "Times New Roman", serif;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+  }
 }
 
 .shell {
@@ -88,7 +148,7 @@ button {
 .brand p,
 .eyebrow,
 .muted {
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
 
 .brand-mark {
@@ -97,7 +157,7 @@ button {
   display: inline-grid;
   place-items: center;
   border-radius: 14px;
-  background: var(--accent);
+  background: hsl(var(--primary));
   color: white;
   font-weight: bold;
 }
@@ -166,6 +226,7 @@ button {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+
 .card {
   background: var(--panel);
   border: 1px solid rgba(115, 93, 65, 0.15);
@@ -196,14 +257,6 @@ button {
   min-height: 132px;
 }
 
-.tone-success {
-  background: linear-gradient(180deg, var(--panel) 0%, #f2fbf7 100%);
-}
-
-.tone-warning {
-  background: linear-gradient(180deg, var(--panel) 0%, #fff7ed 100%);
-}
-
 .stat-row,
 .section-header,
 .row-between {
@@ -215,7 +268,6 @@ button {
 
 .stat-value {
   display: block;
-  font-size: 1.8rem;
   margin: 10px 0 8px;
 }
 
@@ -232,7 +284,7 @@ button {
 }
 
 .table th {
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-weight: 600;
 }
 
