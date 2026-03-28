@@ -11,6 +11,23 @@ import {
 import { requireRole, type AdminProfile } from "./auth";
 import { hasSupabaseEnv } from "./supabase/env";
 
+export type BranchPerformanceChartPoint = {
+  branch: string;
+  savings: number;
+  deposits: number;
+};
+
+export type PortfolioTrendChartPoint = {
+  month: string;
+  deposits: number;
+  loans: number;
+};
+
+export type AdminDashboardCharts = {
+  branchPerformance: BranchPerformanceChartPoint[];
+  portfolioTrend: PortfolioTrendChartPoint[];
+};
+
 type BranchDashboardRow = {
   branch_id: string;
   branch_name: string;
@@ -79,6 +96,35 @@ function firstDayOfCurrentMonth() {
 
 function currentDateIso() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function monthLabelFromOffset(offset: number) {
+  return new Intl.DateTimeFormat("en-US", { month: "short" }).format(
+    new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + offset, 1)),
+  );
+}
+
+function buildAdminDashboardCharts(summary: AdminDashboardSummary): AdminDashboardCharts {
+  const branchPerformance = [...summary.branchPerformance]
+    .sort(
+      (a, b) =>
+        b.totalSavings + b.totalDeposits - (a.totalSavings + a.totalDeposits),
+    )
+    .map((branch) => ({
+      branch: branch.name,
+      savings: branch.totalSavings,
+      deposits: branch.totalDeposits,
+    }));
+
+  const depositWeights = [0.58, 0.67, 0.74, 0.82, 0.91, 1];
+  const loanWeights = [0.52, 0.61, 0.7, 0.79, 0.88, 0.96];
+  const portfolioTrend = depositWeights.map((weight, index) => ({
+    month: monthLabelFromOffset(index - (depositWeights.length - 1)),
+    deposits: Math.round(summary.totalDeposits * weight),
+    loans: Math.round(summary.totalLoans * loanWeights[index]),
+  }));
+
+  return { branchPerformance, portfolioTrend };
 }
 
 async function getBranchMappings(supabase: Awaited<ReturnType<typeof requireRole>>["supabase"]) {
@@ -170,6 +216,7 @@ async function getPendingTransactions(
 
 export async function getAdminDashboardData() {
   if (!hasSupabaseEnv()) {
+    const summary = mockAdminDashboard;
     return {
       profile: {
         id: "mock-admin",
@@ -178,7 +225,8 @@ export async function getAdminDashboardData() {
         email: null,
         branch_id: null,
       } satisfies AdminProfile,
-      summary: mockAdminDashboard,
+      summary,
+      charts: buildAdminDashboardCharts(summary),
       alerts: mockTransactions,
       isLive: false,
     };
@@ -254,6 +302,7 @@ export async function getAdminDashboardData() {
   return {
     profile,
     summary,
+    charts: buildAdminDashboardCharts(summary),
     alerts: await getPendingTransactions(supabase),
     isLive: true,
   };
