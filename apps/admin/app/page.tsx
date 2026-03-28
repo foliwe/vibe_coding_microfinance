@@ -1,12 +1,22 @@
 import { AdminShell } from "../components/admin-shell";
-import { ChartBars } from "../components/chart-bars";
+import {
+  BranchPerformanceChart,
+  PortfolioTrendChart,
+} from "../components/chart-bars";
 import { SectionCard } from "../components/section-card";
 import { StatCard } from "../components/stat-card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../components/ui/card";
 import { getAdminDashboardData } from "../lib/dashboard-data";
 import { compactCurrency, prettyCurrency } from "../lib/format";
 
 export default async function AdminDashboardPage() {
-  const { alerts, isLive, profile, summary } = await getAdminDashboardData();
+  const { alerts, charts, isLive, profile, summary } = await getAdminDashboardData();
 
   return (
     <AdminShell
@@ -35,18 +45,35 @@ export default async function AdminDashboardPage() {
       </div>
 
       <div className="grid grid-2">
-        <SectionCard
-          title="Collections By Branch"
-          description="Admin sees consolidated branch-by-branch totals for savings, deposits, and loan activity."
-        >
-          <ChartBars
-            data={summary.branchPerformance.map((branch) => ({
-              label: branch.name,
-              value: Math.round((branch.totalSavings + branch.totalDeposits) / 100000),
-              suffix: " x100k",
-            }))}
-          />
-        </SectionCard>
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Branch Performance Mix</CardTitle>
+              <CardDescription>
+                Grouped balances compare branch savings and deposits side-by-side.
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <BranchPerformanceChart data={charts.branchPerformance} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Portfolio Trend</CardTitle>
+              <CardDescription>
+                Deposit and loan movement for the most recent six reporting periods.
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <PortfolioTrendChart data={charts.portfolioTrend} />
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-2">
         <SectionCard
           title="Approvals And Alerts"
           description="Pending cash activity and open exceptions that need central attention."
