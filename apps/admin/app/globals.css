@@ -21,7 +21,7 @@ body {
   padding: 0;
   background: linear-gradient(180deg, #f7f1e7 0%, #efe3cf 100%);
   color: var(--text);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-montserrat), system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
 a {
