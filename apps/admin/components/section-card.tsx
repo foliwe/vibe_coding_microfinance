@@ -1,21 +1,21 @@
-import { ReactNode } from "react";
+import type { ReactNode } from "react";
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 
-interface SectionCardProps {
-  title: string;
-  description?: string;
+type SectionCardProps = {
   children: ReactNode;
-}
+  description?: string;
+  title: string;
+};
 
-export function SectionCard({ title, description, children }: SectionCardProps) {
+export function SectionCard({ children, description, title }: SectionCardProps) {
   return (
-    <Card className="border border-[#735d4126] shadow-[0_10px_28px_rgba(35,24,10,0.05)]">
-      <CardHeader className="section-header block p-5 pb-3">
-        <CardTitle className="text-xl">{title}</CardTitle>
-        {description ? <CardDescription className="muted mt-1">{description}</CardDescription> : null}
+    <Card className="border border-border/70 bg-card/95 shadow-sm backdrop-blur">
+      <CardHeader className="border-b border-border/60">
+        <CardTitle>{title}</CardTitle>
+        {description ? <CardDescription>{description}</CardDescription> : null}
       </CardHeader>
-      <CardContent className="p-5 pt-1">{children}</CardContent>
+      <CardContent className="space-y-4 pt-5">{children}</CardContent>
     </Card>
   );
 }

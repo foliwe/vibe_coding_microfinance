@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import type { Route } from "next";
 import { redirect } from "next/navigation";
+import type { TransactionType } from "@credit-union/shared";
 
 import { requireRole } from "../lib/auth";
 import { hasSupabaseEnv, hasSupabaseServiceEnv } from "../lib/supabase/env";
@@ -158,11 +159,76 @@ export async function rejectTransactionRequestAction(formData: FormData) {
   await mutateTransactionRequest("reject_transaction_request", formData);
 }
 
+async function createAdminTransactionAction(
+  transactionType: Extract<TransactionType, "deposit" | "withdrawal">,
+  path: Route,
+  formData: FormData,
+) {
+  if (!hasSupabaseEnv()) {
+    redirect(buildRedirect(path, "error", "Supabase credentials are missing."));
+  }
+
+  try {
+    const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
+    const memberAccountId = requiredValue(formData, "memberAccountId", "Member account");
+    const cashAgentProfileId = requiredValue(formData, "cashAgentProfileId", "Cash drawer agent");
+    const amountValue = requiredValue(formData, "amount", "Amount");
+    const note = optionalValue(formData, "note");
+    const amount = Number(amountValue);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error("Amount must be greater than zero.");
+    }
+
+    const { error } = await supabase.rpc("create_admin_transaction", {
+      p_actor_id: profile.id,
+      p_member_account_id: memberAccountId,
+      p_cash_agent_profile_id: cashAgentProfileId,
+      p_transaction_type: transactionType,
+      p_amount: amount,
+      p_note: note,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  } catch (error) {
+    redirect(
+      buildRedirect(
+        path,
+        "error",
+        error instanceof Error ? error.message : "Unable to create transaction.",
+      ),
+    );
+  }
+
+  revalidatePath(path);
+  revalidatePath("/transactions");
+  revalidatePath("/");
+  revalidatePath("/branch");
+  redirect(
+    buildRedirect(
+      path,
+      "success",
+      `${transactionType === "deposit" ? "Deposit" : "Withdrawal"} created and auto-approved.`,
+    ),
+  );
+}
+
+export async function createDepositAction(formData: FormData) {
+  await createAdminTransactionAction("deposit", "/transactions/deposit", formData);
+}
+
+export async function createWithdrawalAction(formData: FormData) {
+  await createAdminTransactionAction("withdrawal", "/transactions/withdrawal", formData);
+}
+
 export async function createBranchAction(formData: FormData) {
   assertServiceEnv("/branches/new");
 
   await requireRole(["admin"]);
   const service = createServiceClient();
+  let successDetail = "";
 
   try {
     const name = requiredValue(formData, "name", "Branch name");
@@ -216,12 +282,7 @@ export async function createBranchAction(formData: FormData) {
         throw new Error(staffError.message);
       }
     }
-
-    revalidatePath("/");
-    revalidatePath("/branches");
-    revalidatePath("/branches/new");
-    revalidatePath("/users");
-    redirect(buildRedirect("/branches/new", "success", `Created branch ${name}.`));
+    successDetail = `Created branch ${name}.`;
   } catch (error) {
     redirect(
       buildRedirect(
@@ -231,6 +292,12 @@ export async function createBranchAction(formData: FormData) {
       ),
     );
   }
+
+  revalidatePath("/");
+  revalidatePath("/branches");
+  revalidatePath("/branches/new");
+  revalidatePath("/users");
+  redirect(buildRedirect("/branches/new", "success", successDetail));
 }
 
 export async function createManagerAction(formData: FormData) {
@@ -238,6 +305,7 @@ export async function createManagerAction(formData: FormData) {
 
   await requireRole(["admin"]);
   const service = createServiceClient();
+  let successDetail = "";
 
   try {
     const fullName = requiredValue(formData, "fullName", "Full name");
@@ -295,12 +363,7 @@ export async function createManagerAction(formData: FormData) {
     if (branchError) {
       throw new Error(branchError.message);
     }
-
-    revalidatePath("/");
-    revalidatePath("/branches");
-    revalidatePath("/users");
-    revalidatePath("/users/new");
-    redirect(buildRedirect("/users/new", "success", `Created branch manager ${fullName}.`));
+    successDetail = `Created branch manager ${fullName}.`;
   } catch (error) {
     redirect(
       buildRedirect(
@@ -310,6 +373,12 @@ export async function createManagerAction(formData: FormData) {
       ),
     );
   }
+
+  revalidatePath("/");
+  revalidatePath("/branches");
+  revalidatePath("/users");
+  revalidatePath("/users/new");
+  redirect(buildRedirect("/users/new", "success", successDetail));
 }
 
 export async function createAgentAction(formData: FormData) {
@@ -317,6 +386,7 @@ export async function createAgentAction(formData: FormData) {
 
   const { profile } = await requireRole(["admin", "branch_manager"]);
   const service = createServiceClient();
+  let successDetail = "";
 
   try {
     const fullName = requiredValue(formData, "fullName", "Full name");
@@ -369,12 +439,7 @@ export async function createAgentAction(formData: FormData) {
     if (staffError) {
       throw new Error(staffError.message);
     }
-
-    revalidatePath("/agents");
-    revalidatePath("/agents/new");
-    revalidatePath("/branch");
-    revalidatePath("/");
-    redirect(buildRedirect("/agents/new", "success", `Created agent ${fullName}.`));
+    successDetail = `Created agent ${fullName}.`;
   } catch (error) {
     redirect(
       buildRedirect(
@@ -384,6 +449,12 @@ export async function createAgentAction(formData: FormData) {
       ),
     );
   }
+
+  revalidatePath("/agents");
+  revalidatePath("/agents/new");
+  revalidatePath("/branch");
+  revalidatePath("/");
+  redirect(buildRedirect("/agents/new", "success", successDetail));
 }
 
 export async function createMemberAction(formData: FormData) {
@@ -391,6 +462,7 @@ export async function createMemberAction(formData: FormData) {
 
   const { profile } = await requireRole(["admin", "branch_manager"]);
   const service = createServiceClient();
+  let successDetail = "";
 
   try {
     const fullName = requiredValue(formData, "fullName", "Full name");
@@ -528,13 +600,7 @@ export async function createMemberAction(formData: FormData) {
         assignmentResponse.error?.message ?? "Unable to create agent assignment.",
       );
     }
-
-    revalidatePath("/members");
-    revalidatePath("/members/new");
-    revalidatePath("/agents");
-    revalidatePath("/branch");
-    revalidatePath("/");
-    redirect(buildRedirect("/members/new", "success", `Created member ${fullName}.`));
+    successDetail = `Created member ${fullName}.`;
   } catch (error) {
     redirect(
       buildRedirect(
@@ -544,6 +610,13 @@ export async function createMemberAction(formData: FormData) {
       ),
     );
   }
+
+  revalidatePath("/members");
+  revalidatePath("/members/new");
+  revalidatePath("/agents");
+  revalidatePath("/branch");
+  revalidatePath("/");
+  redirect(buildRedirect("/members/new", "success", successDetail));
 }
 
 export async function requestReportAction(formData: FormData) {
@@ -551,6 +624,7 @@ export async function requestReportAction(formData: FormData) {
 
   const { profile } = await requireRole(["admin", "branch_manager"]);
   const service = createServiceClient();
+  const successDetail = "Queued report request.";
 
   try {
     const reportType = requiredValue(formData, "reportType", "Report type");
@@ -582,9 +656,6 @@ export async function requestReportAction(formData: FormData) {
     if (error) {
       throw new Error(error.message);
     }
-
-    revalidatePath("/reports");
-    redirect(buildRedirect("/reports", "success", "Queued report request."));
   } catch (error) {
     redirect(
       buildRedirect(
@@ -594,4 +665,7 @@ export async function requestReportAction(formData: FormData) {
       ),
     );
   }
+
+  revalidatePath("/reports");
+  redirect(buildRedirect("/reports", "success", successDetail));
 }

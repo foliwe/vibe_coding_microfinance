@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import {
   approveTransactionRequestAction,
   rejectTransactionRequestAction,
@@ -20,11 +22,12 @@ function TransactionResultNotice({
 
   const isError = result === "error";
   const message =
-    isError
-      ? detail ?? "The transaction action failed."
+    detail ??
+    (isError
+      ? "The transaction action failed."
       : result === "approved"
         ? "Transaction approved and posted to the ledger."
-        : "Transaction rejected and preserved in history.";
+        : "Transaction rejected and preserved in history.");
 
   return <p className={isError ? "notice notice-error" : "notice notice-success"}>{message}</p>;
 }
@@ -47,6 +50,14 @@ export default async function TransactionsPage({
       subtitle="Pending agent-originated cash transactions waiting for branch or admin review."
     >
       <TransactionResultNotice detail={params?.detail} result={params?.result} />
+      <div className="actions">
+        <Link className="button" href="/transactions/deposit">
+          New Deposit
+        </Link>
+        <Link className="button-secondary" href="/transactions/withdrawal">
+          New Withdrawal
+        </Link>
+      </div>
       <SectionCard
         title="Approval Queue"
         description="Every agent financial transaction remains pending until reviewed by a branch manager or admin."

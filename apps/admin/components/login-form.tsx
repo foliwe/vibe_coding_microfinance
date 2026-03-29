@@ -1,75 +1,66 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { FormEvent, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { createClient } from "../lib/supabase/server";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
 
-import { createClient } from "../lib/supabase/client";
+async function signInAction(formData: FormData) {
+  "use server";
 
-export function LoginForm() {
-  const searchParams = useSearchParams();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const email = String(formData.get("email") ?? "").trim();
+  const password = String(formData.get("password") ?? "").trim();
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setIsLoading(true);
-    setErrorMessage(null);
-
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      setErrorMessage(error.message);
-      setIsLoading(false);
-      return;
-    }
-
-    const nextPath = searchParams.get("next") || "/";
-    window.location.assign(nextPath.startsWith("/") ? nextPath : "/");
+  if (!email || !password) {
+    redirect("/login?reason=invalid-credentials");
   }
 
+  const supabase = await createClient();
+  const result = await supabase.auth.signInWithPassword({ email, password });
+
+  if (result.error) {
+    redirect("/login?reason=invalid-credentials");
+  }
+
+  const { data: profileRows } = await supabase.rpc("get_my_profile");
+  const profile = Array.isArray(profileRows) ? profileRows[0] : null;
+  const role = profile?.role;
+
+  redirect(role === "branch_manager" ? "/branch" : "/");
+}
+
+export function LoginForm() {
   return (
-    <form className="login-card" onSubmit={handleSubmit}>
-      <div>
-        <p className="eyebrow">Admin access</p>
-        <h1>Sign in to the admin panel</h1>
-        <p className="muted">
-          Only `admin` and `branch_manager` accounts should use this interface.
-        </p>
-      </div>
-
-      <label className="field">
-        <span>Email</span>
-        <input
-          autoComplete="email"
-          onChange={(event) => setEmail(event.target.value)}
-          placeholder="manager@creditunion.com"
-          type="email"
-          value={email}
-        />
-      </label>
-
-      <label className="field">
-        <span>Password</span>
-        <input
-          autoComplete="current-password"
-          onChange={(event) => setPassword(event.target.value)}
-          placeholder="Enter your password"
-          type="password"
-          value={password}
-        />
-      </label>
-
-      {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
-
-      <button className="button" disabled={isLoading} type="submit">
-        {isLoading ? "Signing in..." : "Sign in"}
-      </button>
-    </form>
+    <Card className="border border-border/70 bg-card/95 shadow-sm backdrop-blur">
+      <CardHeader>
+        <CardTitle>Sign in to the admin console</CardTitle>
+        <CardDescription>
+          Use an admin or branch-manager account. Agent and member access stays in the mobile app.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form action={signInAction} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input autoComplete="email" id="email" name="email" placeholder="admin@example.com" required type="email" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="password">Password</Label>
+            <Input
+              autoComplete="current-password"
+              id="password"
+              name="password"
+              placeholder="Enter your password"
+              required
+              type="password"
+            />
+          </div>
+          <Button className="w-full" type="submit">
+            Sign in
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

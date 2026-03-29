@@ -1,3 +1,6 @@
+import { Ionicons } from "@expo/vector-icons";
+import { Asset } from "expo-asset";
+import * as Font from "expo-font";
 import { StatusBar } from "expo-status-bar";
 import * as FileSystem from "expo-file-system/legacy";
 import {
@@ -6,8 +9,10 @@ import {
   type TransactionRequestStatus,
   type TransactionType,
 } from "@credit-union/shared";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  Image,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -92,6 +97,11 @@ type CreatedTransactionRequest = {
   status: TransactionRequestStatus;
 };
 
+type TransactionRequestStatusRow = {
+  id: string;
+  status: TransactionRequestStatus;
+};
+
 type LiveMemberBalanceAccount = LiveMemberAccount;
 
 type LedgerAccountRow = {
@@ -169,6 +179,10 @@ type MemberDraftQueuePayload = {
   photoCaptured: boolean;
 };
 
+const CONNECTIVITY_POLL_INTERVAL_MS = 15000;
+const CONNECTIVITY_PROBE_TIMEOUT_MS = 5000;
+const BRAND_SURFACE = require("./assets/images/brand-surface.png");
+
 function toQueueStatus(status: TransactionRequestStatus): QueueItemStatus {
   if (
     status === "pending_approval" ||
@@ -207,6 +221,188 @@ function formatClockTime() {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function getSyncableTransactionItems(
+  queue: QueueItem[],
+  mode: "all" | "failed",
+): QueueItem<TransactionQueuePayload>[] {
+  return queue.filter(
+    (item) =>
+      item.kind === "transaction_request" &&
+      (mode === "failed"
+        ? item.status === "sync_conflict"
+        : item.status === "unsynced" || item.status === "sync_conflict"),
+  ) as QueueItem<TransactionQueuePayload>[];
+}
+
+function getConnectivityProbeUrl() {
+  const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
+
+  if (!url) {
+    return null;
+  }
+
+  return `${url.replace(/\/$/, "")}/rest/v1/`;
+}
+
+async function probeSupabaseReachability() {
+  const probeUrl = getConnectivityProbeUrl();
+  const publishableKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
+  if (!probeUrl || !publishableKey) {
+    return false;
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CONNECTIVITY_PROBE_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(probeUrl, {
+      method: "GET",
+      headers: {
+        apikey: publishableKey,
+      },
+      signal: controller.signal,
+    });
+
+    return response.ok || response.status === 401 || response.status === 404;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function isLikelyConnectivityError(error: unknown) {
+  const message = getErrorMessage(error, "").toLowerCase();
+
+  return (
+    message.includes("network request failed") ||
+    message.includes("fetch failed") ||
+    message.includes("failed to fetch") ||
+    message.includes("network error") ||
+    message.includes("timed out") ||
+    message.includes("abort")
+  );
+}
+
+function isUuidLike(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+function getQueueRequestId(item: QueueItem<TransactionQueuePayload>) {
+  const serverRequestId = item.payload.serverRequestId;
+
+  if (serverRequestId && isUuidLike(serverRequestId)) {
+    return serverRequestId;
+  }
+
+  return isUuidLike(item.id) ? item.id : null;
+}
+
+function getActionIcon(title: string): keyof typeof Ionicons.glyphMap {
+  switch (title) {
+    case "+ Add Member":
+      return "person-add";
+    case "+ Record Transaction":
+      return "swap-horizontal";
+    case "Sync Queue":
+      return "sync";
+    case "Reconcile Cash":
+      return "wallet";
+    case "Transactions":
+      return "receipt";
+    case "Loans":
+      return "trending-up";
+    case "Profile":
+      return "person-circle";
+    default:
+      return "grid";
+  }
+}
+
+function getBottomNavIcon(key: string): keyof typeof Ionicons.glyphMap {
+  switch (key) {
+    case "home":
+      return "home";
+    case "transactions":
+      return "receipt";
+    case "members":
+      return "people";
+    case "loans":
+      return "bar-chart";
+    case "more":
+      return "grid";
+    default:
+      return "ellipse";
+  }
+}
+
+function getMetricIcon(title: string): keyof typeof Ionicons.glyphMap {
+  switch (title) {
+    case "Collections":
+    case "Savings":
+      return "trending-up";
+    case "Withdrawals":
+      return "arrow-down-circle";
+    case "Deposit":
+      return "wallet";
+    case "Pending Approvals":
+      return "time";
+    case "Pending Sync":
+      return "sync";
+    case "Available":
+      return "cash";
+    default:
+      return "stats-chart";
+  }
+}
+
+function MiniBarChart({
+  data,
+}: {
+  data: { label: string; value: number; tone?: "primary" | "accent" | "muted" }[];
+}) {
+  const maxValue = Math.max(...data.map((entry) => entry.value), 1);
+
+  return (
+    <View style={styles.chartCard}>
+      <View style={styles.chartHeader}>
+        <Text style={styles.chartTitle}>Snapshot</Text>
+        <Ionicons color="#0f172a" name="stats-chart" size={18} />
+      </View>
+      <View style={styles.chartBars}>
+        {data.map((entry) => (
+          <View key={entry.label} style={styles.chartBarColumn}>
+            <View style={styles.chartTrack}>
+              <View
+                style={[
+                  styles.chartBarFill,
+                  entry.tone === "accent"
+                    ? styles.chartBarAccent
+                    : entry.tone === "muted"
+                      ? styles.chartBarMuted
+                      : styles.chartBarPrimary,
+                  {
+                    height: `${Math.max((entry.value / maxValue) * 100, 10)}%`,
+                  },
+                ]}
+              />
+            </View>
+            <Text style={styles.chartValue}>{formatCurrency(entry.value)}</Text>
+            <Text style={styles.chartLabel}>{entry.label}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
 }
 
 function getAgentScreenTitle(screen: AgentScreen) {
@@ -276,7 +472,10 @@ function Section({
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>{title}</Text>
+        <View style={styles.sectionTitleRow}>
+          <View style={styles.sectionAccent} />
+          <Text style={styles.sectionTitle}>{title}</Text>
+        </View>
         {action}
       </View>
       {children}
@@ -291,6 +490,13 @@ function Notice({
   children: ReactNode;
   tone?: "info" | "error" | "success";
 }) {
+  const iconName =
+    tone === "error"
+      ? "alert-circle"
+      : tone === "success"
+        ? "checkmark-circle"
+        : "information-circle";
+
   return (
     <View
       style={[
@@ -302,18 +508,25 @@ function Notice({
             : styles.noticeInfo,
       ]}
     >
-      <Text
-        style={[
-          styles.noticeText,
-          tone === "error"
-            ? styles.noticeTextError
-            : tone === "success"
-              ? styles.noticeTextSuccess
-              : styles.noticeTextInfo,
-        ]}
-      >
-        {children}
-      </Text>
+      <View style={styles.noticeRow}>
+        <Ionicons
+          color={tone === "error" ? "#b42318" : tone === "success" ? "#027a48" : "#1d4ed8"}
+          name={iconName}
+          size={18}
+        />
+        <Text
+          style={[
+            styles.noticeText,
+            tone === "error"
+              ? styles.noticeTextError
+              : tone === "success"
+                ? styles.noticeTextSuccess
+                : styles.noticeTextInfo,
+          ]}
+        >
+          {children}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -329,7 +542,12 @@ function MetricCard({
 }) {
   return (
     <View style={styles.metricCard}>
-      <Text style={styles.metricLabel}>{title}</Text>
+      <View style={styles.metricHeader}>
+        <Text style={styles.metricLabel}>{title}</Text>
+        <View style={styles.metricIconWrap}>
+          <Ionicons color="#0f172a" name={getMetricIcon(title)} size={16} />
+        </View>
+      </View>
       <Text style={styles.metricValue}>{value}</Text>
       {helper ? <Text style={styles.metricHelper}>{helper}</Text> : null}
     </View>
@@ -384,8 +602,16 @@ function ActionTile({
   helper: string;
   onPress: () => void;
 }) {
+  const iconName = getActionIcon(title);
+
   return (
     <Pressable onPress={onPress} style={styles.actionTile}>
+      <View style={styles.actionTileHeader}>
+        <View style={styles.actionTileIconWrap}>
+          <Ionicons color="#fffaf2" name={iconName} size={18} />
+        </View>
+        <Ionicons color="#64748b" name="arrow-forward" size={16} />
+      </View>
       <Text style={styles.actionTileTitle}>{title}</Text>
       <Text style={styles.actionTileHelper}>{helper}</Text>
     </Pressable>
@@ -422,14 +648,25 @@ function AppShell({
       <StatusBar style="dark" />
       <View style={styles.shell}>
         <View style={styles.statusStrip}>
-          <StatusPill
-            label={statusDescriptor.label}
-            tone={statusDescriptor.tone}
-          />
-          <Text style={styles.statusMeta}>Sync Count: {pendingSyncCount}</Text>
-          <Text style={styles.statusMeta}>
-            {lastSyncAt ? formatSyncTime(lastSyncAt) : formatClockTime()}
-          </Text>
+          <View style={styles.statusPrimary}>
+            <StatusPill
+              label={statusDescriptor.label}
+              tone={statusDescriptor.tone}
+            />
+            <Text style={styles.statusMeta}>Live field operations</Text>
+          </View>
+          <View style={styles.statusMetaRow}>
+            <View style={styles.statusChip}>
+              <Ionicons color="#0f172a" name="sync" size={14} />
+              <Text style={styles.statusChipText}>Sync {pendingSyncCount}</Text>
+            </View>
+            <View style={styles.statusChip}>
+              <Ionicons color="#0f172a" name="time" size={14} />
+              <Text style={styles.statusChipText}>
+                {lastSyncAt ? formatSyncTime(lastSyncAt) : formatClockTime()}
+              </Text>
+            </View>
+          </View>
         </View>
 
         <View style={styles.topBar}>
@@ -438,13 +675,15 @@ function AppShell({
             onPress={onBack}
             style={[styles.topBarButton, !canGoBack && styles.topBarButtonDisabled]}
           >
-            <Text style={[styles.topBarButtonText, !canGoBack && styles.topBarButtonTextMuted]}>
-              {canGoBack ? "Back" : ""}
-            </Text>
+            <Ionicons
+              color={!canGoBack ? "#94a3b8" : "#0f172a"}
+              name="chevron-back"
+              size={18}
+            />
           </Pressable>
           <Text style={styles.topBarTitle}>{title}</Text>
           <Pressable onPress={onMenu} style={styles.topBarButton}>
-            <Text style={styles.topBarButtonText}>Menu</Text>
+            <Ionicons color="#0f172a" name="grid" size={18} />
           </Pressable>
         </View>
 
@@ -460,6 +699,11 @@ function AppShell({
                 activeBottomItem === item.key && styles.bottomNavItemActive,
               ]}
             >
+              <Ionicons
+                color={activeBottomItem === item.key ? "#fffefb" : "#475569"}
+                name={getBottomNavIcon(item.key)}
+                size={18}
+              />
               <Text
                 style={[
                   styles.bottomNavLabel,
@@ -477,6 +721,7 @@ function AppShell({
 }
 
 export default function App() {
+  const [uiReady, setUiReady] = useState(false);
   const [role, setRole] = useState<MobileRole>("agent");
   const [agentScreen, setAgentScreen] = useState<AgentScreen>("home");
   const [memberScreen, setMemberScreen] = useState<MemberScreen>("home");
@@ -540,6 +785,7 @@ export default function App() {
   const [memberError, setMemberError] = useState<string | null>(null);
   const [memberMessage, setMemberMessage] = useState<string | null>(null);
   const [isMemberAuthLoading, setIsMemberAuthLoading] = useState(false);
+  const autoSyncSignatureRef = useRef<string | null>(null);
 
   const queueStats = useMemo(() => queueSummary(queue), [queue]);
   const liveConfigured = hasSupabaseEnv();
@@ -675,6 +921,40 @@ export default function App() {
   useEffect(() => {
     let isActive = true;
 
+    async function prepareUi() {
+      try {
+        await Promise.all([
+          Font.loadAsync(Ionicons.font),
+          Asset.loadAsync([BRAND_SURFACE]),
+        ]);
+      } finally {
+        if (isActive) {
+          setUiReady(true);
+        }
+      }
+    }
+
+    void prepareUi();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  async function refreshConnectivityState() {
+    if (!liveConfigured) {
+      setIsOffline(true);
+      return false;
+    }
+
+    const reachable = await probeSupabaseReachability();
+    setIsOffline(!reachable);
+    return reachable;
+  }
+
+  useEffect(() => {
+    let isActive = true;
+
     async function loadPersistedQueue() {
       try {
         if (!queueStorageUri) {
@@ -766,6 +1046,36 @@ export default function App() {
       isActive = false;
     };
   }, [agentError, hasLoadedQueue, queue]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function refreshFromPoll() {
+      if (!liveConfigured) {
+        if (isActive) {
+          setIsOffline(true);
+        }
+
+        return;
+      }
+
+      const reachable = await probeSupabaseReachability();
+
+      if (isActive) {
+        setIsOffline(!reachable);
+      }
+    }
+
+    void refreshFromPoll();
+    const intervalId = setInterval(() => {
+      void refreshFromPoll();
+    }, CONNECTIVITY_POLL_INTERVAL_MS);
+
+    return () => {
+      isActive = false;
+      clearInterval(intervalId);
+    };
+  }, [liveConfigured]);
 
   function resetMemberDraftForm() {
     setMemberDraftType("individual");
@@ -927,6 +1237,72 @@ export default function App() {
         : null,
     );
     setAgentLastSyncAt(new Date().toISOString());
+  }
+
+  async function reconcileQueuedTransactionStatuses(
+    profile: MobileProfile,
+    queueSnapshot: QueueItem[] = queue,
+  ) {
+    const pendingApprovalItems = queueSnapshot.filter(
+      (item): item is QueueItem<TransactionQueuePayload> =>
+        item.kind === "transaction_request" && item.status === "pending_approval",
+    );
+    const requestIds = Array.from(
+      new Set(
+        pendingApprovalItems
+          .map((item) => getQueueRequestId(item))
+          .filter((requestId): requestId is string => Boolean(requestId)),
+      ),
+    );
+
+    if (!requestIds.length) {
+      return { checkedCount: 0, updatedCount: 0 };
+    }
+
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from("transaction_requests")
+      .select("id, status")
+      .eq("agent_profile_id", profile.id)
+      .in("id", requestIds);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const statusRows = (data as TransactionRequestStatusRow[] | null) ?? [];
+    const statusByRequestId = new Map(statusRows.map((row) => [row.id, row.status]));
+    const resolvedStatuses = new Map<string, QueueItemStatus>();
+
+    for (const item of pendingApprovalItems) {
+      const requestId = getQueueRequestId(item);
+
+      if (!requestId) {
+        continue;
+      }
+
+      const nextStatus = statusByRequestId.get(requestId);
+
+      if (nextStatus === "approved" || nextStatus === "rejected") {
+        resolvedStatuses.set(item.id, toQueueStatus(nextStatus));
+      }
+    }
+
+    if (resolvedStatuses.size > 0) {
+      setQueue((current) =>
+        current.map((item) =>
+          resolvedStatuses.has(item.id)
+            ? { ...item, status: resolvedStatuses.get(item.id) ?? item.status }
+            : item,
+        ),
+      );
+    }
+
+    setAgentLastSyncAt(new Date().toISOString());
+    return {
+      checkedCount: requestIds.length,
+      updatedCount: resolvedStatuses.size,
+    };
   }
 
   function clearMemberSession() {
@@ -1167,6 +1543,9 @@ export default function App() {
       setAgentProfile(profile);
       setAgentDeviceSettings(await loadDeviceUserSettings(profile.id));
       await loadAssignedMemberAccounts(profile);
+      if (await refreshConnectivityState()) {
+        await reconcileQueuedTransactionStatuses(profile);
+      }
       setAgentMessage("Agent session connected. Mobile field mode is ready.");
       setAgentPassword("");
       setRole("agent");
@@ -1244,6 +1623,7 @@ export default function App() {
       setMemberProfile(profile);
       setMemberDeviceSettings(await loadDeviceUserSettings(profile.id));
       await loadMemberSnapshot(profile);
+      await refreshConnectivityState();
       setMemberMessage("Member session connected. Balances and history are loaded.");
       setMemberPassword("");
       setRole("member");
@@ -1308,7 +1688,12 @@ export default function App() {
 
     try {
       await loadAssignedMemberAccounts(agentProfile);
-      setAgentMessage("Assigned member accounts refreshed from Supabase.");
+      const reconciliation = await reconcileQueuedTransactionStatuses(agentProfile);
+      setAgentMessage(
+        reconciliation.updatedCount > 0
+          ? `Agent data refreshed. ${reconciliation.updatedCount} queued transaction${reconciliation.updatedCount === 1 ? "" : "s"} updated from server approval state.`
+          : "Agent data refreshed from Supabase.",
+      );
     } catch (error) {
       setAgentError(error instanceof Error ? error.message : "Unable to refresh members.");
     } finally {
@@ -1436,7 +1821,9 @@ export default function App() {
       return;
     }
 
-    if (isOffline || !liveConfigured) {
+    const canSubmitLive = liveConfigured ? await refreshConnectivityState() : false;
+
+    if (!canSubmitLive) {
       queueLocalTransaction();
       return;
     }
@@ -1531,7 +1918,9 @@ export default function App() {
   }
 
   async function handleSyncQueue(mode: "all" | "failed") {
-    if (isOffline) {
+    const isOnline = await refreshConnectivityState();
+
+    if (!isOnline) {
       setAgentError("Go online before syncing queued transactions.");
       return;
     }
@@ -1547,13 +1936,7 @@ export default function App() {
       return;
     }
 
-    const itemsToSync = queue.filter(
-      (item) =>
-        item.kind === "transaction_request" &&
-        (mode === "failed"
-          ? item.status === "sync_conflict"
-          : item.status === "unsynced" || item.status === "sync_conflict"),
-    ) as QueueItem<TransactionQueuePayload>[];
+    const itemsToSync = getSyncableTransactionItems(queue, mode);
 
     if (!itemsToSync.length) {
       setAgentMessage(
@@ -1570,6 +1953,7 @@ export default function App() {
     let nextQueue = [...queue];
     let syncedCount = 0;
     let failedCount = 0;
+    let lastFailedMessage: string | null = null;
 
     for (const item of itemsToSync) {
       nextQueue = markQueueItem(nextQueue, item.id, "syncing");
@@ -1614,9 +1998,16 @@ export default function App() {
             : queueItem,
         );
         syncedCount += 1;
-      } catch {
+      } catch (error) {
+        lastFailedMessage = getErrorMessage(error, "Unable to sync queued transaction.");
         nextQueue = markQueueItem(nextQueue, item.id, "sync_conflict");
         failedCount += 1;
+
+        if (isLikelyConnectivityError(error)) {
+          setIsOffline(true);
+          setQueue(nextQueue);
+          break;
+        }
       }
 
       setQueue(nextQueue);
@@ -1631,10 +2022,78 @@ export default function App() {
       (item) => item.kind === "member_draft" && item.status === "unsynced",
     ).length;
 
+    setAgentError(lastFailedMessage);
     setAgentMessage(
-      `Sync complete. ${syncedCount} transaction${syncedCount === 1 ? "" : "s"} synced, ${failedCount} failed.${unsyncedDraftCount ? ` ${unsyncedDraftCount} member draft${unsyncedDraftCount === 1 ? "" : "s"} still require manual backend create flow.` : ""}`,
+      `Sync complete. ${syncedCount} transaction${syncedCount === 1 ? "" : "s"} synced, ${failedCount} failed.${unsyncedDraftCount ? ` ${unsyncedDraftCount} member draft${unsyncedDraftCount === 1 ? "" : "s"} still require manual backend create flow.` : ""}${lastFailedMessage ? ` Last error: ${lastFailedMessage}` : ""}`,
     );
+
+    try {
+      await reconcileQueuedTransactionStatuses(agentProfile, nextQueue);
+    } catch (error) {
+      if (isLikelyConnectivityError(error)) {
+        setIsOffline(true);
+      }
+    }
   }
+
+  useEffect(() => {
+    if (!liveConfigured || isOffline || !agentProfile) {
+      autoSyncSignatureRef.current = null;
+      return;
+    }
+
+    if (isSyncingQueue) {
+      return;
+    }
+
+    const syncableItems = getSyncableTransactionItems(queue, "all");
+
+    if (!syncableItems.length) {
+      autoSyncSignatureRef.current = null;
+      return;
+    }
+
+    const signature = `${agentProfile.id}:${syncableItems.map((item) => item.id).join(",")}`;
+
+    if (autoSyncSignatureRef.current === signature) {
+      return;
+    }
+
+    autoSyncSignatureRef.current = signature;
+    setAgentMessage("Connection available. Syncing queued transactions.");
+    void handleSyncQueue("all");
+  }, [agentProfile, isOffline, isSyncingQueue, liveConfigured, queue]);
+
+  useEffect(() => {
+    if (!liveConfigured || isOffline || !agentProfile || queueStats.pendingApproval === 0) {
+      return;
+    }
+
+    const currentAgentProfile = agentProfile;
+    let isActive = true;
+
+    async function reconcilePendingApprovals() {
+      try {
+        await reconcileQueuedTransactionStatuses(currentAgentProfile, queue);
+      } catch (error) {
+        if (!isActive || !isLikelyConnectivityError(error)) {
+          return;
+        }
+
+        setIsOffline(true);
+      }
+    }
+
+    void reconcilePendingApprovals();
+    const intervalId = setInterval(() => {
+      void reconcilePendingApprovals();
+    }, CONNECTIVITY_POLL_INTERVAL_MS);
+
+    return () => {
+      isActive = false;
+      clearInterval(intervalId);
+    };
+  }, [agentProfile, isOffline, liveConfigured, queue, queueStats.pendingApproval]);
 
   async function handleSaveAgentPin() {
     if (!agentProfile) {
@@ -1910,19 +2369,32 @@ export default function App() {
       <SafeAreaView style={styles.safe}>
         <StatusBar style="dark" />
         <ScrollView contentContainerStyle={styles.loginContainer}>
-          <Text style={styles.loginEyebrow}>Credit Union Mobile</Text>
-          <Text style={styles.loginTitle}>Production mobile shell</Text>
-          <Text style={styles.loginSubtitle}>
-            Offline-first field operations for agents and clear account visibility for members.
-          </Text>
+          <View style={styles.loginHero}>
+            <View style={styles.loginHeroBadge}>
+              <Ionicons color="#fffaf2" name="shield-checkmark" size={20} />
+            </View>
+            <Text style={styles.loginEyebrow}>Credit Union Mobile</Text>
+            <Text style={styles.loginTitle}>Professional field banking, redesigned for speed.</Text>
+            <Text style={styles.loginSubtitle}>
+              Offline-first operations, stronger trust cues, and clearer financial dashboards for agents and members.
+            </Text>
+          </View>
           {renderRolePicker()}
           <View style={styles.loginStatusRow}>
-            <StatusPill
-              label={isOffline ? "OFFLINE" : "ONLINE"}
-              tone={isOffline ? "offline" : "online"}
-            />
-            <Text style={styles.loginStatusText}>Sync Count: {pendingSyncCount}</Text>
-            <Text style={styles.loginStatusText}>{formatClockTime()}</Text>
+            <View style={styles.loginStatusPillWrap}>
+              <StatusPill
+                label={isOffline ? "OFFLINE" : "ONLINE"}
+                tone={isOffline ? "offline" : "online"}
+              />
+            </View>
+            <View style={styles.loginStatusMetric}>
+              <Ionicons color="#0f172a" name="sync" size={14} />
+              <Text style={styles.loginStatusText}>Sync Count: {pendingSyncCount}</Text>
+            </View>
+            <View style={styles.loginStatusMetric}>
+              <Ionicons color="#0f172a" name="time" size={14} />
+              <Text style={styles.loginStatusText}>{formatClockTime()}</Text>
+            </View>
           </View>
           {content}
         </ScrollView>
@@ -2122,12 +2594,20 @@ export default function App() {
     return (
       <>
         <View style={styles.identityCard}>
-          <Text style={styles.identityName}>{agentProfile?.full_name ?? "Agent"}</Text>
-          <Text style={styles.identityMeta}>Code: {agentProfile?.id ?? "AGENT"}</Text>
-          <Text style={styles.identityMeta}>Branch: {agentBranchName ?? "Branch unavailable"}</Text>
+          <View style={styles.identityHeader}>
+            <View>
+              <Text style={styles.identityName}>{agentProfile?.full_name ?? "Agent"}</Text>
+              <Text style={styles.identityMeta}>Code: {agentProfile?.id ?? "AGENT"}</Text>
+              <Text style={styles.identityMeta}>Branch: {agentBranchName ?? "Branch unavailable"}</Text>
+            </View>
+            <View style={styles.identityIconWrap}>
+              <Ionicons color="#fffaf2" name="briefcase" size={22} />
+            </View>
+          </View>
           <View style={styles.identityStatusRow}>
             <StatusPill label={agentStatusDescriptor.label} tone={agentStatusDescriptor.tone} />
             <Text style={styles.identityMeta}>{pendingSyncCount} Pending Sync</Text>
+            <Text style={styles.identityMeta}>{queueStats.pendingApproval} Pending Approval</Text>
           </View>
         </View>
 
@@ -2163,6 +2643,16 @@ export default function App() {
             <MetricCard title="Pending Approvals" value={String(queueStats.pendingApproval)} />
             <MetricCard title="Pending Sync" value={String(pendingSyncCount)} />
           </View>
+        </Section>
+
+        <Section title="Performance">
+          <MiniBarChart
+            data={[
+              { label: "Collections", value: totalQueuedCollections, tone: "primary" },
+              { label: "Withdrawals", value: totalQueuedWithdrawals, tone: "accent" },
+              { label: "Pending", value: queueStats.pendingApproval * 1000, tone: "muted" },
+            ]}
+          />
         </Section>
 
         <Section title="Recent Activity">
@@ -2564,6 +3054,12 @@ export default function App() {
 
           <View style={styles.buttonStack}>
             <ActionButton
+              label={isAuthLoading ? "Refreshing..." : "Refresh Status"}
+              disabled={isAuthLoading}
+              onPress={() => void handleRefreshAssignedMembers()}
+              variant="secondary"
+            />
+            <ActionButton
               label={isSyncingQueue ? "Syncing..." : "Retry Failed"}
               disabled={isSyncingQueue}
               onPress={() => void handleSyncQueue("failed")}
@@ -2685,7 +3181,7 @@ export default function App() {
         <Section title="Live Session">
           <View style={styles.buttonStack}>
             <ActionButton
-              label={isAuthLoading ? "Refreshing..." : "Refresh Assigned Members"}
+              label={isAuthLoading ? "Refreshing..." : "Refresh Agent Data"}
               disabled={isAuthLoading}
               onPress={() => void handleRefreshAssignedMembers()}
               variant="secondary"
@@ -2737,9 +3233,16 @@ export default function App() {
     return (
       <>
         <View style={styles.identityCard}>
-          <Text style={styles.identityName}>{memberProfile?.full_name ?? "Member"}</Text>
-          <Text style={styles.identityMeta}>Code: {memberProfile?.id ?? "MEMBER"}</Text>
-          <Text style={styles.identityMeta}>Branch: {memberBranchName ?? "Unavailable"}</Text>
+          <View style={styles.identityHeader}>
+            <View>
+              <Text style={styles.identityName}>{memberProfile?.full_name ?? "Member"}</Text>
+              <Text style={styles.identityMeta}>Code: {memberProfile?.id ?? "MEMBER"}</Text>
+              <Text style={styles.identityMeta}>Branch: {memberBranchName ?? "Unavailable"}</Text>
+            </View>
+            <View style={styles.identityIconWrap}>
+              <Ionicons color="#fffaf2" name="person" size={22} />
+            </View>
+          </View>
         </View>
 
         <Section title="Balances">
@@ -2751,6 +3254,20 @@ export default function App() {
               value={formatCurrency(liveSavingsBalance + liveDepositBalance)}
             />
           </View>
+        </Section>
+
+        <Section title="Portfolio">
+          <MiniBarChart
+            data={[
+              { label: "Savings", value: liveSavingsBalance, tone: "primary" },
+              { label: "Deposit", value: liveDepositBalance, tone: "accent" },
+              {
+                label: "Available",
+                value: liveSavingsBalance + liveDepositBalance,
+                tone: "muted",
+              },
+            ]}
+          />
         </Section>
 
         <Section title="Loan">
@@ -2989,6 +3506,23 @@ export default function App() {
   }
 
   if (role === "agent") {
+    if (!uiReady) {
+      return (
+        <SafeAreaView style={styles.loadingSafe}>
+          <StatusBar style="dark" />
+          <View style={styles.loadingCard}>
+            <Image source={BRAND_SURFACE} style={styles.loadingBackdrop} />
+            <View style={styles.loadingBadge}>
+              <Ionicons color="#fffaf2" name="shield-checkmark" size={24} />
+            </View>
+            <Text style={styles.loadingTitle}>Preparing Credit Union Mobile</Text>
+            <Text style={styles.loadingMeta}>Loading fonts, icons, and branded assets…</Text>
+            <ActivityIndicator color="#155b49" />
+          </View>
+        </SafeAreaView>
+      );
+    }
+
     if (!isAgentSignedIn) {
       return renderAgentLogin();
     }
@@ -3028,6 +3562,23 @@ export default function App() {
         {agentScreen === "profile" ? renderAgentProfile() : null}
         {agentScreen === "more" ? renderAgentMore() : null}
       </AppShell>
+    );
+  }
+
+  if (!uiReady) {
+    return (
+      <SafeAreaView style={styles.loadingSafe}>
+        <StatusBar style="dark" />
+        <View style={styles.loadingCard}>
+          <Image source={BRAND_SURFACE} style={styles.loadingBackdrop} />
+          <View style={styles.loadingBadge}>
+            <Ionicons color="#fffaf2" name="shield-checkmark" size={24} />
+          </View>
+          <Text style={styles.loadingTitle}>Preparing Credit Union Mobile</Text>
+          <Text style={styles.loadingMeta}>Loading fonts, icons, and branded assets…</Text>
+          <ActivityIndicator color="#155b49" />
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -3071,138 +3622,243 @@ export default function App() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#efe7da",
+    backgroundColor: "#f4f7fb",
+  },
+  loadingSafe: {
+    flex: 1,
+    backgroundColor: "#eef3f9",
+    justifyContent: "center",
+    padding: 24,
+  },
+  loadingCard: {
+    borderRadius: 28,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#d7e0ea",
+    padding: 28,
+    alignItems: "center",
+    gap: 12,
+    overflow: "hidden",
+    shadowColor: "#0f172a",
+    shadowOpacity: 0.08,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 6,
+  },
+  loadingBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.03,
+    resizeMode: "stretch",
+  },
+  loadingBadge: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    backgroundColor: "#0f766e",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loadingTitle: {
+    color: "#0f172a",
+    fontSize: 22,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  loadingMeta: {
+    color: "#475569",
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 8,
   },
   shell: {
     flex: 1,
   },
   content: {
     paddingHorizontal: 18,
-    paddingVertical: 18,
+    paddingTop: 18,
+    paddingBottom: 28,
     gap: 18,
   },
   loginContainer: {
     padding: 20,
     gap: 18,
   },
+  loginHero: {
+    backgroundColor: "#0f172a",
+    borderRadius: 28,
+    padding: 22,
+    gap: 10,
+    overflow: "hidden",
+  },
+  loginHeroBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "#0f766e",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   loginEyebrow: {
-    color: "#7a6247",
+    color: "#8ad9d0",
     textTransform: "uppercase",
-    letterSpacing: 1.2,
+    letterSpacing: 1.4,
     fontSize: 11,
+    fontWeight: "700",
   },
   loginTitle: {
-    color: "#20160c",
+    color: "#f8fafc",
     fontSize: 30,
     fontWeight: "800",
+    lineHeight: 36,
   },
   loginSubtitle: {
-    color: "#5c4c38",
+    color: "#cbd5e1",
     lineHeight: 21,
   },
   rolePicker: {
     gap: 12,
   },
   roleCard: {
-    backgroundColor: "#fff9f2",
-    borderRadius: 22,
+    backgroundColor: "#ffffff",
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: "#decdb6",
-    padding: 16,
-    gap: 5,
+    borderColor: "#d7e0ea",
+    padding: 18,
+    gap: 6,
   },
   roleCardActive: {
-    backgroundColor: "#155b49",
-    borderColor: "#155b49",
+    backgroundColor: "#0f766e",
+    borderColor: "#0f766e",
   },
   roleTitle: {
-    color: "#20160c",
+    color: "#0f172a",
     fontSize: 18,
     fontWeight: "800",
   },
   roleTitleActive: {
-    color: "#fffefb",
+    color: "#f8fafc",
   },
   roleMeta: {
-    color: "#5c4c38",
+    color: "#475569",
     lineHeight: 19,
   },
   roleMetaActive: {
-    color: "#d7f1e5",
+    color: "#ccfbf1",
   },
   loginStatusRow: {
-    backgroundColor: "#f9f2e4",
-    borderRadius: 18,
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#decdb6",
+    borderColor: "#d7e0ea",
     padding: 14,
+    gap: 10,
+  },
+  loginStatusPillWrap: {
+    alignSelf: "flex-start",
+  },
+  loginStatusMetric: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
   loginStatusText: {
-    color: "#5c4c38",
-    fontWeight: "600",
+    color: "#334155",
+    fontWeight: "700",
   },
   statusStrip: {
-    backgroundColor: "#f8f1e5",
+    backgroundColor: "#e6f0ee",
     borderBottomWidth: 1,
-    borderBottomColor: "#dbc9ae",
+    borderBottomColor: "#c7d8d4",
     paddingHorizontal: 18,
-    paddingVertical: 10,
-    gap: 6,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  statusPrimary: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   statusMeta: {
-    color: "#5c4c38",
+    color: "#334155",
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
+  },
+  statusMetaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  statusChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderRadius: 999,
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  statusChipText: {
+    color: "#0f172a",
+    fontSize: 12,
+    fontWeight: "700",
   },
   topBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 18,
-    paddingVertical: 14,
+    paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#dfd1bc",
-    backgroundColor: "#fffaf2",
+    borderBottomColor: "#dbe4ee",
+    backgroundColor: "#f8fbff",
   },
   topBarTitle: {
-    color: "#20160c",
+    color: "#0f172a",
     fontSize: 20,
     fontWeight: "800",
   },
   topBarButton: {
-    minWidth: 56,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#d7e0ea",
+    alignItems: "center",
+    justifyContent: "center",
   },
   topBarButtonDisabled: {
-    opacity: 0.4,
+    opacity: 0.45,
   },
   topBarButtonText: {
-    color: "#155b49",
+    color: "#0f766e",
     fontWeight: "700",
   },
   topBarButtonTextMuted: {
-    color: "#b5a793",
+    color: "#94a3b8",
   },
   bottomNav: {
     flexDirection: "row",
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: "#dbc9ae",
-    backgroundColor: "#fffaf2",
+    borderTopColor: "#dbe4ee",
+    backgroundColor: "#f8fbff",
     gap: 8,
   },
   bottomNavItem: {
     flex: 1,
-    borderRadius: 16,
-    paddingVertical: 12,
+    borderRadius: 18,
+    paddingVertical: 10,
     alignItems: "center",
+    gap: 4,
   },
   bottomNavItemActive: {
-    backgroundColor: "#155b49",
+    backgroundColor: "#0f766e",
   },
   bottomNavLabel: {
-    color: "#6c5940",
+    color: "#475569",
+    fontSize: 12,
     fontWeight: "700",
   },
   bottomNavLabelActive: {
@@ -3216,8 +3872,19 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  sectionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  sectionAccent: {
+    width: 8,
+    height: 24,
+    borderRadius: 999,
+    backgroundColor: "#0f766e",
+  },
   sectionTitle: {
-    color: "#20160c",
+    color: "#0f172a",
     fontSize: 20,
     fontWeight: "800",
   },
@@ -3227,45 +3894,64 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
+  noticeRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
   noticeInfo: {
-    backgroundColor: "#fff8eb",
-    borderColor: "#e7d3ab",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
   },
   noticeSuccess: {
-    backgroundColor: "#e2f3ea",
-    borderColor: "#afd4be",
+    backgroundColor: "#ecfdf3",
+    borderColor: "#abefc6",
   },
   noticeError: {
-    backgroundColor: "#fdece7",
-    borderColor: "#efc0b4",
+    backgroundColor: "#fef3f2",
+    borderColor: "#fecdca",
   },
   noticeText: {
     lineHeight: 20,
+    flex: 1,
   },
   noticeTextInfo: {
-    color: "#765722",
+    color: "#1d4ed8",
   },
   noticeTextSuccess: {
-    color: "#18533d",
+    color: "#027a48",
   },
   noticeTextError: {
-    color: "#8b3022",
+    color: "#b42318",
   },
   identityCard: {
-    backgroundColor: "#fffaf2",
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: "#decdb6",
-    padding: 18,
-    gap: 6,
+    backgroundColor: "#0f172a",
+    borderRadius: 26,
+    padding: 20,
+    gap: 12,
+    overflow: "hidden",
+  },
+  identityHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 16,
+  },
+  identityIconWrap: {
+    width: 50,
+    height: 50,
+    borderRadius: 18,
+    backgroundColor: "#0f766e",
+    alignItems: "center",
+    justifyContent: "center",
   },
   identityName: {
-    color: "#20160c",
+    color: "#f8fafc",
     fontSize: 24,
     fontWeight: "800",
   },
   identityMeta: {
-    color: "#5c4c38",
+    color: "#cbd5e1",
     fontWeight: "600",
   },
   identityStatusRow: {
@@ -3273,103 +3959,199 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 10,
     alignItems: "center",
-    paddingTop: 8,
+    paddingTop: 2,
   },
   metricGrid: {
     gap: 12,
   },
   metricCard: {
-    backgroundColor: "#fffaf2",
-    borderRadius: 20,
+    backgroundColor: "#ffffff",
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: "#decdb6",
+    borderColor: "#d7e0ea",
     padding: 16,
-    gap: 4,
+    gap: 6,
+    shadowColor: "#0f172a",
+    shadowOpacity: 0.05,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
+  },
+  metricHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  metricIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    backgroundColor: "#e2e8f0",
+    alignItems: "center",
+    justifyContent: "center",
   },
   metricLabel: {
-    color: "#7a6247",
+    color: "#64748b",
     fontSize: 12,
     textTransform: "uppercase",
-    letterSpacing: 0.8,
+    letterSpacing: 0.9,
+    fontWeight: "700",
   },
   metricValue: {
-    color: "#20160c",
+    color: "#0f172a",
     fontSize: 26,
     fontWeight: "800",
   },
   metricHelper: {
-    color: "#5c4c38",
+    color: "#64748b",
+  },
+  chartCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "#d7e0ea",
+    padding: 16,
+    gap: 12,
+  },
+  chartHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  chartTitle: {
+    color: "#0f172a",
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  chartBars: {
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+  },
+  chartBarColumn: {
+    flex: 1,
+    alignItems: "center",
+    gap: 8,
+  },
+  chartTrack: {
+    width: "100%",
+    height: 120,
+    borderRadius: 18,
+    backgroundColor: "#edf2f7",
+    justifyContent: "flex-end",
+    padding: 8,
+  },
+  chartBarFill: {
+    width: "100%",
+    borderRadius: 12,
+    minHeight: 12,
+  },
+  chartBarPrimary: {
+    backgroundColor: "#0f766e",
+  },
+  chartBarAccent: {
+    backgroundColor: "#0891b2",
+  },
+  chartBarMuted: {
+    backgroundColor: "#94a3b8",
+  },
+  chartValue: {
+    color: "#0f172a",
+    fontSize: 11,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  chartLabel: {
+    color: "#64748b",
+    fontSize: 11,
+    textAlign: "center",
   },
   tileGrid: {
     gap: 12,
   },
   actionTile: {
-    backgroundColor: "#fffaf2",
-    borderRadius: 20,
+    backgroundColor: "#ffffff",
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: "#decdb6",
+    borderColor: "#d7e0ea",
     padding: 16,
-    gap: 5,
+    gap: 8,
+  },
+  actionTileHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  actionTileIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    backgroundColor: "#0f172a",
+    alignItems: "center",
+    justifyContent: "center",
   },
   actionTileTitle: {
-    color: "#20160c",
+    color: "#0f172a",
     fontWeight: "800",
     fontSize: 17,
   },
   actionTileHelper: {
-    color: "#5c4c38",
+    color: "#64748b",
     lineHeight: 19,
   },
   formCard: {
-    backgroundColor: "#fffaf2",
-    borderRadius: 20,
+    backgroundColor: "#ffffff",
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: "#decdb6",
+    borderColor: "#d7e0ea",
     padding: 16,
     gap: 10,
   },
   queueHeaderCard: {
-    backgroundColor: "#fffaf2",
-    borderRadius: 20,
+    backgroundColor: "#ffffff",
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: "#decdb6",
+    borderColor: "#d7e0ea",
     padding: 16,
     gap: 8,
   },
   formLabel: {
-    color: "#7a6247",
+    color: "#64748b",
     fontSize: 12,
     textTransform: "uppercase",
-    letterSpacing: 0.8,
+    letterSpacing: 0.9,
+    fontWeight: "700",
   },
   formValue: {
-    color: "#20160c",
+    color: "#0f172a",
     fontSize: 18,
     fontWeight: "800",
   },
   formHelper: {
-    color: "#5c4c38",
+    color: "#64748b",
     lineHeight: 19,
   },
   flowStep: {
-    color: "#155b49",
+    color: "#0f766e",
     fontWeight: "800",
   },
   input: {
     borderWidth: 1,
-    borderColor: "#d6c5a9",
-    borderRadius: 16,
+    borderColor: "#d7e0ea",
+    borderRadius: 18,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    backgroundColor: "#ffffff",
+    paddingVertical: 13,
+    backgroundColor: "#f8fbff",
+    color: "#0f172a",
   },
   multilineInput: {
     minHeight: 90,
     textAlignVertical: "top",
   },
   inlineField: {
-    borderRadius: 16,
-    backgroundColor: "#f3ead9",
+    borderRadius: 18,
+    backgroundColor: "#eef3f9",
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
@@ -3377,26 +4159,26 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   primaryButton: {
-    borderRadius: 16,
-    backgroundColor: "#155b49",
+    borderRadius: 18,
+    backgroundColor: "#0f766e",
     alignItems: "center",
-    paddingVertical: 14,
+    paddingVertical: 15,
     paddingHorizontal: 16,
   },
   secondaryButton: {
-    borderRadius: 16,
+    borderRadius: 18,
     backgroundColor: "#ffffff",
     borderWidth: 1,
-    borderColor: "#d6c5a9",
+    borderColor: "#d7e0ea",
     alignItems: "center",
-    paddingVertical: 14,
+    paddingVertical: 15,
     paddingHorizontal: 16,
   },
   ghostButton: {
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    backgroundColor: "#f3ead9",
+    backgroundColor: "#eef3f9",
   },
   buttonDisabled: {
     opacity: 0.6,
@@ -3406,40 +4188,40 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   secondaryButtonText: {
-    color: "#20160c",
+    color: "#0f172a",
     fontWeight: "800",
   },
   ghostButtonText: {
-    color: "#155b49",
+    color: "#0f766e",
     fontWeight: "800",
   },
   segmentRow: {
     gap: 10,
   },
   segmentCard: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "#f8fbff",
     borderWidth: 1,
-    borderColor: "#d6c5a9",
+    borderColor: "#d7e0ea",
     borderRadius: 18,
     padding: 14,
     gap: 4,
   },
   segmentCardActive: {
-    backgroundColor: "#edf7f3",
-    borderColor: "#155b49",
+    backgroundColor: "#ecfeff",
+    borderColor: "#0f766e",
   },
   segmentCardTitle: {
-    color: "#20160c",
+    color: "#0f172a",
     fontWeight: "800",
   },
   segmentCardMeta: {
-    color: "#5c4c38",
+    color: "#64748b",
   },
   listRow: {
-    backgroundColor: "#fffaf2",
-    borderRadius: 20,
+    backgroundColor: "#ffffff",
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: "#decdb6",
+    borderColor: "#d7e0ea",
     padding: 16,
     flexDirection: "row",
     alignItems: "center",
@@ -3447,27 +4229,27 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   optionRow: {
-    backgroundColor: "#ffffff",
-    borderRadius: 16,
+    backgroundColor: "#f8fbff",
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#d6c5a9",
+    borderColor: "#d7e0ea",
     padding: 14,
   },
   selectedRow: {
-    borderColor: "#155b49",
-    backgroundColor: "#edf7f3",
+    borderColor: "#0f766e",
+    backgroundColor: "#ecfeff",
   },
   listContent: {
     flex: 1,
-    gap: 2,
+    gap: 4,
   },
   listTitle: {
-    color: "#20160c",
+    color: "#0f172a",
     fontSize: 16,
     fontWeight: "800",
   },
   listMeta: {
-    color: "#5c4c38",
+    color: "#64748b",
     lineHeight: 19,
   },
 });

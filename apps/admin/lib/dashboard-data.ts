@@ -2,6 +2,7 @@ import {
   calculateMonthlyInterest,
   type AdminDashboardSummary,
   type AgentPerformance,
+  type BranchSummary,
   type BranchDashboardSummary,
   type LoanStatus,
   type TransactionRequest,
@@ -115,6 +116,14 @@ export type ReportsPageData = {
   branches: ReportBranchOption[];
   rows: ReportJobRow[];
   currentBranchLabel: string;
+  isLive: boolean;
+};
+
+export type BranchDetailPageData = {
+  profile: AdminProfile;
+  branch: BranchSummary;
+  summary: BranchDashboardSummary;
+  alerts: TransactionRequest[];
   isLive: boolean;
 };
 
@@ -503,28 +512,10 @@ export async function getAdminDashboardData() {
   };
 }
 
-export async function getBranchDashboardData() {
-  if (!hasSupabaseEnv()) {
-    return {
-      profile: emptyProfile("branch_manager"),
-      summary: emptyBranchSummary(),
-      alerts: [],
-      isLive: false,
-    };
-  }
-
-  const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
-  const branchId = profile.branch_id;
-
-  if (!branchId) {
-    return {
-      profile,
-      summary: emptyBranchSummary("unassigned", "Unassigned branch"),
-      alerts: [],
-      isLive: true,
-    };
-  }
-
+async function getBranchDashboardSnapshot(
+  supabase: Awaited<ReturnType<typeof requireRole>>["supabase"],
+  branchId: string,
+) {
   const today = currentDateIso();
   const startOfMonth = firstDayOfCurrentMonth();
 
@@ -577,13 +568,11 @@ export async function getBranchDashboardData() {
 
   if (!row) {
     return {
-      profile,
       summary: emptyBranchSummary(
         branchId,
         ((branchData as BranchRow | null)?.name ?? "Branch"),
       ),
       alerts: [],
-      isLive: true,
     };
   }
 
@@ -642,9 +631,95 @@ export async function getBranchDashboardData() {
   };
 
   return {
-    profile,
     summary,
     alerts: await getPendingTransactions(supabase, branchId),
+  };
+}
+
+export async function getBranchDashboardData() {
+  if (!hasSupabaseEnv()) {
+    return {
+      profile: emptyProfile("branch_manager"),
+      summary: emptyBranchSummary(),
+      alerts: [],
+      isLive: false,
+    };
+  }
+
+  const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
+  const branchId = profile.branch_id;
+
+  if (!branchId) {
+    return {
+      profile,
+      summary: emptyBranchSummary("unassigned", "Unassigned branch"),
+      alerts: [],
+      isLive: true,
+    };
+  }
+
+  const snapshot = await getBranchDashboardSnapshot(supabase, branchId);
+
+  return {
+    profile,
+    ...snapshot,
+    isLive: true,
+  };
+}
+
+export async function getBranchDetailPageData(branchId: string): Promise<BranchDetailPageData> {
+  if (!hasSupabaseEnv()) {
+    const summary = emptyBranchSummary(branchId, "Branch");
+
+    return {
+      profile: emptyProfile("admin"),
+      branch: {
+        id: branchId,
+        name: summary.branchName,
+        managerName: "Unassigned",
+        memberCount: summary.totalMembers,
+        agentCount: summary.activeAgents,
+        totalSavings: summary.totalSavings,
+        totalDeposits: summary.totalDeposits,
+        totalLoans: summary.totalLoans,
+        outstandingPrincipal: summary.outstandingPrincipal,
+        pendingApprovals: summary.pendingApprovals,
+        cashVariance: summary.cashVariance,
+      },
+      summary,
+      alerts: [],
+      isLive: false,
+    };
+  }
+
+  const { supabase, profile } = await requireRole(["admin"]);
+
+  const [{ branches, managerMap }, snapshot] = await Promise.all([
+    getBranchMappings(supabase),
+    getBranchDashboardSnapshot(supabase, branchId),
+  ]);
+
+  const branchMeta = branches.find((branch) => branch.id === branchId);
+  const branch: BranchSummary = {
+    id: snapshot.summary.branchId,
+    name: branchMeta?.name ?? snapshot.summary.branchName,
+    managerName:
+      managerMap.get(branchMeta?.manager_profile_id ?? "") ?? "Unassigned",
+    memberCount: snapshot.summary.totalMembers,
+    agentCount: snapshot.summary.activeAgents,
+    totalSavings: snapshot.summary.totalSavings,
+    totalDeposits: snapshot.summary.totalDeposits,
+    totalLoans: snapshot.summary.totalLoans,
+    outstandingPrincipal: snapshot.summary.outstandingPrincipal,
+    pendingApprovals: snapshot.summary.pendingApprovals,
+    cashVariance: snapshot.summary.cashVariance,
+  };
+
+  return {
+    profile,
+    branch,
+    summary: snapshot.summary,
+    alerts: snapshot.alerts,
     isLive: true,
   };
 }

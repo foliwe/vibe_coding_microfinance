@@ -45,7 +45,11 @@ export default async function BranchesPage() {
           <tbody>
             {summary.branchPerformance.map((branch) => (
               <tr key={branch.id}>
-                <td>{branch.name}</td>
+                <td>
+                  <Link className="font-semibold underline-offset-4 hover:underline" href={`/branches/${branch.id}`}>
+                    {branch.name}
+                  </Link>
+                </td>
                 <td>{branch.managerName}</td>
                 <td>{branch.memberCount}</td>
                 <td>{branch.agentCount}</td>

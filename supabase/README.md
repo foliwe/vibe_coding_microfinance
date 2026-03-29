@@ -17,3 +17,4 @@ This folder contains the schema-first backend for the credit union app.
 - `create_transaction_request` validates agent scope, assignment, idempotency, and audit logging
 - `approve_transaction_request` posts journals + entries, updates cash drawers, and writes approval/audit rows
 - `reject_transaction_request` preserves history without posting ledger entries
+- `create_admin_transaction` allows admins and branch managers to create branch-office deposits and withdrawals that auto-approve immediately against a selected agent cash drawer

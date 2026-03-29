@@ -1,33 +1,45 @@
-import { ReactNode } from "react";
+import { cn } from "../lib/utils";
+import { Badge } from "./ui/badge";
+import { Card, CardContent } from "./ui/card";
 
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
-
-interface StatCardProps {
+type StatCardProps = {
   label: string;
-  value: string;
-  hint?: string;
   tone?: "default" | "success" | "warning";
-  icon?: ReactNode;
-}
-
-const toneStyles: Record<NonNullable<StatCardProps["tone"]>, string> = {
-  default: "",
-  success: "bg-emerald-50/80",
-  warning: "bg-amber-50/80",
+  value: string;
 };
 
-export function StatCard({ label, value, hint, tone = "default", icon }: StatCardProps) {
+const toneClasses = {
+  default: "from-card via-card to-muted/30",
+  success: "from-emerald-500/8 via-card to-card",
+  warning: "from-amber-500/12 via-card to-card",
+} as const;
+
+const toneLabels = {
+  default: "Live",
+  success: "Healthy",
+  warning: "Attention",
+} as const;
+
+export function StatCard({ label, tone = "default", value }: StatCardProps) {
   return (
-    <Card className={cn("stat-card border border-[#735d4126] shadow-[0_10px_28px_rgba(35,24,10,0.05)]", toneStyles[tone])}>
-      <CardHeader className="stat-row space-y-0 p-5 pb-2">
-        <span className="muted text-sm">{label}</span>
-        {icon ? <Badge variant="outline">{icon}</Badge> : null}
-      </CardHeader>
-      <CardContent className="p-5 pt-1">
-        <strong className="stat-value text-3xl font-semibold tracking-tight">{value}</strong>
-        {hint ? <p className="muted text-sm">{hint}</p> : null}
+    <Card
+      className={cn(
+        "overflow-hidden border border-border/70 bg-linear-to-br shadow-sm",
+        toneClasses[tone]
+      )}
+    >
+      <CardContent className="space-y-4 py-5">
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            {label}
+          </p>
+          <Badge variant={tone === "default" ? "outline" : "secondary"}>
+            {toneLabels[tone]}
+          </Badge>
+        </div>
+        <p className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+          {value}
+        </p>
       </CardContent>
     </Card>
   );

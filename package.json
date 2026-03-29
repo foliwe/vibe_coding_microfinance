@@ -11,10 +11,13 @@
     "dev:mobile": "npm run dev --workspace @credit-union/mobile",
     "create:test-admin": "node scripts/create-test-admin.mjs",
     "create:test-users": "node scripts/bootstrap-test-users.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:admin": "playwright test tests/e2e/admin-panel.spec.ts",
     "lint": "npm run lint --workspaces --if-present",
     "test": "node --test tests/**/*.test.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
