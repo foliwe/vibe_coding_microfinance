@@ -1,34 +1,16 @@
 import { AdminShell } from "../../components/admin-shell";
 import { SectionCard } from "../../components/section-card";
+import { getAuditPageData } from "../../lib/dashboard-data";
 
-const auditRows = [
-  {
-    time: "27 Mar 09:12",
-    actor: "Rose M.",
-    action: "Approved transaction",
-    reference: "TXN-00045",
-    result: "Success",
-  },
-  {
-    time: "27 Mar 08:53",
-    actor: "Amina",
-    action: "Submitted deposit",
-    reference: "TXN-00045",
-    result: "Success",
-  },
-  {
-    time: "27 Mar 08:40",
-    actor: "Admin",
-    action: "Created branch manager",
-    reference: "USR-0022",
-    result: "Success",
-  },
-];
+export default async function AuditPage() {
+  const { isLive, profile, rows } = await getAuditPageData();
 
-export default function AuditPage() {
   return (
     <AdminShell
-      role="admin"
+      currentBranchLabel={profile.role === "admin" ? "All branches" : (profile.branch_id ?? "Branch")}
+      currentUserName={profile.full_name}
+      role={profile.role === "admin" ? "admin" : "branch_manager"}
+      statusBadge={isLive ? "Live Supabase" : "Supabase setup needed"}
       title="Audit Log"
       subtitle="Immutable operational trail for approvals, member creation, loans, device actions, and high-risk events."
     >
@@ -44,7 +26,7 @@ export default function AuditPage() {
             </tr>
           </thead>
           <tbody>
-            {auditRows.map((row) => (
+            {rows.map((row) => (
               <tr key={`${row.time}-${row.reference}`}>
                 <td>{row.time}</td>
                 <td>{row.actor}</td>
@@ -53,6 +35,13 @@ export default function AuditPage() {
                 <td>{row.result}</td>
               </tr>
             ))}
+            {rows.length === 0 ? (
+              <tr>
+                <td className="muted" colSpan={5}>
+                  No live audit events were found yet.
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </SectionCard>

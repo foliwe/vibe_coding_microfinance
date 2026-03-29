@@ -13,4 +13,7 @@ This folder contains the schema-first backend for the credit union app.
 - keep all sensitive financial writes behind RPCs or Edge Functions
 - use the ledger tables as the balance source of truth
 - add tighter RLS policies as auth claims and helper functions are finalized
-- extend the approval RPC to create ledger journals and entries during posting
+- transaction workflow RPCs now live in `migrations/0003_transaction_workflows.sql`
+- `create_transaction_request` validates agent scope, assignment, idempotency, and audit logging
+- `approve_transaction_request` posts journals + entries, updates cash drawers, and writes approval/audit rows
+- `reject_transaction_request` preserves history without posting ledger entries

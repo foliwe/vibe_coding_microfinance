@@ -36,3 +36,13 @@ npm run create:test-admin
 
 - the schema in [`supabase/migrations/0001_initial_schema.sql`](/Users/foliwefossung/Vibe_code/supabase/migrations/0001_initial_schema.sql) must already be applied
 - the service role key must be available in your shell environment
+
+## Next step
+
+Once the admin exists, bootstrap a full branch test flow:
+
+```bash
+npm run create:test-users
+```
+
+That provisions a branch manager, an agent, a member, an active assignment, and two member accounts so the admin and mobile apps can exercise live transaction approval end to end.

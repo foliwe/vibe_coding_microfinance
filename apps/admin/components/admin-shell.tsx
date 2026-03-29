@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ReactNode } from "react";
 
 import { signOutAction } from "../app/actions";
-import { sidebarItems } from "../lib/navigation";
+import { getSidebarItems } from "../lib/navigation";
 
 interface AdminShellProps {
   title: string;
@@ -23,6 +23,8 @@ export function AdminShell({
   statusBadge,
   children,
 }: AdminShellProps) {
+  const sidebarItems = getSidebarItems(role);
+
   return (
     <div className="shell">
       <aside className="sidebar">

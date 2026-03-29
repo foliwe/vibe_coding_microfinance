@@ -15,6 +15,7 @@ Greenfield monorepo scaffold for a cash-based microfinance credit union platform
 3. Run the admin shell with `npm run dev:admin`.
 4. Run the mobile shell with `npm run dev:mobile`.
 5. Apply the Supabase SQL in `supabase/migrations` before wiring live data.
+6. Bootstrap a live test branch flow with `npm run create:test-users`.
 
 ## Current status
 
@@ -25,4 +26,4 @@ This repository is intentionally scaffold-first:
 - backend schema and SQL workflows are laid out for implementation
 - offline queue and approval flow primitives are documented and stubbed in code
 
-The next step after dependency install is connecting the apps to live Supabase data and replacing mock fixtures with authenticated queries/RPCs.
+The next step after dependency install is connecting the apps to live Supabase data and replacing mock fixtures with authenticated queries/RPCs. Use `npm run create:test-users` to provision a branch manager, agent, member, assignment, and member accounts for end-to-end testing.

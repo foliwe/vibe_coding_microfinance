@@ -1,16 +1,33 @@
-import { adminDashboard } from "@credit-union/shared";
+import Link from "next/link";
 
 import { AdminShell } from "../../components/admin-shell";
 import { SectionCard } from "../../components/section-card";
+import { getAdminDashboardData } from "../../lib/dashboard-data";
 import { prettyCurrency } from "../../lib/format";
 
-export default function BranchesPage() {
+export default async function BranchesPage() {
+  const { isLive, profile, summary } = await getAdminDashboardData();
+
   return (
     <AdminShell
+      currentBranchLabel="All branches"
+      currentUserName={profile.full_name}
       role="admin"
+      statusBadge={isLive ? "Live Supabase" : "Supabase setup needed"}
       title="Branches"
       subtitle="Institution branches with consolidated branch totals and manager ownership."
     >
+      <SectionCard title="Branch Actions" description="Create new branches or review existing branch coverage.">
+        <div className="actions">
+          <Link className="button" href="/branches/new">
+            Create Branch
+          </Link>
+          <Link className="button-secondary" href="/users/new">
+            Create Manager
+          </Link>
+        </div>
+      </SectionCard>
+
       <SectionCard title="Branch Directory" description="Each row includes savings, deposits, loans, and pending approvals for that branch.">
         <table className="table">
           <thead>
@@ -26,7 +43,7 @@ export default function BranchesPage() {
             </tr>
           </thead>
           <tbody>
-            {adminDashboard.branchPerformance.map((branch) => (
+            {summary.branchPerformance.map((branch) => (
               <tr key={branch.id}>
                 <td>{branch.name}</td>
                 <td>{branch.managerName}</td>
@@ -38,6 +55,13 @@ export default function BranchesPage() {
                 <td>{branch.pendingApprovals}</td>
               </tr>
             ))}
+            {summary.branchPerformance.length === 0 ? (
+              <tr>
+                <td className="muted" colSpan={8}>
+                  No live branches were found yet.
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </SectionCard>

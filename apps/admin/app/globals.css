@@ -416,6 +416,25 @@
   margin: 0;
 }
 
+.notice {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid transparent;
+}
+
+.notice-success {
+  background: #e3f4ee;
+  border-color: #b6dfd2;
+  color: #145443;
+}
+
+.notice-error {
+  background: #fff1ee;
+  border-color: #efc5bc;
+  color: #8a2f1f;
+}
+
 .button,
 .button-secondary {
   padding: 12px 16px;
@@ -425,14 +444,24 @@
 }
 
 .button {
-  background: var(--accent);
-  color: white;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
 }
 
 .button-secondary {
   background: white;
   border-color: var(--line);
   color: var(--text);
+}
+
+.table-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.table-button {
+  padding: 8px 12px;
 }
 
 .list {

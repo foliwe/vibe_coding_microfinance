@@ -1,13 +1,17 @@
-import { activeLoan } from "@credit-union/shared";
-
 import { AdminShell } from "../../components/admin-shell";
 import { SectionCard } from "../../components/section-card";
+import { getLoansPageData } from "../../lib/dashboard-data";
 import { prettyCurrency } from "../../lib/format";
 
-export default function LoansPage() {
+export default async function LoansPage() {
+  const { isLive, loans, profile } = await getLoansPageData();
+
   return (
     <AdminShell
-      role="branch_manager"
+      currentBranchLabel={profile.branch_id ?? "Branch"}
+      currentUserName={profile.full_name}
+      role={profile.role === "admin" ? "admin" : "branch_manager"}
+      statusBadge={isLive ? "Live Supabase" : "Supabase setup needed"}
       title="Loans"
       subtitle="Loan review, disbursement preparation, and principal/interest monitoring."
     >
@@ -25,17 +29,26 @@ export default function LoansPage() {
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td>{activeLoan.id.toUpperCase()}</td>
-              <td>{activeLoan.memberName}</td>
-              <td>{prettyCurrency(activeLoan.approvedPrincipal)}</td>
-              <td>{prettyCurrency(activeLoan.remainingPrincipal)}</td>
-              <td>{activeLoan.monthlyInterestRate * 100}%</td>
-              <td>{prettyCurrency(activeLoan.nextInterestDue)}</td>
-              <td>
-                <span className="chip">{activeLoan.status}</span>
-              </td>
-            </tr>
+            {loans.map((loan) => (
+              <tr key={loan.id}>
+                <td>{loan.id.toUpperCase()}</td>
+                <td>{loan.memberName}</td>
+                <td>{prettyCurrency(loan.approvedPrincipal)}</td>
+                <td>{prettyCurrency(loan.remainingPrincipal)}</td>
+                <td>{loan.monthlyInterestRate * 100}%</td>
+                <td>{prettyCurrency(loan.nextInterestDue)}</td>
+                <td>
+                  <span className="chip">{loan.status}</span>
+                </td>
+              </tr>
+            ))}
+            {loans.length === 0 ? (
+              <tr>
+                <td className="muted" colSpan={7}>
+                  No live loans were found yet.
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </SectionCard>

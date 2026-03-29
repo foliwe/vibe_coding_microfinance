@@ -42,6 +42,14 @@ const trendChartConfig = {
   loans: { label: "Loans", color: "var(--chart-3)" },
 } satisfies ChartConfig;
 
+function isBranchChartKey(value: string): value is keyof typeof branchChartConfig {
+  return value in branchChartConfig;
+}
+
+function isTrendChartKey(value: string): value is keyof typeof trendChartConfig {
+  return value in trendChartConfig;
+}
+
 function currencyCompact(value: number) {
   return new Intl.NumberFormat("en-US", {
     notation: "compact",
@@ -71,8 +79,12 @@ function BranchTooltip({
         )
         .map((item) => ({
           key: item.dataKey,
-          label: branchChartConfig[item.dataKey]?.label ?? item.dataKey,
-          color: branchChartConfig[item.dataKey]?.color ?? "var(--foreground)",
+          label: isBranchChartKey(item.dataKey)
+            ? branchChartConfig[item.dataKey].label
+            : item.dataKey,
+          color: isBranchChartKey(item.dataKey)
+            ? branchChartConfig[item.dataKey].color
+            : "var(--foreground)",
           value: currencyCompact(item.value),
         }))}
     />
@@ -101,8 +113,12 @@ function TrendTooltip({
         )
         .map((item) => ({
           key: item.dataKey,
-          label: trendChartConfig[item.dataKey]?.label ?? item.dataKey,
-          color: trendChartConfig[item.dataKey]?.color ?? "var(--foreground)",
+          label: isTrendChartKey(item.dataKey)
+            ? trendChartConfig[item.dataKey].label
+            : item.dataKey,
+          color: isTrendChartKey(item.dataKey)
+            ? trendChartConfig[item.dataKey].color
+            : "var(--foreground)",
           value: currencyCompact(item.value),
         }))}
     />

@@ -1,13 +1,17 @@
-import { branchDashboard } from "@credit-union/shared";
-
 import { AdminShell } from "../../components/admin-shell";
 import { SectionCard } from "../../components/section-card";
+import { getBranchDashboardData } from "../../lib/dashboard-data";
 import { prettyCurrency } from "../../lib/format";
 
-export default function ReconciliationPage() {
+export default async function ReconciliationPage() {
+  const { isLive, profile, summary } = await getBranchDashboardData();
+
   return (
     <AdminShell
-      role="branch_manager"
+      currentBranchLabel={summary.branchName}
+      currentUserName={profile.full_name}
+      role={profile.role === "admin" ? "admin" : "branch_manager"}
+      statusBadge={isLive ? "Live Supabase" : "Supabase setup needed"}
       title="Reconciliation"
       subtitle="Daily cash drawer review and variance tracking for the branch."
     >
@@ -22,15 +26,15 @@ export default function ReconciliationPage() {
           <tbody>
             <tr>
               <td>Expected Cash Today</td>
-              <td>{prettyCurrency(branchDashboard.expectedCashToday)}</td>
+              <td>{prettyCurrency(summary.expectedCashToday)}</td>
             </tr>
             <tr>
               <td>Cash Variance</td>
-              <td>{prettyCurrency(branchDashboard.cashVariance)}</td>
+              <td>{prettyCurrency(summary.cashVariance)}</td>
             </tr>
             <tr>
               <td>Pending Approvals</td>
-              <td>{branchDashboard.pendingApprovals}</td>
+              <td>{summary.pendingApprovals}</td>
             </tr>
           </tbody>
         </table>

@@ -1,70 +1,153 @@
+import { createMemberAction } from "../../actions";
 import { AdminShell } from "../../../components/admin-shell";
 import { SectionCard } from "../../../components/section-card";
+import { getOnboardingPageContext } from "../../../lib/onboarding-data";
 
-function Field({
-  label,
-  placeholder,
-  as = "input",
+function Notice({
+  detail,
+  result,
 }: {
-  label: string;
-  placeholder: string;
-  as?: "input" | "textarea" | "select";
+  detail?: string;
+  result?: string;
 }) {
+  if (!result) {
+    return null;
+  }
+
   return (
-    <label className="field">
-      <span>{label}</span>
-      {as === "textarea" ? (
-        <textarea placeholder={placeholder} />
-      ) : as === "select" ? (
-        <select defaultValue="">
-          <option value="" disabled>
-            {placeholder}
-          </option>
-          <option>Bamenda Central</option>
-          <option>Douala North</option>
-          <option>Buea Main</option>
-        </select>
-      ) : (
-        <input placeholder={placeholder} />
-      )}
-    </label>
+    <p className={`notice ${result === "success" ? "notice-success" : "notice-error"}`}>
+      {detail ?? (result === "success" ? "Saved successfully." : "Something went wrong.")}
+    </p>
   );
 }
 
-export default function CreateMemberPage() {
+export default async function CreateMemberPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ result?: string; detail?: string }>;
+}) {
+  const params = await searchParams;
+  const { agents, branches, currentBranchLabel, isLive, profile } =
+    await getOnboardingPageContext(["admin", "branch_manager"]);
+  const role = profile.role === "admin" ? "admin" : "branch_manager";
+
   return (
     <AdminShell
-      role="branch_manager"
+      currentBranchLabel={currentBranchLabel}
+      currentUserName={profile.full_name}
+      role={role}
+      statusBadge={isLive ? "Live Supabase" : "Supabase setup needed"}
       title="Create Member"
       subtitle="Onboard a new member with branch assignment, agent ownership, accounts, and first-login credentials."
     >
-      <SectionCard title="Member Onboarding Form" description="This form follows the agreed financial-app requirements, including identity, branch, next-of-kin, and account setup fields.">
-        <div className="form-grid">
-          <Field label="Full Name" placeholder="John Nkem" />
-          <Field label="Date Of Birth" placeholder="1990-08-24" />
-          <Field label="Gender" placeholder="Select gender" as="select" />
-          <Field label="Phone Number" placeholder="+2376..." />
-          <Field label="Email" placeholder="Optional email address" />
-          <Field label="Occupation" placeholder="Trader" />
-          <Field label="ID Type" placeholder="National ID" />
-          <Field label="ID Number" placeholder="CM123456789" />
-          <Field label="Branch" placeholder="Select branch" as="select" />
-          <Field label="Assigned Agent" placeholder="Select agent" as="select" />
-          <Field label="Next Of Kin Name" placeholder="Jane Nkem" />
-          <Field label="Next Of Kin Phone" placeholder="+2376..." />
-          <Field label="Savings Account Number" placeholder="Auto-generate or type" />
-          <Field label="Deposit Account Number" placeholder="Auto-generate or type" />
-          <Field label="Residential Address" placeholder="Mile 4 Nkwen" as="textarea" />
-          <Field label="Risk Notes" placeholder="Optional internal notes" as="textarea" />
-        </div>
-        <div className="actions">
-          <button className="button" type="button">
-            Save Member
-          </button>
-          <button className="button-secondary" type="button">
-            Save And Add Another
-          </button>
-        </div>
+      <SectionCard
+        title="Member Onboarding Form"
+        description="This form now creates the Auth user, profile, member registry row, agent assignment, and savings and deposit accounts."
+      >
+        <Notice detail={params?.detail} result={params?.result} />
+        <form action={createMemberAction}>
+          <div className="form-grid">
+            <label className="field">
+              <span>Full Name</span>
+              <input name="fullName" placeholder="John Nkem" required />
+            </label>
+            <label className="field">
+              <span>Login Email</span>
+              <input name="email" placeholder="member@example.com" required type="email" />
+            </label>
+            <label className="field">
+              <span>Temporary Password</span>
+              <input minLength={8} name="password" placeholder="Member123456!" required />
+            </label>
+            <label className="field">
+              <span>Phone Number</span>
+              <input name="phone" placeholder="+2376..." required />
+            </label>
+            <label className="field">
+              <span>Date Of Birth</span>
+              <input name="dateOfBirth" placeholder="1990-08-24" type="date" />
+            </label>
+            <label className="field">
+              <span>Gender</span>
+              <select defaultValue="" name="gender">
+                <option value="">Select gender</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Occupation</span>
+              <input name="occupation" placeholder="Trader" />
+            </label>
+            <label className="field">
+              <span>ID Type</span>
+              <input name="idType" placeholder="National ID" />
+            </label>
+            <label className="field">
+              <span>ID Number</span>
+              <input name="idNumber" placeholder="CM123456789" />
+            </label>
+            <label className="field">
+              <span>Branch</span>
+              <select
+                defaultValue={profile.role === "branch_manager" ? profile.branch_id ?? "" : ""}
+                name="branchId"
+                required
+              >
+                <option value="" disabled>
+                  Select branch
+                </option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name} ({branch.code})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Assigned Agent</span>
+              <select defaultValue="" name="assignedAgentId" required>
+                <option value="" disabled>
+                  Select agent
+                </option>
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.fullName} · {agent.branchName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Next Of Kin Name</span>
+              <input name="nextOfKinName" placeholder="Jane Nkem" />
+            </label>
+            <label className="field">
+              <span>Next Of Kin Phone</span>
+              <input name="nextOfKinPhone" placeholder="+2376..." />
+            </label>
+            <label className="field">
+              <span>Next Of Kin Address</span>
+              <input name="nextOfKinAddress" placeholder="Mile 4 Nkwen" />
+            </label>
+            <label className="field">
+              <span>Savings Account Number</span>
+              <input name="savingsAccountNumber" placeholder="Auto-generate if left blank" />
+            </label>
+            <label className="field">
+              <span>Deposit Account Number</span>
+              <input name="depositAccountNumber" placeholder="Auto-generate if left blank" />
+            </label>
+            <label className="field">
+              <span>Residential Address</span>
+              <textarea name="residentialAddress" placeholder="Mile 4 Nkwen" />
+            </label>
+          </div>
+          <div className="actions">
+            <button className="button" type="submit">
+              Save Member
+            </button>
+          </div>
+        </form>
       </SectionCard>
     </AdminShell>
   );

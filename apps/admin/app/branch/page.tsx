@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { AdminShell } from "../../components/admin-shell";
 import { ChartBars } from "../../components/chart-bars";
 import { SectionCard } from "../../components/section-card";
@@ -13,7 +15,7 @@ export default async function BranchDashboardPage() {
       currentBranchLabel={summary.branchName}
       currentUserName={profile.full_name}
       role="branch_manager"
-      statusBadge={isLive ? "Live Supabase" : "Mock preview"}
+      statusBadge={isLive ? "Live Supabase" : "Supabase setup needed"}
       title="Branch Dashboard"
       subtitle="Branch-only totals, agent performance, approvals, and reconciliation indicators."
     >
@@ -35,6 +37,22 @@ export default async function BranchDashboardPage() {
       </div>
 
       <div className="grid grid-2">
+        <SectionCard
+          title="Branch Actions"
+          description="Branch managers can onboard members, create agents, and review pending transactions from one place."
+        >
+          <div className="actions">
+            <Link className="button" href="/members/new">
+              Create Member
+            </Link>
+            <Link className="button-secondary" href="/agents/new">
+              Create Agent
+            </Link>
+            <Link className="button-secondary" href="/transactions">
+              Review Transactions
+            </Link>
+          </div>
+        </SectionCard>
         <SectionCard
           title="Agent Performance"
           description="Daily collections, pending approvals, and cash variance by agent."

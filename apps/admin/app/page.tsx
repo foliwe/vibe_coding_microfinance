@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { AdminShell } from "../components/admin-shell";
 import {
   BranchPerformanceChart,
@@ -23,7 +25,7 @@ export default async function AdminDashboardPage() {
       currentBranchLabel="All branches"
       currentUserName={profile.full_name}
       role="admin"
-      statusBadge={isLive ? "Live Supabase" : "Mock preview"}
+      statusBadge={isLive ? "Live Supabase" : "Supabase setup needed"}
       title="Admin Dashboard"
       subtitle="Institution-wide performance, branch totals, approval pressure, and risk signals."
     >
@@ -75,6 +77,25 @@ export default async function AdminDashboardPage() {
 
       <div className="grid grid-2">
         <SectionCard
+          title="Admin Actions"
+          description="Create the operational entities that the live dashboards depend on."
+        >
+          <div className="actions">
+            <Link className="button" href="/branches/new">
+              Create Branch
+            </Link>
+            <Link className="button-secondary" href="/users/new">
+              Create Manager
+            </Link>
+            <Link className="button-secondary" href="/agents/new">
+              Create Agent
+            </Link>
+            <Link className="button-secondary" href="/members/new">
+              Create Member
+            </Link>
+          </div>
+        </SectionCard>
+        <SectionCard
           title="Approvals And Alerts"
           description="Pending cash activity and open exceptions that need central attention."
         >
@@ -90,13 +111,15 @@ export default async function AdminDashboardPage() {
                 <span className="chip">{transaction.status}</span>
               </div>
             ))}
-            <div className="list-item">
-              <div>
-                <strong>VAR-0003</strong>
-                <p className="muted">Bamenda Central variance review open</p>
+            {alerts.length === 0 ? (
+              <div className="list-item">
+                <div>
+                  <strong>No live alerts</strong>
+                  <p className="muted">Pending transactions and exception items will appear here.</p>
+                </div>
+                <span className="chip">clear</span>
               </div>
-              <span className="chip">exception</span>
-            </div>
+            ) : null}
           </div>
         </SectionCard>
       </div>

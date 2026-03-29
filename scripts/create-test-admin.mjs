@@ -13,7 +13,7 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const TEST_ADMIN_EMAIL = process.env.TEST_ADMIN_EMAIL ?? "admin@example.com";
-const TEST_ADMIN_PASSWORD = process.env.TEST_ADMIN_PASSWORD ?? "Admin123456";
+const TEST_ADMIN_PASSWORD = process.env.TEST_ADMIN_PASSWORD ?? "Admin123456!";
 const TEST_ADMIN_NAME = process.env.TEST_ADMIN_NAME ?? "Main Admin";
 const TEST_ADMIN_PHONE = process.env.TEST_ADMIN_PHONE ?? "+237600000000";
 
