@@ -1,6 +1,7 @@
 import { createAgentAction } from "../../actions";
 import { AdminShell } from "../../../components/admin-shell";
 import { SectionCard } from "../../../components/section-card";
+import { breadcrumb, withDashboardBreadcrumbs } from "../../../lib/breadcrumbs";
 import { getOnboardingPageContext } from "../../../lib/onboarding-data";
 
 function Notice({
@@ -35,6 +36,11 @@ export default async function CreateAgentPage({
 
   return (
     <AdminShell
+      breadcrumbs={withDashboardBreadcrumbs(role, [
+        breadcrumb("People"),
+        breadcrumb("Agents", "/agents"),
+        breadcrumb("Create Agent"),
+      ])}
       currentBranchLabel={currentBranchLabel}
       currentUserName={profile.full_name}
       role={role}

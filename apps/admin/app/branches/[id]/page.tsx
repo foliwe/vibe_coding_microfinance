@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "../../../components/ui/table";
+import { breadcrumb, withDashboardBreadcrumbs } from "../../../lib/breadcrumbs";
 import { getBranchDetailPageData } from "../../../lib/dashboard-data";
 import { prettyCurrency } from "../../../lib/format";
 
@@ -25,6 +26,10 @@ export default async function BranchDetailPage({
 
   return (
     <AdminShell
+      breadcrumbs={withDashboardBreadcrumbs("admin", [
+        breadcrumb("Branches", "/branches"),
+        breadcrumb(branch.name),
+      ])}
       currentBranchLabel={branch.name}
       currentUserName={profile.full_name}
       role="admin"

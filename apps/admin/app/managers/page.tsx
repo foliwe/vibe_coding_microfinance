@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { AdminShell } from "../../components/admin-shell";
 import { SectionCard } from "../../components/section-card";
+import { breadcrumb, withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import { getManagersPageData } from "../../lib/dashboard-data";
 
 export default async function ManagersPage() {
@@ -9,6 +10,10 @@ export default async function ManagersPage() {
 
   return (
     <AdminShell
+      breadcrumbs={withDashboardBreadcrumbs("admin", [
+        breadcrumb("People"),
+        breadcrumb("Managers"),
+      ])}
       currentBranchLabel="All branches"
       currentUserName={profile.full_name}
       role="admin"
@@ -37,7 +42,11 @@ export default async function ManagersPage() {
           <tbody>
             {managers.map((manager) => (
               <tr key={manager.id}>
-                <td>{manager.fullName}</td>
+                <td>
+                  <Link className="font-semibold underline-offset-4 hover:underline" href={`/managers/${manager.id}`}>
+                    {manager.fullName}
+                  </Link>
+                </td>
                 <td>{manager.branchName}</td>
                 <td>{manager.phone}</td>
                 <td>

@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { AdminShell } from "../../components/admin-shell";
 import { SectionCard } from "../../components/section-card";
+import { breadcrumb, withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import { getAgentsPageData } from "../../lib/dashboard-data";
 import { prettyCurrency } from "../../lib/format";
 
@@ -11,6 +12,10 @@ export default async function AgentsPage() {
 
   return (
     <AdminShell
+      breadcrumbs={withDashboardBreadcrumbs(role, [
+        breadcrumb("People"),
+        breadcrumb("Agents"),
+      ])}
       currentBranchLabel={currentBranchLabel}
       currentUserName={profile.full_name}
       role={role}

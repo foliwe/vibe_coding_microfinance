@@ -1,6 +1,7 @@
 import { createMemberAction } from "../../actions";
 import { AdminShell } from "../../../components/admin-shell";
 import { SectionCard } from "../../../components/section-card";
+import { breadcrumb, withDashboardBreadcrumbs } from "../../../lib/breadcrumbs";
 import { getOnboardingPageContext } from "../../../lib/onboarding-data";
 
 function Notice({
@@ -33,6 +34,11 @@ export default async function CreateMemberPage({
 
   return (
     <AdminShell
+      breadcrumbs={withDashboardBreadcrumbs(role, [
+        breadcrumb("People"),
+        breadcrumb("Members", "/members"),
+        breadcrumb("Create Member"),
+      ])}
       currentBranchLabel={currentBranchLabel}
       currentUserName={profile.full_name}
       role={role}

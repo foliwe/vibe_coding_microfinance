@@ -7,6 +7,7 @@ import {
 } from "../components/chart-bars";
 import { SectionCard } from "../components/section-card";
 import { StatCard } from "../components/stat-card";
+import { withDashboardBreadcrumbs } from "../lib/breadcrumbs";
 import {
   Card,
   CardContent,
@@ -22,6 +23,7 @@ export default async function AdminDashboardPage() {
 
   return (
     <AdminShell
+      breadcrumbs={withDashboardBreadcrumbs("admin")}
       currentBranchLabel="All branches"
       currentUserName={profile.full_name}
       role="admin"

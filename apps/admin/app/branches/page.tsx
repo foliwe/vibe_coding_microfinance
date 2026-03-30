@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { AdminShell } from "../../components/admin-shell";
 import { SectionCard } from "../../components/section-card";
+import { breadcrumb, withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import { getAdminDashboardData } from "../../lib/dashboard-data";
 import { prettyCurrency } from "../../lib/format";
 
@@ -10,6 +11,7 @@ export default async function BranchesPage() {
 
   return (
     <AdminShell
+      breadcrumbs={withDashboardBreadcrumbs("admin", [breadcrumb("Branches")])}
       currentBranchLabel="All branches"
       currentUserName={profile.full_name}
       role="admin"

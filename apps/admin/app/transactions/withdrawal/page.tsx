@@ -1,6 +1,7 @@
 import { createWithdrawalAction } from "../../actions";
 import { AdminShell } from "../../../components/admin-shell";
 import { AdminTransactionForm } from "../../../components/admin-transaction-form";
+import { breadcrumb, withDashboardBreadcrumbs } from "../../../lib/breadcrumbs";
 import { getAdminTransactionPageContext } from "../../../lib/onboarding-data";
 
 export default async function CreateWithdrawalPage({
@@ -14,6 +15,10 @@ export default async function CreateWithdrawalPage({
 
   return (
     <AdminShell
+      breadcrumbs={withDashboardBreadcrumbs(role, [
+        breadcrumb("Transactions", "/transactions"),
+        breadcrumb("Create Withdrawal"),
+      ])}
       currentBranchLabel={context.currentBranchLabel}
       currentUserName={context.profile.full_name}
       role={role}

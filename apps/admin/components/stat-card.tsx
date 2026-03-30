@@ -24,11 +24,11 @@ export function StatCard({ label, tone = "default", value }: StatCardProps) {
   return (
     <Card
       className={cn(
-        "overflow-hidden border border-border/70 bg-linear-to-br shadow-sm",
+        "overflow-hidden border border-border/70 bg-linear-to-br shadow-sm my-2",
         toneClasses[tone]
       )}
     >
-      <CardContent className="space-y-4 py-5">
+      <CardContent className="space-y-4 py-5 ">
         <div className="flex items-start justify-between gap-4">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
             {label}

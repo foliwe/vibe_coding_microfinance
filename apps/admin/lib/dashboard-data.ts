@@ -105,6 +105,17 @@ export type ManagersPageData = {
   isLive: boolean;
 };
 
+export type ManagerDetailPageData = {
+  currentBranchLabel: string;
+  profile: AdminProfile;
+  manager: (ManagerRegistryRow & {
+    branchId: string | null;
+    email: string | null;
+  }) | null;
+  branch: BranchSummary | null;
+  isLive: boolean;
+};
+
 export type MemberAccountDetail = {
   id: string;
   accountType: "savings" | "deposit";
@@ -220,6 +231,7 @@ type BranchRow = {
 
 type ProfileRow = {
   id: string;
+  email?: string | null;
   full_name: string;
   phone?: string | null;
   role?: UserRole;
@@ -1551,6 +1563,81 @@ export async function getManagersPageData(): Promise<ManagersPageData> {
       phone: row.phone ?? "No phone",
       status: row.is_active ? "active" : "inactive",
     })),
+    isLive: true,
+  };
+}
+
+export async function getManagerDetailPageData(
+  managerId: string,
+): Promise<ManagerDetailPageData> {
+  if (!hasSupabaseEnv()) {
+    return {
+      currentBranchLabel: "All branches",
+      profile: emptyProfile("admin"),
+      manager: null,
+      branch: null,
+      isLive: false,
+    };
+  }
+
+  const { supabase, profile } = await requireRole(["admin"]);
+  const { data: managerRowData } = await supabase
+    .from("profiles")
+    .select("id, email, full_name, phone, branch_id, is_active")
+    .eq("id", managerId)
+    .eq("role", "branch_manager")
+    .maybeSingle();
+
+  const managerRow = (managerRowData as ProfileRow | null) ?? null;
+
+  if (!managerRow) {
+    return {
+      currentBranchLabel: "All branches",
+      profile,
+      manager: null,
+      branch: null,
+      isLive: true,
+    };
+  }
+
+  let branch: BranchSummary | null = null;
+
+  if (managerRow.branch_id) {
+    const [{ branches, managerMap }, snapshot] = await Promise.all([
+      getBranchMappings(supabase),
+      getBranchDashboardSnapshot(supabase, managerRow.branch_id),
+    ]);
+
+    const branchMeta = branches.find((item) => item.id === managerRow.branch_id);
+    branch = {
+      id: snapshot.summary.branchId,
+      name: branchMeta?.name ?? snapshot.summary.branchName,
+      managerName:
+        managerMap.get(branchMeta?.manager_profile_id ?? "") ?? managerRow.full_name,
+      memberCount: snapshot.summary.totalMembers,
+      agentCount: snapshot.summary.activeAgents,
+      totalSavings: snapshot.summary.totalSavings,
+      totalDeposits: snapshot.summary.totalDeposits,
+      totalLoans: snapshot.summary.totalLoans,
+      outstandingPrincipal: snapshot.summary.outstandingPrincipal,
+      pendingApprovals: snapshot.summary.pendingApprovals,
+      cashVariance: snapshot.summary.cashVariance,
+    };
+  }
+
+  return {
+    currentBranchLabel: "All branches",
+    profile,
+    manager: {
+      id: managerRow.id,
+      branchId: managerRow.branch_id,
+      branchName: branch?.name ?? "Unassigned",
+      email: managerRow.email ?? null,
+      fullName: managerRow.full_name,
+      phone: managerRow.phone ?? "No phone",
+      status: managerRow.is_active ? "active" : "inactive",
+    },
+    branch,
     isLive: true,
   };
 }

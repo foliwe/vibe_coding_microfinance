@@ -1,6 +1,7 @@
 import { requestReportAction } from "../actions";
 import { AdminShell } from "../../components/admin-shell";
 import { SectionCard } from "../../components/section-card";
+import { breadcrumb, withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import { getReportsPageData } from "../../lib/dashboard-data";
 
 function Notice({
@@ -32,6 +33,7 @@ export default async function ReportsPage({
 
   return (
     <AdminShell
+      breadcrumbs={withDashboardBreadcrumbs(role, [breadcrumb("Reports")])}
       currentBranchLabel={currentBranchLabel}
       currentUserName={profile.full_name}
       role={role}

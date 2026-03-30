@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { AdminShell } from "../../components/admin-shell";
 import { SectionCard } from "../../components/section-card";
+import { breadcrumb, withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import { getMembersPageData } from "../../lib/dashboard-data";
 
 export default async function MembersPage() {
@@ -10,6 +11,10 @@ export default async function MembersPage() {
 
   return (
     <AdminShell
+      breadcrumbs={withDashboardBreadcrumbs(role, [
+        breadcrumb("People"),
+        breadcrumb("Members"),
+      ])}
       currentBranchLabel={currentBranchLabel}
       currentUserName={profile.full_name}
       role={role}

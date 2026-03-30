@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "../../../components/ui/table";
+import { breadcrumb, withDashboardBreadcrumbs } from "../../../lib/breadcrumbs";
 import { getMemberDetailPageData } from "../../../lib/dashboard-data";
 import { prettyCurrency } from "../../../lib/format";
 
@@ -27,6 +28,11 @@ export default async function MemberDetailPage({
 
   return (
     <AdminShell
+      breadcrumbs={withDashboardBreadcrumbs(role, [
+        breadcrumb("People"),
+        breadcrumb("Members", "/members"),
+        breadcrumb(member?.fullName ?? "Member Detail"),
+      ])}
       currentBranchLabel={member?.branchName ?? currentBranchLabel}
       currentUserName={profile.full_name}
       role={role}

@@ -62,7 +62,7 @@ const activityTrendConfig = {
 
 export function ChartBars({ data }: { data: ChartBarsDatum[] }) {
   return (
-    <ChartContainer className="h-[260px] w-full" config={barChartConfig}>
+    <ChartContainer className="h-[260px] w-full " config={barChartConfig}>
       <BarChart accessibilityLayer data={data}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} />
         <XAxis

@@ -10,7 +10,7 @@ type SectionCardProps = {
 
 export function SectionCard({ children, description, title }: SectionCardProps) {
   return (
-    <Card className="border border-border/70 bg-card/95 shadow-sm backdrop-blur">
+    <Card className="border border-border/70 bg-card/95 shadow-sm backdrop-blur  my-2 ">
       <CardHeader className="border-b border-border/60">
         <CardTitle>{title}</CardTitle>
         {description ? <CardDescription>{description}</CardDescription> : null}
