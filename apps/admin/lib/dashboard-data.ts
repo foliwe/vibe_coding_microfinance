@@ -2,6 +2,7 @@ import {
   calculateMonthlyInterest,
   type AdminDashboardSummary,
   type AgentPerformance,
+  type BranchSummary,
   type BranchDashboardSummary,
   type LoanStatus,
   type TransactionRequest,
@@ -29,10 +30,21 @@ export type AdminDashboardCharts = {
 };
 
 export type TransactionQueuePageData = {
+  agents: Array<{ id: string; fullName: string }>;
+  branches: ReportBranchOption[];
+  filters: TransactionPageFilters;
   profile: AdminProfile;
   branchLabel: string;
-  transactions: TransactionRequest[];
+  historyTransactions: TransactionRequest[];
+  pendingTransactions: TransactionRequest[];
   isLive: boolean;
+};
+
+export type TransactionPageFilters = {
+  accountType?: "savings" | "deposit";
+  agentId?: string;
+  branchId?: string;
+  type?: Extract<TransactionRequest["type"], "deposit" | "withdrawal">;
 };
 
 export type MemberRegistryRow = {
@@ -118,6 +130,14 @@ export type ReportsPageData = {
   isLive: boolean;
 };
 
+export type BranchDetailPageData = {
+  profile: AdminProfile;
+  branch: BranchSummary;
+  summary: BranchDashboardSummary;
+  alerts: TransactionRequest[];
+  isLive: boolean;
+};
+
 type BranchDashboardRow = {
   branch_id: string;
   branch_name: string;
@@ -171,11 +191,18 @@ type TransactionRow = {
   id: string;
   branch_id: string;
   member_profile_id: string;
+  member_account_id: string;
   agent_profile_id: string;
   transaction_type: TransactionRequest["type"];
   amount: number | string | null;
+  note?: string | null;
   status: TransactionRequest["status"];
   created_at: string;
+};
+
+type QueueMemberAccountRow = {
+  account_type: "savings" | "deposit";
+  id: string;
 };
 
 type MemberProfileRegistryRow = {
@@ -321,20 +348,52 @@ async function getBranchMappings(supabase: Awaited<ReturnType<typeof requireRole
 
 async function getPendingTransactions(
   supabase: Awaited<ReturnType<typeof requireRole>>["supabase"],
+  filters: TransactionPageFilters,
   branchId?: string,
-  limit = 5,
+) {
+  return getTransactionsByScope(supabase, filters, {
+    branchId,
+    excludePending: false,
+    onlyPending: true,
+  });
+}
+
+async function getTransactionsByScope(
+  supabase: Awaited<ReturnType<typeof requireRole>>["supabase"],
+  filters: TransactionPageFilters,
+  options?: {
+    branchId?: string;
+    excludePending?: boolean;
+    onlyPending?: boolean;
+  },
 ) {
   let query = supabase
     .from("transaction_requests")
     .select(
-      "id, branch_id, member_profile_id, agent_profile_id, transaction_type, amount, status, created_at",
+      "id, branch_id, member_profile_id, member_account_id, agent_profile_id, transaction_type, amount, note, status, created_at",
     )
-    .eq("status", "pending_approval")
-    .order("created_at", { ascending: false })
-    .limit(limit);
+    .order("created_at", { ascending: false });
 
-  if (branchId) {
-    query = query.eq("branch_id", branchId);
+  const branchScope = options?.branchId ?? filters.branchId;
+
+  if (options?.onlyPending) {
+    query = query.eq("status", "pending_approval");
+  }
+
+  if (options?.excludePending) {
+    query = query.neq("status", "pending_approval");
+  }
+
+  if (branchScope) {
+    query = query.eq("branch_id", branchScope);
+  }
+
+  if (filters.type) {
+    query = query.eq("transaction_type", filters.type);
+  }
+
+  if (filters.agentId) {
+    query = query.eq("agent_profile_id", filters.agentId);
   }
 
   const { data } = await query;
@@ -343,17 +402,26 @@ async function getPendingTransactions(
   const actorIds = Array.from(
     new Set(rows.flatMap((row) => [row.member_profile_id, row.agent_profile_id])),
   );
+  const memberAccountIds = Array.from(new Set(rows.map((row) => row.member_account_id)));
   const branchIds = Array.from(new Set(rows.map((row) => row.branch_id)));
 
-  const { data: profileData } = actorIds.length
-    ? await supabase
-        .from("profiles")
-        .select("id, full_name")
-        .in("id", actorIds)
-    : { data: [] as ProfileRow[] };
-  const { data: branchData } = branchIds.length
-    ? await supabase.from("branches").select("id, name").in("id", branchIds)
-    : { data: [] as BranchRow[] };
+  const [{ data: profileData }, { data: branchData }, { data: accountData }] = await Promise.all([
+    actorIds.length
+      ? supabase
+          .from("profiles")
+          .select("id, full_name")
+          .in("id", actorIds)
+      : Promise.resolve({ data: [] as ProfileRow[] }),
+    branchIds.length
+      ? supabase.from("branches").select("id, name").in("id", branchIds)
+      : Promise.resolve({ data: [] as BranchRow[] }),
+    memberAccountIds.length
+      ? supabase
+          .from("member_accounts")
+          .select("id, account_type")
+          .in("id", memberAccountIds)
+      : Promise.resolve({ data: [] as QueueMemberAccountRow[] }),
+  ]);
 
   const profileMap = new Map(
     ((profileData as ProfileRow[] | null) ?? []).map((profile) => [
@@ -364,8 +432,14 @@ async function getPendingTransactions(
   const branchMap = new Map(
     ((branchData as BranchRow[] | null) ?? []).map((branch) => [branch.id, branch.name]),
   );
+  const accountMap = new Map(
+    ((accountData as QueueMemberAccountRow[] | null) ?? []).map((account) => [
+      account.id,
+      account.account_type,
+    ]),
+  );
 
-  return rows.map(
+  const transactions = rows.map(
     (row): TransactionRequest => ({
       id: row.id,
       memberId: row.member_profile_id,
@@ -375,20 +449,79 @@ async function getPendingTransactions(
       agentId: row.agent_profile_id,
       agentName: profileMap.get(row.agent_profile_id) ?? row.agent_profile_id,
       type: row.transaction_type,
-      accountType: "savings",
+      accountType: accountMap.get(row.member_account_id) ?? "savings",
       amount: toNumber(row.amount),
       status: row.status,
       createdAt: row.created_at,
+      note: row.note ?? undefined,
     }),
+  );
+
+  if (!filters.accountType) {
+    return transactions;
+  }
+
+  return transactions.filter(
+    (transaction) => transaction.accountType === filters.accountType,
   );
 }
 
-export async function getTransactionQueuePageData(): Promise<TransactionQueuePageData> {
+async function getTransactionFilterOptions(
+  supabase: Awaited<ReturnType<typeof requireRole>>["supabase"],
+  profile: AdminProfile,
+  filters: TransactionPageFilters,
+) {
+  let branchQuery = supabase
+    .from("branches")
+    .select("id, name")
+    .order("name", { ascending: true });
+  let agentQuery = supabase
+    .from("profiles")
+    .select("id, full_name, branch_id")
+    .eq("role", "agent")
+    .eq("is_active", true)
+    .order("full_name", { ascending: true });
+
+  if (profile.role === "branch_manager") {
+    const scopedBranchId = profile.branch_id ?? undefined;
+
+    if (scopedBranchId) {
+      branchQuery = branchQuery.eq("id", scopedBranchId);
+      agentQuery = agentQuery.eq("branch_id", scopedBranchId);
+    }
+  } else if (filters.branchId) {
+    agentQuery = agentQuery.eq("branch_id", filters.branchId);
+  }
+
+  const [{ data: branchData }, { data: agentData }] = await Promise.all([
+    branchQuery,
+    agentQuery,
+  ]);
+
+  return {
+    branches: ((branchData as BranchRow[] | null) ?? []).map((branch) => ({
+      id: branch.id,
+      name: branch.name,
+    })),
+    agents: ((agentData as ProfileRow[] | null) ?? []).map((agent) => ({
+      id: agent.id,
+      fullName: agent.full_name,
+    })),
+  };
+}
+
+export async function getTransactionQueuePageData(
+  filters: TransactionPageFilters = {},
+): Promise<TransactionQueuePageData> {
   if (!hasSupabaseEnv()) {
     return {
+      agents: [],
+      branches: [],
+      filters,
       profile: emptyProfile("branch_manager"),
       branchLabel: "Supabase setup needed",
-      transactions: [],
+      historyTransactions: [],
+      pendingTransactions: [],
       isLive: false,
     };
   }
@@ -403,14 +536,35 @@ export async function getTransactionQueuePageData(): Promise<TransactionQueuePag
           await supabase
             .from("branches")
             .select("name")
-            .eq("id", profile.branch_id ?? "")
-            .maybeSingle()
+          .eq("id", profile.branch_id ?? "")
+          .maybeSingle()
         ).data?.name ?? "Branch";
 
+  const scopedFilters: TransactionPageFilters = {
+    accountType: filters.accountType,
+    agentId: filters.agentId,
+    branchId: profile.role === "branch_manager" ? branchId : filters.branchId,
+    type: filters.type,
+  };
+
+  const [{ agents, branches }, pendingTransactions, historyTransactions] =
+    await Promise.all([
+      getTransactionFilterOptions(supabase, profile, scopedFilters),
+      getPendingTransactions(supabase, scopedFilters, branchId),
+      getTransactionsByScope(supabase, scopedFilters, {
+        branchId,
+        excludePending: true,
+      }),
+    ]);
+
   return {
+    agents,
+    branches,
+    filters: scopedFilters,
     profile,
     branchLabel,
-    transactions: await getPendingTransactions(supabase, branchId, 25),
+    historyTransactions,
+    pendingTransactions,
     isLive: true,
   };
 }
@@ -498,33 +652,15 @@ export async function getAdminDashboardData() {
     profile,
     summary,
     charts: buildAdminDashboardCharts(summary),
-    alerts: await getPendingTransactions(supabase),
+    alerts: await getPendingTransactions(supabase, {}),
     isLive: true,
   };
 }
 
-export async function getBranchDashboardData() {
-  if (!hasSupabaseEnv()) {
-    return {
-      profile: emptyProfile("branch_manager"),
-      summary: emptyBranchSummary(),
-      alerts: [],
-      isLive: false,
-    };
-  }
-
-  const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
-  const branchId = profile.branch_id;
-
-  if (!branchId) {
-    return {
-      profile,
-      summary: emptyBranchSummary("unassigned", "Unassigned branch"),
-      alerts: [],
-      isLive: true,
-    };
-  }
-
+async function getBranchDashboardSnapshot(
+  supabase: Awaited<ReturnType<typeof requireRole>>["supabase"],
+  branchId: string,
+) {
   const today = currentDateIso();
   const startOfMonth = firstDayOfCurrentMonth();
 
@@ -577,13 +713,11 @@ export async function getBranchDashboardData() {
 
   if (!row) {
     return {
-      profile,
       summary: emptyBranchSummary(
         branchId,
         ((branchData as BranchRow | null)?.name ?? "Branch"),
       ),
       alerts: [],
-      isLive: true,
     };
   }
 
@@ -642,9 +776,95 @@ export async function getBranchDashboardData() {
   };
 
   return {
-    profile,
     summary,
-    alerts: await getPendingTransactions(supabase, branchId),
+    alerts: await getPendingTransactions(supabase, {}, branchId),
+  };
+}
+
+export async function getBranchDashboardData() {
+  if (!hasSupabaseEnv()) {
+    return {
+      profile: emptyProfile("branch_manager"),
+      summary: emptyBranchSummary(),
+      alerts: [],
+      isLive: false,
+    };
+  }
+
+  const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
+  const branchId = profile.branch_id;
+
+  if (!branchId) {
+    return {
+      profile,
+      summary: emptyBranchSummary("unassigned", "Unassigned branch"),
+      alerts: [],
+      isLive: true,
+    };
+  }
+
+  const snapshot = await getBranchDashboardSnapshot(supabase, branchId);
+
+  return {
+    profile,
+    ...snapshot,
+    isLive: true,
+  };
+}
+
+export async function getBranchDetailPageData(branchId: string): Promise<BranchDetailPageData> {
+  if (!hasSupabaseEnv()) {
+    const summary = emptyBranchSummary(branchId, "Branch");
+
+    return {
+      profile: emptyProfile("admin"),
+      branch: {
+        id: branchId,
+        name: summary.branchName,
+        managerName: "Unassigned",
+        memberCount: summary.totalMembers,
+        agentCount: summary.activeAgents,
+        totalSavings: summary.totalSavings,
+        totalDeposits: summary.totalDeposits,
+        totalLoans: summary.totalLoans,
+        outstandingPrincipal: summary.outstandingPrincipal,
+        pendingApprovals: summary.pendingApprovals,
+        cashVariance: summary.cashVariance,
+      },
+      summary,
+      alerts: [],
+      isLive: false,
+    };
+  }
+
+  const { supabase, profile } = await requireRole(["admin"]);
+
+  const [{ branches, managerMap }, snapshot] = await Promise.all([
+    getBranchMappings(supabase),
+    getBranchDashboardSnapshot(supabase, branchId),
+  ]);
+
+  const branchMeta = branches.find((branch) => branch.id === branchId);
+  const branch: BranchSummary = {
+    id: snapshot.summary.branchId,
+    name: branchMeta?.name ?? snapshot.summary.branchName,
+    managerName:
+      managerMap.get(branchMeta?.manager_profile_id ?? "") ?? "Unassigned",
+    memberCount: snapshot.summary.totalMembers,
+    agentCount: snapshot.summary.activeAgents,
+    totalSavings: snapshot.summary.totalSavings,
+    totalDeposits: snapshot.summary.totalDeposits,
+    totalLoans: snapshot.summary.totalLoans,
+    outstandingPrincipal: snapshot.summary.outstandingPrincipal,
+    pendingApprovals: snapshot.summary.pendingApprovals,
+    cashVariance: snapshot.summary.cashVariance,
+  };
+
+  return {
+    profile,
+    branch,
+    summary: snapshot.summary,
+    alerts: snapshot.alerts,
     isLive: true,
   };
 }

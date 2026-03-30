@@ -1,8 +1,16 @@
 import type { Route } from "next";
 
-const allSidebarItems = [
+export type SidebarItem = {
+  href: Route;
+  label: string;
+  children?: readonly {
+    href: Route;
+    label: string;
+  }[];
+};
+
+const allSidebarItems: readonly SidebarItem[] = [
   { href: "/" as Route, label: "Dashboard" },
-  { href: "/branch" as Route, label: "Branch Dashboard" },
   { href: "/branches" as Route, label: "Branches" },
   { href: "/branches/new" as Route, label: "Create Branch" },
   { href: "/users" as Route, label: "Users" },
@@ -11,7 +19,14 @@ const allSidebarItems = [
   { href: "/members/new" as Route, label: "Create Member" },
   { href: "/agents" as Route, label: "Agents" },
   { href: "/agents/new" as Route, label: "Create Agent" },
-  { href: "/transactions" as Route, label: "Transactions" },
+  {
+    href: "/transactions" as Route,
+    label: "Transactions",
+    children: [
+      { href: "/transactions/deposit" as Route, label: "Deposit" },
+      { href: "/transactions/withdrawal" as Route, label: "Withdrawal" },
+    ],
+  },
   { href: "/loans" as Route, label: "Loans" },
   { href: "/reconciliation" as Route, label: "Reconciliation" },
   { href: "/reports" as Route, label: "Reports" },
@@ -24,19 +39,21 @@ export function getSidebarItems(role: "admin" | "branch_manager") {
     return allSidebarItems;
   }
 
-  return allSidebarItems.filter((item) =>
-    [
-      "/branch",
-      "/members",
-      "/members/new",
-      "/agents/new",
-      "/transactions",
-      "/loans",
-      "/reports",
-      "/audit",
-      "/settings",
-      "/agents",
-      "/reconciliation",
-    ].includes(item.href),
-  );
+  return [
+    { href: "/branch" as Route, label: "Branch Dashboard" },
+    ...allSidebarItems.filter((item) =>
+      [
+        "/members",
+        "/members/new",
+        "/agents/new",
+        "/transactions",
+        "/loans",
+        "/reports",
+        "/audit",
+        "/settings",
+        "/agents",
+        "/reconciliation",
+      ].includes(item.href),
+    ),
+  ];
 }

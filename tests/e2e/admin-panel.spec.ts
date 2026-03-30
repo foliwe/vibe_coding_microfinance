@@ -1,0 +1,283 @@
+import { expect, test, type Locator, type Page } from "@playwright/test";
+
+import {
+  createLoanForMemberEmail,
+  createPendingTransactionRequest,
+  getMemberAccountsByEmail,
+  getProfileByEmail,
+  getSeededPanelContext,
+  newTestId,
+  seededBranch,
+  seededUsers,
+} from "./support/admin-panel-fixtures";
+
+async function signIn(page: Page, credentials: { email: string; password: string }) {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(credentials.email);
+  await page.getByLabel("Password").fill(credentials.password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+}
+
+async function signOut(page: Page) {
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+}
+
+function transactionRow(page: Page, reference: string): Locator {
+  return page.locator("tr").filter({ hasText: reference });
+}
+
+function branchSelect(page: Page) {
+  return page.locator('select[name="branchId"]');
+}
+
+function memberSelect(page: Page) {
+  return page.getByRole("combobox", { name: "Member", exact: true });
+}
+
+function memberAccountSelect(page: Page) {
+  return page.locator('select[name="memberAccountId"]');
+}
+
+function cashDrawerAgentSelect(page: Page) {
+  return page.locator('select[name="cashAgentProfileId"]');
+}
+
+function assignedAgentSelect(page: Page) {
+  return page.locator('select[name="assignedAgentId"]');
+}
+
+async function waitForProfile(email: string) {
+  await expect.poll(async () => (await getProfileByEmail(email))?.id ?? null).not.toBeNull();
+  const profile = await getProfileByEmail(email);
+
+  if (!profile) {
+    throw new Error(`Profile not found for ${email}.`);
+  }
+
+  return profile;
+}
+
+async function waitForMemberAccounts(email: string) {
+  await expect.poll(async () => (await getMemberAccountsByEmail(email)).length).toBeGreaterThan(1);
+  return getMemberAccountsByEmail(email);
+}
+
+test.describe("admin panel end-to-end flows", () => {
+  test("admin can review institution screens and create branch-office transactions", async ({
+    page,
+  }) => {
+    const context = await getSeededPanelContext();
+
+    await signIn(page, seededUsers.admin);
+
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Admin Dashboard" })).toBeVisible();
+    await expect(page.getByText("All branches")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Branches" })).toBeVisible();
+
+    await page.getByRole("link", { name: "Branches" }).click();
+    await expect(page).toHaveURL(/\/branches$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Branches" })).toBeVisible();
+    await expect(page.getByRole("link", { name: seededBranch.name })).toBeVisible();
+
+    await page.getByRole("link", { name: seededBranch.name }).click();
+    await expect(page.getByRole("heading", { level: 1, name: seededBranch.name })).toBeVisible();
+    await expect(page.getByText(seededUsers.manager.fullName)).toBeVisible();
+
+    await page.goto("/transactions/deposit");
+    await expect(page.getByRole("heading", { level: 1, name: "Create Deposit" })).toBeVisible();
+    await branchSelect(page).selectOption(context.branch.id);
+    await memberSelect(page).selectOption(context.member.id);
+    await memberAccountSelect(page).selectOption(context.savingsAccount.id);
+    await cashDrawerAgentSelect(page).selectOption(context.agent.id);
+    await page.getByLabel("Amount").fill("150");
+    await page.getByLabel("Note").fill("Playwright admin deposit");
+    await page.getByRole("button", { name: "Create Deposit" }).click();
+    await expect(page).toHaveURL(/\/transactions\/deposit\?result=success/);
+    await expect(page.getByText("Deposit created and auto-approved.")).toBeVisible();
+
+    await page.goto("/transactions/withdrawal");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Create Withdrawal" }),
+    ).toBeVisible();
+    await branchSelect(page).selectOption(context.branch.id);
+    await memberSelect(page).selectOption(context.member.id);
+    await memberAccountSelect(page).selectOption(context.savingsAccount.id);
+    await cashDrawerAgentSelect(page).selectOption(context.agent.id);
+    await page.getByLabel("Amount").fill("25");
+    await page.getByLabel("Note").fill("Playwright admin withdrawal");
+    await page.getByRole("button", { name: "Create Withdrawal" }).click();
+    await expect(page).toHaveURL(/\/transactions\/withdrawal\?result=success/);
+    await expect(page.getByText("Withdrawal created and auto-approved.")).toBeVisible();
+
+    await signOut(page);
+  });
+
+  test("branch manager can approve a pending agent transaction from the queue", async ({
+    page,
+  }) => {
+    const request = await createPendingTransactionRequest({
+      amount: 42.5,
+      transactionType: "deposit",
+    });
+
+    await signIn(page, seededUsers.manager);
+
+    await expect(page).toHaveURL(/\/branch$/);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Branch Dashboard" }),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "Branches" })).toHaveCount(0);
+
+    await page.goto("/transactions");
+    await expect(page).toHaveURL(/\/transactions$/);
+    const row = transactionRow(page, request.reference);
+    await expect(row).toBeVisible();
+    await row.getByRole("button", { name: "Approve" }).click();
+
+    await expect(page).toHaveURL(/\/transactions\?result=success/);
+    await expect(page.getByText("Transaction approved.")).toBeVisible();
+    await expect(transactionRow(page, request.reference)).toHaveCount(0);
+
+    await signOut(page);
+  });
+
+  test("branch manager can reject a pending agent transaction from the queue", async ({
+    page,
+  }) => {
+    const request = await createPendingTransactionRequest({
+      amount: 18.75,
+      transactionType: "deposit",
+    });
+
+    await signIn(page, seededUsers.manager);
+    await expect(page).toHaveURL(/\/branch$/);
+
+    await page.goto("/transactions");
+    const row = transactionRow(page, request.reference);
+    await expect(row).toBeVisible();
+    await row.getByRole("button", { name: "Reject" }).click();
+
+    await expect(page).toHaveURL(/\/transactions\?result=success/);
+    await expect(page.getByText("Transaction rejected.")).toBeVisible();
+    await expect(transactionRow(page, request.reference)).toHaveCount(0);
+
+    await signOut(page);
+  });
+
+  test("admin and branch manager can create manager, agent, member, savings, deposit, and loan records", async ({
+    page,
+  }) => {
+    const context = await getSeededPanelContext();
+    const runId = newTestId("pw");
+    const digits = runId.replace(/\D/g, "").slice(-8).padStart(8, "0");
+    const manager = {
+      fullName: `Playwright Manager ${runId}`,
+      email: `${runId}-manager@example.com`,
+      phone: `+23761${digits}`,
+      password: "Manager123456!",
+    };
+    const agent = {
+      fullName: `Playwright Agent ${runId}`,
+      email: `${runId}-agent@example.com`,
+      phone: `+23762${digits}`,
+      password: "Agent123456!",
+    };
+    const member = {
+      fullName: `Playwright Member ${runId}`,
+      email: `${runId}-member@example.com`,
+      phone: `+23763${digits}`,
+      password: "Member123456!",
+      savingsAccountNumber: `${seededBranch.code}-SAV-${digits}`,
+      depositAccountNumber: `${seededBranch.code}-DEP-${digits}`,
+    };
+
+    await signIn(page, seededUsers.admin);
+    await expect(page).toHaveURL(/\/$/);
+
+    await page.goto("/users/new");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Create Branch Manager" }),
+    ).toBeVisible();
+    await page.getByLabel("Full Name").fill(manager.fullName);
+    await page.getByLabel("Email").fill(manager.email);
+    await page.getByLabel("Phone").fill(manager.phone);
+    await page.getByLabel("Temporary Password").fill(manager.password);
+    await page.locator('select[name="branchId"]').selectOption(context.branch.id);
+    await page.getByRole("button", { name: "Create Branch Manager" }).click();
+    await expect(page).toHaveURL(/\/users\/new\?result=success/);
+    await expect(page.getByText(`Created branch manager ${manager.fullName}.`)).toBeVisible();
+
+    await waitForProfile(manager.email);
+
+    await page.goto("/users");
+    await expect(page.getByRole("heading", { level: 1, name: "Users" })).toBeVisible();
+    await expect(page.locator("tr").filter({ hasText: manager.fullName })).toBeVisible();
+
+    await signOut(page);
+
+    await signIn(page, {
+      email: manager.email,
+      password: manager.password,
+    });
+    await expect(page).toHaveURL(/\/branch$/);
+
+    await page.goto("/agents/new");
+    await expect(page.getByRole("heading", { level: 1, name: "Create Agent" })).toBeVisible();
+    await page.getByLabel("Full Name").fill(agent.fullName);
+    await page.getByLabel("Email").fill(agent.email);
+    await page.getByLabel("Phone").fill(agent.phone);
+    await page.getByLabel("Temporary Password").fill(agent.password);
+    await page.locator('select[name="branchId"]').selectOption(context.branch.id);
+    await page.getByRole("button", { name: "Create Agent" }).click();
+    await expect(page).toHaveURL(/\/agents\/new\?result=success/);
+    await expect(page.getByText(`Created agent ${agent.fullName}.`)).toBeVisible();
+
+    const createdAgent = await waitForProfile(agent.email);
+
+    await page.goto("/agents");
+    await expect(page.getByRole("heading", { level: 1, name: "Agents" })).toBeVisible();
+    await expect(page.locator("tr").filter({ hasText: agent.fullName })).toBeVisible();
+
+    await page.goto("/members/new");
+    await expect(page.getByRole("heading", { level: 1, name: "Create Member" })).toBeVisible();
+    await page.getByLabel("Full Name").fill(member.fullName);
+    await page.getByLabel("Login Email").fill(member.email);
+    await page.getByLabel("Temporary Password").fill(member.password);
+    await page.getByLabel("Phone Number").fill(member.phone);
+    await page.getByLabel("Occupation").fill("Trader");
+    await page.locator('select[name="branchId"]').selectOption(context.branch.id);
+    await assignedAgentSelect(page).selectOption(createdAgent.id);
+    await page.getByLabel("Savings Account Number").fill(member.savingsAccountNumber);
+    await page.getByLabel("Deposit Account Number").fill(member.depositAccountNumber);
+    await page.getByLabel("Residential Address").fill("Mile 4 Nkwen");
+    await page.getByRole("button", { name: "Save Member" }).click();
+    await expect(page).toHaveURL(/\/members\/new\?result=success/);
+    await expect(page.getByText(`Created member ${member.fullName}.`)).toBeVisible();
+
+    await waitForProfile(member.email);
+    const memberAccounts = await waitForMemberAccounts(member.email);
+    expect(memberAccounts.map((account) => account.account_number)).toEqual(
+      expect.arrayContaining([member.savingsAccountNumber, member.depositAccountNumber]),
+    );
+
+    await page.goto("/members");
+    await expect(page.getByRole("heading", { level: 1, name: "Members" })).toBeVisible();
+    await expect(page.locator("tr").filter({ hasText: member.fullName })).toBeVisible();
+
+    const loan = await createLoanForMemberEmail({
+      approvedPrincipal: 800,
+      createdByEmail: manager.email,
+      memberEmail: member.email,
+      monthlyInterestRate: 0.03,
+    });
+
+    await page.goto("/loans");
+    await expect(page.getByRole("heading", { level: 1, name: "Loans" })).toBeVisible();
+    await expect(page.locator("tr").filter({ hasText: loan.reference })).toBeVisible();
+    await expect(page.locator("tr").filter({ hasText: member.fullName })).toBeVisible();
+
+    await signOut(page);
+  });
+});

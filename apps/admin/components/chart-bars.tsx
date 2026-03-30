@@ -1,226 +1,160 @@
 "use client";
 
-import { useMemo } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 
-import {
-  ChartContainer,
-  ChartLegendContent,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "./ui/chart";
+import type { BranchPerformanceChartPoint, PortfolioTrendChartPoint } from "../lib/dashboard-data";
+import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "./ui/chart";
 
-export type BranchPerformanceChartDatum = {
-  branch: string;
-  savings: number;
-  deposits: number;
+type ChartBarsDatum = {
+  label: string;
+  suffix?: string;
+  value: number;
 };
 
-export type PortfolioTrendChartDatum = {
-  month: string;
-  deposits: number;
-  loans: number;
-};
+const compactNumber = new Intl.NumberFormat("en-US", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+const barChartConfig = {
+  value: {
+    label: "Collections",
+    color: "var(--chart-1)",
+  },
+} satisfies ChartConfig;
 
 const branchChartConfig = {
-  savings: { label: "Savings", color: "var(--chart-1)" },
-  deposits: { label: "Deposits", color: "var(--chart-2)" },
+  savings: {
+    label: "Savings",
+    color: "var(--chart-1)",
+  },
+  deposits: {
+    label: "Deposits",
+    color: "var(--chart-2)",
+  },
 } satisfies ChartConfig;
 
-const trendChartConfig = {
-  deposits: { label: "Deposits", color: "var(--chart-2)" },
-  loans: { label: "Loans", color: "var(--chart-3)" },
+const portfolioChartConfig = {
+  deposits: {
+    label: "Deposits",
+    color: "var(--chart-1)",
+  },
+  loans: {
+    label: "Loans",
+    color: "var(--chart-3)",
+  },
 } satisfies ChartConfig;
 
-function isBranchChartKey(value: string): value is keyof typeof branchChartConfig {
-  return value in branchChartConfig;
-}
-
-function isTrendChartKey(value: string): value is keyof typeof trendChartConfig {
-  return value in trendChartConfig;
-}
-
-function currencyCompact(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
-}
-
-function BranchTooltip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean;
-  payload?: Array<{ dataKey?: string; value?: number }>;
-  label?: string;
-}) {
-  if (!active || !payload?.length || !label) {
-    return null;
-  }
-
+export function ChartBars({ data }: { data: ChartBarsDatum[] }) {
   return (
-    <ChartTooltipContent
-      label={label}
-      items={payload
-        .filter((item): item is { dataKey: string; value: number } =>
-          Boolean(item.dataKey && typeof item.value === "number"),
-        )
-        .map((item) => ({
-          key: item.dataKey,
-          label: isBranchChartKey(item.dataKey)
-            ? branchChartConfig[item.dataKey].label
-            : item.dataKey,
-          color: isBranchChartKey(item.dataKey)
-            ? branchChartConfig[item.dataKey].color
-            : "var(--foreground)",
-          value: currencyCompact(item.value),
-        }))}
-    />
-  );
-}
-
-function TrendTooltip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean;
-  payload?: Array<{ dataKey?: string; value?: number }>;
-  label?: string;
-}) {
-  if (!active || !payload?.length || !label) {
-    return null;
-  }
-
-  return (
-    <ChartTooltipContent
-      label={label}
-      items={payload
-        .filter((item): item is { dataKey: string; value: number } =>
-          Boolean(item.dataKey && typeof item.value === "number"),
-        )
-        .map((item) => ({
-          key: item.dataKey,
-          label: isTrendChartKey(item.dataKey)
-            ? trendChartConfig[item.dataKey].label
-            : item.dataKey,
-          color: isTrendChartKey(item.dataKey)
-            ? trendChartConfig[item.dataKey].color
-            : "var(--foreground)",
-          value: currencyCompact(item.value),
-        }))}
-    />
-  );
-}
-
-export function BranchPerformanceChart({ data }: { data: BranchPerformanceChartDatum[] }) {
-  return (
-    <ChartContainer config={branchChartConfig}>
-      <div className="chart-heading-row">
-        <h4 className="chart-heading">Savings vs Deposits by Branch</h4>
-        <ChartLegendContent config={branchChartConfig} keys={["savings", "deposits"]} />
-      </div>
-      <div className="chart-svg-wrap">
-        <ResponsiveContainer width="100%" height={280}>
-          <BarChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(115, 93, 65, 0.2)" />
-            <XAxis dataKey="branch" tickLine={false} axisLine={false} />
-            <YAxis
-              tickFormatter={(value) => currencyCompact(Number(value))}
-              tickLine={false}
-              axisLine={false}
-              width={52}
+    <ChartContainer className="h-[260px] w-full" config={barChartConfig}>
+      <BarChart accessibilityLayer data={data}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+        <XAxis
+          axisLine={false}
+          dataKey="label"
+          tickLine={false}
+          tickMargin={10}
+        />
+        <YAxis
+          axisLine={false}
+          tickFormatter={(value) => compactNumber.format(Number(value))}
+          tickLine={false}
+          width={40}
+        />
+        <ChartTooltip
+          content={
+            <ChartTooltipContent
+              formatter={(value, _name, item) => {
+                const suffix = String(item.payload?.suffix ?? "");
+                return (
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-foreground">
+                      {compactNumber.format(Number(value))}
+                      {suffix}
+                    </span>
+                  </div>
+                );
+              }}
             />
-            <Tooltip cursor={{ fill: "rgba(115, 93, 65, 0.08)" }} content={<BranchTooltip />} />
-            <Bar dataKey="savings" fill="var(--chart-1)" radius={[8, 8, 0, 0]} />
-            <Bar dataKey="deposits" fill="var(--chart-2)" radius={[8, 8, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+          }
+        />
+        <Bar dataKey="value" fill="var(--color-value)" radius={[10, 10, 0, 0]} />
+      </BarChart>
     </ChartContainer>
   );
 }
 
-export function PortfolioTrendChart({ data }: { data: PortfolioTrendChartDatum[] }) {
-  const formattedData = useMemo(() => data, [data]);
-
-  return (
-    <ChartContainer config={trendChartConfig}>
-      <div className="chart-heading-row">
-        <h4 className="chart-heading">Deposits and Loans Trend</h4>
-        <ChartLegendContent config={trendChartConfig} keys={["deposits", "loans"]} />
-      </div>
-      <div className="chart-svg-wrap">
-        <ResponsiveContainer width="100%" height={280}>
-          <LineChart data={formattedData} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(115, 93, 65, 0.2)" />
-            <XAxis dataKey="month" tickLine={false} axisLine={false} />
-            <YAxis
-              tickFormatter={(value) => currencyCompact(Number(value))}
-              tickLine={false}
-              axisLine={false}
-              width={52}
-            />
-            <Tooltip content={<TrendTooltip />} />
-            <Line
-              type="monotone"
-              dataKey="deposits"
-              stroke="var(--chart-2)"
-              strokeWidth={3}
-              dot={{ r: 3 }}
-              activeDot={{ r: 5 }}
-            />
-            <Line
-              type="monotone"
-              dataKey="loans"
-              stroke="var(--chart-3)"
-              strokeWidth={3}
-              dot={{ r: 3 }}
-              activeDot={{ r: 5 }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-    </ChartContainer>
-  );
-}
-
-export function ChartBars({
+export function BranchPerformanceChart({
   data,
 }: {
-  data: Array<{ label: string; value: number; suffix?: string }>;
+  data: BranchPerformanceChartPoint[];
 }) {
-  const max = Math.max(...data.map((entry) => entry.value), 1);
   return (
-    <div className="mini-chart-bars" role="img" aria-label="Performance bars">
-      {data.map((entry) => (
-        <div className="mini-chart-row" key={entry.label}>
-          <span>{entry.label}</span>
-          <div className="mini-chart-track">
-            <div
-              className="mini-chart-fill"
-              style={{ width: `${(entry.value / max) * 100}%` }}
-              aria-hidden="true"
+    <ChartContainer className="h-[280px] w-full" config={branchChartConfig}>
+      <BarChart accessibilityLayer data={data}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+        <XAxis axisLine={false} dataKey="branch" tickLine={false} tickMargin={10} />
+        <YAxis
+          axisLine={false}
+          tickFormatter={(value) => compactNumber.format(Number(value))}
+          tickLine={false}
+          width={44}
+        />
+        <ChartTooltip
+          content={
+            <ChartTooltipContent
+              formatter={(value) => compactNumber.format(Number(value))}
             />
-          </div>
-          <strong>
-            {entry.value}
-            {entry.suffix ?? ""}
-          </strong>
-        </div>
-      ))}
-    </div>
+          }
+        />
+        <ChartLegend content={<ChartLegendContent />} />
+        <Bar dataKey="savings" fill="var(--color-savings)" radius={[10, 10, 0, 0]} />
+        <Bar dataKey="deposits" fill="var(--color-deposits)" radius={[10, 10, 0, 0]} />
+      </BarChart>
+    </ChartContainer>
+  );
+}
+
+export function PortfolioTrendChart({
+  data,
+}: {
+  data: PortfolioTrendChartPoint[];
+}) {
+  return (
+    <ChartContainer className="h-[280px] w-full" config={portfolioChartConfig}>
+      <LineChart accessibilityLayer data={data}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+        <XAxis axisLine={false} dataKey="month" tickLine={false} tickMargin={10} />
+        <YAxis
+          axisLine={false}
+          tickFormatter={(value) => compactNumber.format(Number(value))}
+          tickLine={false}
+          width={44}
+        />
+        <ChartTooltip
+          content={
+            <ChartTooltipContent
+              formatter={(value) => compactNumber.format(Number(value))}
+            />
+          }
+        />
+        <ChartLegend content={<ChartLegendContent />} />
+        <Line
+          dataKey="deposits"
+          dot={false}
+          stroke="var(--color-deposits)"
+          strokeWidth={3}
+          type="monotone"
+        />
+        <Line
+          dataKey="loans"
+          dot={false}
+          stroke="var(--color-loans)"
+          strokeWidth={3}
+          type="monotone"
+        />
+      </LineChart>
+    </ChartContainer>
   );
 }

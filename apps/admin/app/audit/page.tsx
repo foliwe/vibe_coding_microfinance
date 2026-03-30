@@ -26,8 +26,8 @@ export default async function AuditPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={`${row.time}-${row.reference}`}>
+            {rows.map((row, index) => (
+              <tr key={`${row.time}-${row.reference}-${row.actor}-${row.action}-${index}`}>
                 <td>{row.time}</td>
                 <td>{row.actor}</td>
                 <td>{row.action}</td>

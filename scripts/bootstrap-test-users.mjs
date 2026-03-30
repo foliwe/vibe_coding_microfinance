@@ -29,6 +29,12 @@ const TEST_MEMBER_PASSWORD = process.env.TEST_MEMBER_PASSWORD ?? "Member123456!"
 const TEST_MEMBER_NAME = process.env.TEST_MEMBER_NAME ?? "Member One";
 const TEST_MEMBER_PHONE = process.env.TEST_MEMBER_PHONE ?? "+237600000103";
 
+
+const TEST_MEMBER_EMAIL = process.env.TEST_MEMBER_EMAIL ?? "member2@example.com";
+const TEST_MEMBER_PASSWORD = process.env.TEST_MEMBER_PASSWORD ?? "Member123456!";
+const TEST_MEMBER_NAME = process.env.TEST_MEMBER_NAME ?? "Member Two";
+const TEST_MEMBER_PHONE = process.env.TEST_MEMBER_PHONE ?? "+237600000104";
+
 function fail(message) {
   console.error(`\nError: ${message}\n`);
   process.exit(1);
@@ -61,7 +67,21 @@ async function ensureAuthUser({ email, password, fullName }) {
   );
 
   if (existingUser) {
-    return existingUser;
+    const updateResponse = await supabase.auth.admin.updateUserById(existingUser.id, {
+      password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: fullName,
+      },
+    });
+
+    if (updateResponse.error || !updateResponse.data.user) {
+      fail(
+        `Unable to update auth user for ${email}: ${updateResponse.error?.message ?? "Unknown error"}`,
+      );
+    }
+
+    return updateResponse.data.user;
   }
 
   const createResponse = await supabase.auth.admin.createUser({

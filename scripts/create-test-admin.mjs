@@ -50,7 +50,21 @@ async function ensureAdminUser() {
   );
 
   if (existingUser) {
-    return existingUser;
+    const updateResponse = await supabase.auth.admin.updateUserById(existingUser.id, {
+      password: TEST_ADMIN_PASSWORD,
+      email_confirm: true,
+      user_metadata: {
+        full_name: TEST_ADMIN_NAME,
+      },
+    });
+
+    if (updateResponse.error || !updateResponse.data.user) {
+      fail(
+        `Unable to update auth user: ${updateResponse.error?.message ?? "Unknown error"}`,
+      );
+    }
+
+    return updateResponse.data.user;
   }
 
   const createResponse = await supabase.auth.admin.createUser({

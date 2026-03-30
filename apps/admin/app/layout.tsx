@@ -1,11 +1,15 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import { Montserrat } from "next/font/google";
 import { ReactNode } from "react";
+import { Montserrat } from "next/font/google";
+
+import { ThemeProvider } from "../components/theme-provider";
+import { TooltipProvider } from "../components/ui/tooltip";
 
 const montserrat = Montserrat({
   subsets: ["latin"],
-  variable: "--font-montserrat",
+  variable: "--font-sans",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -15,8 +19,14 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={montserrat.variable}>
-      <body>{children}</body>
+    <html className={montserrat.variable} lang="en" suppressHydrationWarning>
+      <body className="min-h-screen bg-background font-sans text-foreground antialiased">
+        <ThemeProvider>
+          <TooltipProvider>
+            {children}
+          </TooltipProvider>
+        </ThemeProvider>
+      </body>
     </html>
   );
 }
