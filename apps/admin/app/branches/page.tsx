@@ -22,7 +22,7 @@ export default async function BranchesPage() {
           <Link className="button" href="/branches/new">
             Create Branch
           </Link>
-          <Link className="button-secondary" href="/users/new">
+          <Link className="button-secondary" href="/managers/new">
             Create Manager
           </Link>
         </div>

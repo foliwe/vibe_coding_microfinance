@@ -296,12 +296,12 @@ export async function createBranchAction(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/branches");
   revalidatePath("/branches/new");
-  revalidatePath("/users");
+  revalidatePath("/managers");
   redirect(buildRedirect("/branches/new", "success", successDetail));
 }
 
 export async function createManagerAction(formData: FormData) {
-  assertServiceEnv("/users/new");
+  assertServiceEnv("/managers/new");
 
   await requireRole(["admin"]);
   const service = createServiceClient();
@@ -367,7 +367,7 @@ export async function createManagerAction(formData: FormData) {
   } catch (error) {
     redirect(
       buildRedirect(
-        "/users/new",
+        "/managers/new",
         "error",
         error instanceof Error ? error.message : "Unable to create branch manager.",
       ),
@@ -376,9 +376,9 @@ export async function createManagerAction(formData: FormData) {
 
   revalidatePath("/");
   revalidatePath("/branches");
-  revalidatePath("/users");
-  revalidatePath("/users/new");
-  redirect(buildRedirect("/users/new", "success", successDetail));
+  revalidatePath("/managers");
+  revalidatePath("/managers/new");
+  redirect(buildRedirect("/managers/new", "success", successDetail));
 }
 
 export async function createAgentAction(formData: FormData) {

@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 
 import { signOutAction } from "../app/actions";
-import { getSidebarItems } from "../lib/navigation";
+import { getSidebarSections } from "../lib/navigation";
 import { cn } from "../lib/utils";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -41,9 +41,8 @@ const iconByHref = {
   "/": LayoutDashboardIcon,
   "/branch": ActivityIcon,
   "/branches": Building2Icon,
-  "/branches/new": Building2Icon,
-  "/users": UserCogIcon,
-  "/users/new": UserRoundPlusIcon,
+  "/managers": UserCogIcon,
+  "/managers/new": UserRoundPlusIcon,
   "/members": UsersIcon,
   "/members/new": UserRoundPlusIcon,
   "/agents": UsersIcon,
@@ -76,7 +75,7 @@ export function AdminShell({
   title,
 }: AdminShellProps) {
   const pathname = usePathname();
-  const sidebarItems = getSidebarItems(role);
+  const sidebarSections = getSidebarSections(role);
 
   return (
     <SidebarProvider defaultOpen>
@@ -101,44 +100,47 @@ export function AdminShell({
         <SidebarSeparator />
 
         <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupLabel>Navigation</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {sidebarItems.map((item) => {
-                  const Icon = iconByHref[item.href as keyof typeof iconByHref] ?? LayoutDashboardIcon;
-                  const active = isRouteActive(pathname, item.href);
+          {sidebarSections.map((section) => (
+            <SidebarGroup key={section.label}>
+              <SidebarGroupLabel>{section.label}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {section.items.map((item) => {
+                    const Icon =
+                      iconByHref[item.href as keyof typeof iconByHref] ?? LayoutDashboardIcon;
+                    const active = isRouteActive(pathname, item.href);
 
-                  return (
-                    <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
-                        <Link href={item.href}>
-                          <Icon />
-                          <span>{item.label}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                      {item.children?.length ? (
-                        <SidebarMenuSub>
-                          {item.children.map((child) => (
-                            <li key={child.href}>
-                              <SidebarMenuSubButton
-                                asChild
-                                isActive={isRouteActive(pathname, child.href)}
-                              >
-                                <Link href={child.href}>
-                                  <span>{child.label}</span>
-                                </Link>
-                              </SidebarMenuSubButton>
-                            </li>
-                          ))}
-                        </SidebarMenuSub>
-                      ) : null}
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+                    return (
+                      <SidebarMenuItem key={item.href}>
+                        <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
+                          <Link href={item.href}>
+                            <Icon />
+                            <span>{item.label}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                        {item.type === "group" ? (
+                          <SidebarMenuSub>
+                            {item.children.map((child) => (
+                              <li key={child.href}>
+                                <SidebarMenuSubButton
+                                  asChild
+                                  isActive={isRouteActive(pathname, child.href)}
+                                >
+                                  <Link href={child.href}>
+                                    <span>{child.label}</span>
+                                  </Link>
+                                </SidebarMenuSubButton>
+                              </li>
+                            ))}
+                          </SidebarMenuSub>
+                        ) : null}
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ))}
         </SidebarContent>
 
         <SidebarSeparator />

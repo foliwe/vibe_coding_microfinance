@@ -6,7 +6,7 @@ Sidebar sections:
 
 - Dashboard
 - Branches
-- Users
+- Managers
 - Members
 - Agents
 - Accounts
@@ -25,10 +25,12 @@ Sidebar sections:
 - branch detail
 - create branch
 - create branch manager
-- users list
+- managers list
 - members list
 - create member
 - member detail
+- agents list
+- agent detail
 - transactions list
 - transaction review
 - create deposit

@@ -84,7 +84,7 @@ export default async function AdminDashboardPage() {
             <Link className="button" href="/branches/new">
               Create Branch
             </Link>
-            <Link className="button-secondary" href="/users/new">
+            <Link className="button-secondary" href="/managers/new">
               Create Manager
             </Link>
             <Link className="button-secondary" href="/agents/new">

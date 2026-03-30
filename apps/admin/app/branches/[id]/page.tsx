@@ -82,7 +82,7 @@ export default async function BranchDetailPage({
             <Link className="button" href="/branches">
               Back to Branches
             </Link>
-            <Link className="button-secondary" href="/users/new">
+            <Link className="button-secondary" href="/managers/new">
               Create Manager
             </Link>
             <Link className="button-secondary" href="/reports">
