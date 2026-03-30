@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 
 import {
   InfoRow,
   InputField,
+  MonthTabStrip,
   MiniBarChart,
   PrimaryButton,
   Screen,
@@ -14,11 +15,18 @@ import {
   StatCard,
   StatusPill,
   SurfaceCard,
+  TransactionDayHeader,
   TransactionRow,
 } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
 import { useAppSession } from "@/lib/app-session";
-import { mobileData } from "@/lib/mobile-data";
+import { mobileData, formatTransactionMonthLabel } from "@/lib/mobile-data";
+import {
+  buildTransactionDayGroups,
+  buildTransactionMonthTabs,
+  formatTransactionRowDate,
+  getCurrentTransactionMonthKey,
+} from "@/lib/transaction-history";
 import { useResource } from "@/lib/use-resource";
 import type { LoanCard, MemberDashboard } from "@/mocks/mobile-data";
 import type { TransactionRequest } from "@credit-union/shared";
@@ -89,6 +97,20 @@ export function MemberHomeScreen() {
 
 export function MemberTransactionsScreen() {
   const { data: transactions, error, loading } = useResource(mobileData.getMemberTransactions);
+  const currentMonthKey = useMemo(() => getCurrentTransactionMonthKey(), []);
+  const [selectedMonthKey, setSelectedMonthKey] = useState(currentMonthKey);
+  const monthTabs = useMemo(
+    () => buildTransactionMonthTabs(transactions ?? [], currentMonthKey),
+    [currentMonthKey, transactions],
+  );
+  const selectedMonthLabel = useMemo(
+    () => monthTabs.find((tab) => tab.key === selectedMonthKey)?.label ?? formatTransactionMonthLabel(new Date()),
+    [monthTabs, selectedMonthKey],
+  );
+  const dayGroups = useMemo(
+    () => buildTransactionDayGroups(transactions ?? [], selectedMonthKey),
+    [selectedMonthKey, transactions],
+  );
 
   return (
     <Screen subtitle="Pending and approved activity stays easy to read." title="Transactions">
@@ -100,15 +122,29 @@ export function MemberTransactionsScreen() {
           <SkeletonCard />
         </>
       ) : (
-        transactions.map((transaction) => (
-          <TransactionRow
-            key={transaction.id}
-            amount={transaction.amount}
-            status={toStatusLabel(transaction.status)}
-            subtitle={`${transaction.id} · ${transaction.createdAt.slice(0, 10)}`}
-            title={transaction.type === "deposit" ? "Deposit" : "Withdrawal"}
-          />
-        ))
+        <>
+          <MonthTabStrip onSelect={setSelectedMonthKey} selectedKey={selectedMonthKey} tabs={monthTabs} />
+          {dayGroups.length === 0 ? (
+            <SurfaceCard accent="#EEF4ED">
+              <Text style={styles.heroCaption}>No transactions recorded for {selectedMonthLabel} yet.</Text>
+            </SurfaceCard>
+          ) : (
+            dayGroups.map((group) => (
+              <View key={group.key}>
+                <TransactionDayHeader label={group.label} />
+                {group.transactions.map((transaction) => (
+                  <TransactionRow
+                    key={transaction.id}
+                    amount={transaction.amount}
+                    dateLabel={formatTransactionRowDate(transaction.createdAt)}
+                    status={toStatusLabel(transaction.status)}
+                    typeLabel={transaction.type === "deposit" ? "Deposit" : "Withdrawal"}
+                  />
+                ))}
+              </View>
+            ))
+          )}
+        </>
       )}
     </Screen>
   );

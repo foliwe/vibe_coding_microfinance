@@ -273,6 +273,50 @@ export function MiniBarChart({
 }
 
 export function TransactionRow({
+  typeLabel,
+  dateLabel,
+  amount,
+  status,
+  detailLabel,
+}: {
+  typeLabel: string;
+  dateLabel: string;
+  amount: number;
+  status: string;
+  detailLabel?: string;
+}) {
+  return (
+    <SurfaceCard accent={colors.cardAlt}>
+      <View style={styles.rowTop}>
+        <View style={styles.rowTypeCell}>
+          <Text numberOfLines={1} style={styles.rowTitle}>
+            {typeLabel}
+          </Text>
+          {detailLabel ? (
+            <Text numberOfLines={1} style={styles.rowSubtitle}>
+              {detailLabel}
+            </Text>
+          ) : null}
+        </View>
+        <View style={styles.rowDateCell}>
+          <Text numberOfLines={1} style={styles.rowDate}>
+            {dateLabel}
+          </Text>
+        </View>
+        <View style={styles.rowAmountCell}>
+          <Text numberOfLines={1} style={styles.rowAmount}>
+            {formatCurrency(amount)}
+          </Text>
+        </View>
+        <View style={styles.rowStatusCell}>
+          <StatusPill label={status} />
+        </View>
+      </View>
+    </SurfaceCard>
+  );
+}
+
+export function ActivityRow({
   title,
   subtitle,
   amount,
@@ -285,7 +329,7 @@ export function TransactionRow({
 }) {
   return (
     <SurfaceCard accent={colors.cardAlt}>
-      <View style={styles.rowTop}>
+      <View style={styles.activityRowTop}>
         <View style={{ flex: 1 }}>
           <Text style={styles.rowTitle}>{title}</Text>
           <Text style={styles.rowSubtitle}>{subtitle}</Text>
@@ -294,6 +338,52 @@ export function TransactionRow({
       </View>
       <StatusPill label={status} />
     </SurfaceCard>
+  );
+}
+
+export function MonthTabStrip({
+  tabs,
+  selectedKey,
+  onSelect,
+}: {
+  tabs: Array<{ key: string; label: string }>;
+  selectedKey: string;
+  onSelect: (key: string) => void;
+}) {
+  return (
+    <ScrollView
+      horizontal
+      contentContainerStyle={styles.monthTabs}
+      showsHorizontalScrollIndicator={false}
+      style={styles.monthTabsScroll}
+    >
+      {tabs.map((tab) => {
+        const active = tab.key === selectedKey;
+
+        return (
+          <Pressable
+            key={tab.key}
+            onPress={() => onSelect(tab.key)}
+            style={({ pressed }) => [
+              styles.monthTab,
+              active && styles.monthTabActive,
+              pressed && styles.monthTabPressed,
+            ]}
+          >
+            <Text style={[styles.monthTabLabel, active && styles.monthTabLabelActive]}>{tab.label}</Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+export function TransactionDayHeader({ label }: { label: string }) {
+  return (
+    <View style={styles.daySection}>
+      <Text style={styles.daySectionLabel}>{label}</Text>
+      <View style={styles.daySectionDivider} />
+    </View>
   );
 }
 
@@ -562,7 +652,7 @@ const styles = StyleSheet.create({
   chartValue: {
     color: colors.inkMuted,
     fontFamily: typography.medium,
-    fontSize: 11,
+    fontSize: 13,
   },
   chartRail: {
     backgroundColor: "#E4ECE4",
@@ -580,18 +670,45 @@ const styles = StyleSheet.create({
   chartLabel: {
     color: colors.inkMuted,
     fontFamily: typography.medium,
-    fontSize: 11,
+    fontSize: 13,
   },
   rowTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+  },
+  activityRowTop: {
     alignItems: "center",
     flexDirection: "row",
     gap: spacing.md,
     justifyContent: "space-between",
   },
+  rowTypeCell: {
+    flex: 1,
+    minWidth: 0,
+  },
+  rowDateCell: {
+    minWidth: 64,
+  },
+  rowDate: {
+    color: colors.inkMuted,
+    fontFamily: typography.body,
+    fontSize: 13,
+  },
+  rowAmountCell: {
+    alignItems: "flex-end",
+    minWidth: 86,
+  },
+  rowStatusCell: {
+    alignItems: "flex-end",
+    flexShrink: 1,
+    minWidth: 0,
+  },
   rowTitle: {
     color: colors.ink,
     fontFamily: typography.medium,
-    fontSize: 15,
+    fontSize: 13,
   },
   rowSubtitle: {
     color: colors.inkMuted,
@@ -602,7 +719,52 @@ const styles = StyleSheet.create({
   rowAmount: {
     color: colors.ink,
     fontFamily: typography.medium,
-    fontSize: 15,
+    fontSize: 13,
+  },
+  monthTabsScroll: {
+    marginBottom: spacing.md,
+  },
+  monthTabs: {
+    gap: spacing.sm,
+    paddingRight: spacing.md,
+  },
+  monthTab: {
+    backgroundColor: colors.cardAlt,
+    borderColor: colors.border,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  monthTabActive: {
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
+  },
+  monthTabPressed: {
+    opacity: 0.88,
+  },
+  monthTabLabel: {
+    color: colors.inkMuted,
+    fontFamily: typography.medium,
+    fontSize: 11,
+  },
+  monthTabLabelActive: {
+    color: colors.white,
+  },
+  daySection: {
+    marginBottom: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  daySectionLabel: {
+    color: colors.ink,
+    fontFamily: typography.medium,
+    fontSize: 13,
+  },
+  daySectionDivider: {
+    backgroundColor: colors.border,
+    height: 1,
+    marginTop: spacing.xs,
+    width: "100%",
   },
   skeletonLine: {
     backgroundColor: "#E5ECE5",

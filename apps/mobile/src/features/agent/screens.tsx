@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 
 import {
+  ActivityRow,
   ActionTile,
   InfoRow,
   InputField,
+  MonthTabStrip,
   MiniBarChart,
   PrimaryButton,
   Screen,
@@ -15,12 +17,19 @@ import {
   StatCard,
   StatusPill,
   SurfaceCard,
+  TransactionDayHeader,
   TransactionRow,
 } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
 import { useAppSession } from "@/lib/app-session";
-import { mobileData } from "@/lib/mobile-data";
+import { mobileData, formatTransactionMonthLabel } from "@/lib/mobile-data";
 import type { AgentTransactionTarget } from "@/lib/mobile-data";
+import {
+  buildTransactionDayGroups,
+  buildTransactionMonthTabs,
+  formatTransactionRowDate,
+  getCurrentTransactionMonthKey,
+} from "@/lib/transaction-history";
 import { useResource } from "@/lib/use-resource";
 import type { AgentDashboard, SyncQueueItem } from "@/mocks/mobile-data";
 import type { TransactionRequest } from "@credit-union/shared";
@@ -142,7 +151,7 @@ export function AgentHomeScreen() {
 
       <SectionHeader title="Recent Activity" />
       {data.activity.map((item) => (
-        <TransactionRow
+        <ActivityRow
           key={item.id}
           amount={item.amount}
           status={item.status}
@@ -196,6 +205,20 @@ export function AgentMembersScreen() {
 
 export function AgentTransactionsScreen() {
   const { data: transactions, error, loading } = useResource(mobileData.getAgentTransactions);
+  const currentMonthKey = useMemo(() => getCurrentTransactionMonthKey(), []);
+  const [selectedMonthKey, setSelectedMonthKey] = useState(currentMonthKey);
+  const monthTabs = useMemo(
+    () => buildTransactionMonthTabs(transactions ?? [], currentMonthKey),
+    [currentMonthKey, transactions],
+  );
+  const selectedMonthLabel = useMemo(
+    () => monthTabs.find((tab) => tab.key === selectedMonthKey)?.label ?? formatTransactionMonthLabel(new Date()),
+    [monthTabs, selectedMonthKey],
+  );
+  const dayGroups = useMemo(
+    () => buildTransactionDayGroups(transactions ?? [], selectedMonthKey),
+    [selectedMonthKey, transactions],
+  );
 
   return (
     <Screen subtitle="Every money state stays explicit in the live field shell." title="Transactions">
@@ -220,15 +243,30 @@ export function AgentTransactionsScreen() {
           <SkeletonCard />
         </>
       ) : (
-        transactions.map((transaction) => (
-          <TransactionRow
-            key={transaction.id}
-            amount={transaction.amount}
-            status={toStatusLabel(transaction.status)}
-            subtitle={`${transaction.memberName} · ${transaction.id}`}
-            title={transaction.type === "deposit" ? "Deposit" : "Withdrawal"}
-          />
-        ))
+        <>
+          <MonthTabStrip onSelect={setSelectedMonthKey} selectedKey={selectedMonthKey} tabs={monthTabs} />
+          {dayGroups.length === 0 ? (
+            <SurfaceCard accent="#EEF4ED">
+              <Text style={styles.heroCaption}>No transactions recorded for {selectedMonthLabel} yet.</Text>
+            </SurfaceCard>
+          ) : (
+            dayGroups.map((group) => (
+              <View key={group.key}>
+                <TransactionDayHeader label={group.label} />
+                {group.transactions.map((transaction) => (
+                  <TransactionRow
+                    key={transaction.id}
+                    amount={transaction.amount}
+                    dateLabel={formatTransactionRowDate(transaction.createdAt)}
+                    detailLabel={transaction.memberName}
+                    status={toStatusLabel(transaction.status)}
+                    typeLabel={transaction.type === "deposit" ? "Deposit" : "Withdrawal"}
+                  />
+                ))}
+              </View>
+            ))
+          )}
+        </>
       )}
     </Screen>
   );

@@ -138,18 +138,37 @@ function buildIdempotencyKey(actorId: string, transactionType: TransactionType) 
   return `mobile-${transactionType}-${actorId}-${Date.now()}-${entropy}`;
 }
 
-function formatDateLabel(dateString: string, options?: Intl.DateTimeFormatOptions) {
-  const date = new Date(dateString);
+function formatCalendarLabel(value: string | Date, options: Intl.DateTimeFormatOptions) {
+  const date = value instanceof Date ? value : new Date(value);
 
   if (Number.isNaN(date.getTime())) {
     return "Unknown";
   }
 
-  return new Intl.DateTimeFormat("en-GB", {
+  return new Intl.DateTimeFormat("en-GB", options).format(date);
+}
+
+export function formatDateLabel(value: string | Date, options?: Intl.DateTimeFormatOptions) {
+  return formatCalendarLabel(value, {
     day: "2-digit",
     month: "short",
     ...options,
-  }).format(date);
+  });
+}
+
+export function formatTransactionMonthLabel(value: string | Date) {
+  return formatCalendarLabel(value, {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+export function formatTransactionDayLabel(value: string | Date) {
+  return formatCalendarLabel(value, {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
 }
 
 function formatTimeLabel(dateString: string) {
