@@ -72,6 +72,7 @@ test.describe("admin panel end-to-end flows", () => {
     await signIn(page, seededUsers.admin);
 
     await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByLabel("breadcrumb")).toContainText("Admin Dashboard");
     await expect(page.getByRole("heading", { level: 1, name: "Admin Dashboard" })).toBeVisible();
     await expect(page.getByText("All branches")).toBeVisible();
     await expect(page.getByRole("link", { name: "Branches" })).toBeVisible();
@@ -196,7 +197,7 @@ test.describe("admin panel end-to-end flows", () => {
     await signIn(page, seededUsers.admin);
     await expect(page).toHaveURL(/\/$/);
 
-    await page.goto("/users/new");
+    await page.goto("/managers/new");
     await expect(
       page.getByRole("heading", { level: 1, name: "Create Branch Manager" }),
     ).toBeVisible();
@@ -206,14 +207,19 @@ test.describe("admin panel end-to-end flows", () => {
     await page.getByLabel("Temporary Password").fill(manager.password);
     await page.locator('select[name="branchId"]').selectOption(context.branch.id);
     await page.getByRole("button", { name: "Create Branch Manager" }).click();
-    await expect(page).toHaveURL(/\/users\/new\?result=success/);
+    await expect(page).toHaveURL(/\/managers\/new\?result=success/);
     await expect(page.getByText(`Created branch manager ${manager.fullName}.`)).toBeVisible();
 
-    await waitForProfile(manager.email);
+    const createdManager = await waitForProfile(manager.email);
 
-    await page.goto("/users");
-    await expect(page.getByRole("heading", { level: 1, name: "Users" })).toBeVisible();
-    await expect(page.locator("tr").filter({ hasText: manager.fullName })).toBeVisible();
+    await page.goto("/managers");
+    await expect(page.getByRole("heading", { level: 1, name: "Managers" })).toBeVisible();
+    await expect(page.getByLabel("breadcrumb")).toContainText("Managers");
+    await page.getByRole("link", { name: manager.fullName }).click();
+    await expect(page).toHaveURL(new RegExp(`/managers/${createdManager.id}$`));
+    await expect(page.getByRole("heading", { level: 1, name: manager.fullName })).toBeVisible();
+    await expect(page.getByLabel("breadcrumb")).toContainText("People");
+    await expect(page.getByText("Assigned Branch Summary")).toBeVisible();
 
     await signOut(page);
 
@@ -238,7 +244,11 @@ test.describe("admin panel end-to-end flows", () => {
 
     await page.goto("/agents");
     await expect(page.getByRole("heading", { level: 1, name: "Agents" })).toBeVisible();
-    await expect(page.locator("tr").filter({ hasText: agent.fullName })).toBeVisible();
+    await page.getByRole("link", { name: agent.fullName }).click();
+    await expect(page).toHaveURL(new RegExp(`/agents/${createdAgent.id}$`));
+    await expect(page.getByRole("heading", { level: 1, name: agent.fullName })).toBeVisible();
+    await expect(page.getByLabel("breadcrumb")).toContainText("Agents");
+    await expect(page.getByText("Assigned Members")).toBeVisible();
 
     await page.goto("/members/new");
     await expect(page.getByRole("heading", { level: 1, name: "Create Member" })).toBeVisible();
@@ -264,7 +274,10 @@ test.describe("admin panel end-to-end flows", () => {
 
     await page.goto("/members");
     await expect(page.getByRole("heading", { level: 1, name: "Members" })).toBeVisible();
-    await expect(page.locator("tr").filter({ hasText: member.fullName })).toBeVisible();
+    await page.getByRole("link", { name: member.fullName }).click();
+    await expect(page.getByRole("heading", { level: 1, name: member.fullName })).toBeVisible();
+    await expect(page.getByLabel("breadcrumb")).toContainText("Members");
+    await expect(page.getByText("Account Summary")).toBeVisible();
 
     const loan = await createLoanForMemberEmail({
       approvedPrincipal: 800,

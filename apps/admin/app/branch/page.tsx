@@ -4,6 +4,7 @@ import { AdminShell } from "../../components/admin-shell";
 import { ChartBars } from "../../components/chart-bars";
 import { SectionCard } from "../../components/section-card";
 import { StatCard } from "../../components/stat-card";
+import { withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import { getBranchDashboardData } from "../../lib/dashboard-data";
 import { prettyCurrency } from "../../lib/format";
 
@@ -12,6 +13,7 @@ export default async function BranchDashboardPage() {
 
   return (
     <AdminShell
+      breadcrumbs={withDashboardBreadcrumbs("branch_manager")}
       currentBranchLabel={summary.branchName}
       currentUserName={profile.full_name}
       role="branch_manager"

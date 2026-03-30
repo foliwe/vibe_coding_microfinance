@@ -2,16 +2,22 @@ import Link from "next/link";
 
 import { AdminShell } from "../../components/admin-shell";
 import { SectionCard } from "../../components/section-card";
+import { breadcrumb, withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import { getMembersPageData } from "../../lib/dashboard-data";
 
 export default async function MembersPage() {
-  const { isLive, members, profile } = await getMembersPageData();
+  const { currentBranchLabel, isLive, members, profile } = await getMembersPageData();
+  const role = profile.role === "admin" ? "admin" : "branch_manager";
 
   return (
     <AdminShell
-      currentBranchLabel={profile.branch_id ?? "Branch"}
+      breadcrumbs={withDashboardBreadcrumbs(role, [
+        breadcrumb("People"),
+        breadcrumb("Members"),
+      ])}
+      currentBranchLabel={currentBranchLabel}
       currentUserName={profile.full_name}
-      role={profile.role === "admin" ? "admin" : "branch_manager"}
+      role={role}
       statusBadge={isLive ? "Live Supabase" : "Supabase setup needed"}
       title="Members"
       subtitle="Branch-scoped member list with assignment, branch, and status visibility."
@@ -40,7 +46,11 @@ export default async function MembersPage() {
             {members.map((member) => (
               <tr key={member.id}>
                 <td>{member.id.toUpperCase()}</td>
-                <td>{member.fullName}</td>
+                <td>
+                  <Link className="font-semibold underline-offset-4 hover:underline" href={`/members/${member.id}`}>
+                    {member.fullName}
+                  </Link>
+                </td>
                 <td>{member.agentName}</td>
                 <td>{member.branchName}</td>
                 <td>{member.phone}</td>

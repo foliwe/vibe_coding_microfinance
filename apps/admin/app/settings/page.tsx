@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { AdminShell } from "../../components/admin-shell";
 import { SectionCard } from "../../components/section-card";
+import { breadcrumb, withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import { getOnboardingPageContext } from "../../lib/onboarding-data";
 import { hasSupabaseServiceEnv } from "../../lib/supabase/env";
 
@@ -14,6 +15,7 @@ export default async function SettingsPage() {
 
   return (
     <AdminShell
+      breadcrumbs={withDashboardBreadcrumbs(role, [breadcrumb("Settings")])}
       currentBranchLabel={currentBranchLabel}
       currentUserName={profile.full_name}
       role={role}
@@ -56,7 +58,7 @@ export default async function SettingsPage() {
               <Link className="button" href="/branches/new">
                 Create Branch
               </Link>
-              <Link className="button-secondary" href="/users/new">
+              <Link className="button-secondary" href="/managers/new">
                 Create Manager
               </Link>
             </>

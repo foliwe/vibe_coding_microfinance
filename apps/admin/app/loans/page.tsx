@@ -1,16 +1,19 @@
 import { AdminShell } from "../../components/admin-shell";
 import { SectionCard } from "../../components/section-card";
+import { breadcrumb, withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import { getLoansPageData } from "../../lib/dashboard-data";
 import { prettyCurrency } from "../../lib/format";
 
 export default async function LoansPage() {
   const { isLive, loans, profile } = await getLoansPageData();
+  const role = profile.role === "admin" ? "admin" : "branch_manager";
 
   return (
     <AdminShell
+      breadcrumbs={withDashboardBreadcrumbs(role, [breadcrumb("Loans")])}
       currentBranchLabel={profile.branch_id ?? "Branch"}
       currentUserName={profile.full_name}
-      role={profile.role === "admin" ? "admin" : "branch_manager"}
+      role={role}
       statusBadge={isLive ? "Live Supabase" : "Supabase setup needed"}
       title="Loans"
       subtitle="Loan review, disbursement preparation, and principal/interest monitoring."

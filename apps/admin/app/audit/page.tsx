@@ -1,15 +1,18 @@
 import { AdminShell } from "../../components/admin-shell";
 import { SectionCard } from "../../components/section-card";
+import { breadcrumb, withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import { getAuditPageData } from "../../lib/dashboard-data";
 
 export default async function AuditPage() {
   const { isLive, profile, rows } = await getAuditPageData();
+  const role = profile.role === "admin" ? "admin" : "branch_manager";
 
   return (
     <AdminShell
+      breadcrumbs={withDashboardBreadcrumbs(role, [breadcrumb("Audit Log")])}
       currentBranchLabel={profile.role === "admin" ? "All branches" : (profile.branch_id ?? "Branch")}
       currentUserName={profile.full_name}
-      role={profile.role === "admin" ? "admin" : "branch_manager"}
+      role={role}
       statusBadge={isLive ? "Live Supabase" : "Supabase setup needed"}
       title="Audit Log"
       subtitle="Immutable operational trail for approvals, member creation, loans, device actions, and high-risk events."

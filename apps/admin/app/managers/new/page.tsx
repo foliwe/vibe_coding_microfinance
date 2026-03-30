@@ -1,4 +1,4 @@
-import { createBranchAction } from "../../actions";
+import { createManagerAction } from "../../actions";
 import { AdminShell } from "../../../components/admin-shell";
 import { SectionCard } from "../../../components/section-card";
 import { breadcrumb, withDashboardBreadcrumbs } from "../../../lib/breadcrumbs";
@@ -22,63 +22,62 @@ function Notice({
   );
 }
 
-export default async function CreateBranchPage({
+export default async function CreateManagerPage({
   searchParams,
 }: {
   searchParams?: Promise<{ result?: string; detail?: string }>;
 }) {
   const params = await searchParams;
-  const { currentBranchLabel, isLive, managers, profile } = await getOnboardingPageContext([
+  const { branches, currentBranchLabel, isLive, profile } = await getOnboardingPageContext([
     "admin",
   ]);
 
   return (
     <AdminShell
       breadcrumbs={withDashboardBreadcrumbs("admin", [
-        breadcrumb("Branches", "/branches"),
-        breadcrumb("Create Branch"),
+        breadcrumb("People"),
+        breadcrumb("Managers", "/managers"),
+        breadcrumb("Create Manager"),
       ])}
       currentBranchLabel={currentBranchLabel}
       currentUserName={profile.full_name}
       role="admin"
       statusBadge={isLive ? "Live Supabase" : "Supabase setup needed"}
-      title="Create Branch"
-      subtitle="Register a new branch, assign an existing manager if needed, and establish the branch identity used by every downstream workflow."
+      title="Create Branch Manager"
+      subtitle="Create a branch manager account and attach it to an existing branch."
     >
       <SectionCard
-        title="Branch Setup"
-        description="Admins create branches. A manager can be assigned now or later from the branch-manager creation flow."
+        title="Manager Setup"
+        description="This creates the Auth user, branch-manager profile, staff record, and assigns the selected branch."
       >
         <Notice detail={params?.detail} result={params?.result} />
-        <form action={createBranchAction}>
+        <form action={createManagerAction}>
           <div className="form-grid">
             <label className="field">
-              <span>Branch Name</span>
-              <input name="name" placeholder="Bamenda Central" required />
+              <span>Full Name</span>
+              <input name="fullName" placeholder="Bamenda Manager" required />
             </label>
             <label className="field">
-              <span>Branch Code</span>
-              <input name="code" placeholder="BAM" required />
-            </label>
-            <label className="field">
-              <span>City</span>
-              <input name="city" placeholder="Bamenda" />
-            </label>
-            <label className="field">
-              <span>Region</span>
-              <input name="region" placeholder="Northwest" />
+              <span>Email</span>
+              <input name="email" placeholder="manager@example.com" required type="email" />
             </label>
             <label className="field">
               <span>Phone</span>
-              <input name="phone" placeholder="+2376..." />
+              <input name="phone" placeholder="+2376..." required />
             </label>
             <label className="field">
-              <span>Branch Manager</span>
-              <select defaultValue="" name="managerProfileId">
-                <option value="">Assign later</option>
-                {managers.map((manager) => (
-                  <option key={manager.id} value={manager.id}>
-                    {manager.fullName} · {manager.branchName}
+              <span>Temporary Password</span>
+              <input minLength={8} name="password" placeholder="Manager123456!" required />
+            </label>
+            <label className="field">
+              <span>Branch</span>
+              <select defaultValue="" name="branchId" required>
+                <option value="" disabled>
+                  Select branch
+                </option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name} ({branch.code})
                   </option>
                 ))}
               </select>
@@ -86,7 +85,7 @@ export default async function CreateBranchPage({
           </div>
           <div className="actions">
             <button className="button" type="submit">
-              Create Branch
+              Create Branch Manager
             </button>
           </div>
         </form>

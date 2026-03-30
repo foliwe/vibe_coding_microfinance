@@ -24,6 +24,12 @@ export type PortfolioTrendChartPoint = {
   loans: number;
 };
 
+export type ActivityTrendChartPoint = {
+  label: string;
+  deposits: number;
+  withdrawals: number;
+};
+
 export type AdminDashboardCharts = {
   branchPerformance: BranchPerformanceChartPoint[];
   portfolioTrend: PortfolioTrendChartPoint[];
@@ -50,6 +56,7 @@ export type TransactionPageFilters = {
 export type MemberRegistryRow = {
   id: string;
   fullName: string;
+  agentId: string | null;
   agentName: string;
   branchName: string;
   phone: string;
@@ -59,22 +66,89 @@ export type MemberRegistryRow = {
 };
 
 export type MembersPageData = {
+  currentBranchLabel: string;
   profile: AdminProfile;
   members: MemberRegistryRow[];
   isLive: boolean;
 };
 
-export type UserRegistryRow = {
+export type AgentListRow = {
   id: string;
   fullName: string;
-  role: UserRole;
   branchName: string;
+  phone: string;
+  status: string;
+  assignedMemberCount: number;
+  collectionsToday: number;
+  pendingApprovals: number;
+  cashVariance: number;
+};
+
+export type AgentsPageData = {
+  currentBranchLabel: string;
+  profile: AdminProfile;
+  agents: AgentListRow[];
+  isLive: boolean;
+};
+
+export type ManagerRegistryRow = {
+  id: string;
+  fullName: string;
+  branchName: string;
+  phone: string;
   status: string;
 };
 
-export type UsersPageData = {
+export type ManagersPageData = {
   profile: AdminProfile;
-  users: UserRegistryRow[];
+  managers: ManagerRegistryRow[];
+  isLive: boolean;
+};
+
+export type ManagerDetailPageData = {
+  currentBranchLabel: string;
+  profile: AdminProfile;
+  manager: (ManagerRegistryRow & {
+    branchId: string | null;
+    email: string | null;
+  }) | null;
+  branch: BranchSummary | null;
+  isLive: boolean;
+};
+
+export type MemberAccountDetail = {
+  id: string;
+  accountType: "savings" | "deposit";
+  accountNumber: string;
+  status: string;
+  balance: number;
+};
+
+export type MemberDetailPageData = {
+  currentBranchLabel: string;
+  profile: AdminProfile;
+  member: (MemberRegistryRow & {
+    activeLoanCount: number;
+    outstandingLoanBalance: number;
+    pendingTransactions: number;
+    savingsBalance: number;
+    depositBalance: number;
+  }) | null;
+  accounts: MemberAccountDetail[];
+  recentTransactions: TransactionRequest[];
+  activityTrend: ActivityTrendChartPoint[];
+  isLive: boolean;
+};
+
+export type AgentDetailPageData = {
+  currentBranchLabel: string;
+  profile: AdminProfile;
+  agent: (AgentListRow & {
+    collectionsTotal: number;
+  }) | null;
+  members: MemberRegistryRow[];
+  recentTransactions: TransactionRequest[];
+  activityTrend: ActivityTrendChartPoint[];
   isLive: boolean;
 };
 
@@ -157,6 +231,7 @@ type BranchRow = {
 
 type ProfileRow = {
   id: string;
+  email?: string | null;
   full_name: string;
   phone?: string | null;
   role?: UserRole;
@@ -203,6 +278,13 @@ type TransactionRow = {
 type QueueMemberAccountRow = {
   account_type: "savings" | "deposit";
   id: string;
+};
+
+type MemberAccountRow = {
+  id: string;
+  account_type: "savings" | "deposit";
+  account_number: string;
+  status: string;
 };
 
 type MemberProfileRegistryRow = {
@@ -322,6 +404,130 @@ function buildAdminDashboardCharts(summary: AdminDashboardSummary): AdminDashboa
   return { branchPerformance, portfolioTrend };
 }
 
+function activityLabel(date: Date) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
+function buildActivityTrend(transactions: TransactionRequest[], days = 7): ActivityTrendChartPoint[] {
+  const buckets = Array.from({ length: days }, (_, index) => {
+    const date = new Date();
+    date.setUTCHours(0, 0, 0, 0);
+    date.setUTCDate(date.getUTCDate() - (days - index - 1));
+
+    return {
+      key: date.toISOString().slice(0, 10),
+      label: activityLabel(date),
+      deposits: 0,
+      withdrawals: 0,
+    };
+  });
+
+  const bucketMap = new Map(buckets.map((bucket) => [bucket.key, bucket]));
+
+  for (const transaction of transactions) {
+    const key = transaction.createdAt.slice(0, 10);
+    const bucket = bucketMap.get(key);
+
+    if (!bucket) {
+      continue;
+    }
+
+    if (transaction.type === "deposit") {
+      bucket.deposits += transaction.amount;
+    }
+
+    if (transaction.type === "withdrawal") {
+      bucket.withdrawals += transaction.amount;
+    }
+  }
+
+  return buckets.map(({ key: _key, ...bucket }) => bucket);
+}
+
+async function getCurrentBranchLabel(
+  supabase: Awaited<ReturnType<typeof requireRole>>["supabase"],
+  profile: AdminProfile,
+) {
+  if (profile.role === "admin") {
+    return "All branches";
+  }
+
+  if (!profile.branch_id) {
+    return "Unassigned branch";
+  }
+
+  const { data } = await supabase
+    .from("branches")
+    .select("name")
+    .eq("id", profile.branch_id)
+    .maybeSingle();
+
+  return (data as Pick<BranchRow, "name"> | null)?.name ?? "Branch";
+}
+
+async function mapTransactions(
+  supabase: Awaited<ReturnType<typeof requireRole>>["supabase"],
+  rows: TransactionRow[],
+) {
+  const actorIds = Array.from(
+    new Set(rows.flatMap((row) => [row.member_profile_id, row.agent_profile_id])),
+  );
+  const memberAccountIds = Array.from(new Set(rows.map((row) => row.member_account_id)));
+  const branchIds = Array.from(new Set(rows.map((row) => row.branch_id)));
+
+  const [{ data: profileData }, { data: branchData }, { data: accountData }] = await Promise.all([
+    actorIds.length
+      ? supabase.from("profiles").select("id, full_name").in("id", actorIds)
+      : Promise.resolve({ data: [] as ProfileRow[] }),
+    branchIds.length
+      ? supabase.from("branches").select("id, name").in("id", branchIds)
+      : Promise.resolve({ data: [] as BranchRow[] }),
+    memberAccountIds.length
+      ? supabase
+          .from("member_accounts")
+          .select("id, account_type")
+          .in("id", memberAccountIds)
+      : Promise.resolve({ data: [] as QueueMemberAccountRow[] }),
+  ]);
+
+  const profileMap = new Map(
+    ((profileData as ProfileRow[] | null) ?? []).map((profile) => [
+      profile.id,
+      profile.full_name,
+    ]),
+  );
+  const branchMap = new Map(
+    ((branchData as BranchRow[] | null) ?? []).map((branch) => [branch.id, branch.name]),
+  );
+  const accountMap = new Map(
+    ((accountData as QueueMemberAccountRow[] | null) ?? []).map((account) => [
+      account.id,
+      account.account_type,
+    ]),
+  );
+
+  return rows.map(
+    (row): TransactionRequest => ({
+      id: row.id,
+      memberId: row.member_profile_id,
+      memberName: profileMap.get(row.member_profile_id) ?? row.member_profile_id,
+      branchId: row.branch_id,
+      branchName: branchMap.get(row.branch_id) ?? row.branch_id,
+      agentId: row.agent_profile_id,
+      agentName: profileMap.get(row.agent_profile_id) ?? row.agent_profile_id,
+      type: row.transaction_type,
+      accountType: accountMap.get(row.member_account_id) ?? "savings",
+      amount: toNumber(row.amount),
+      status: row.status,
+      createdAt: row.created_at,
+      note: row.note ?? undefined,
+    }),
+  );
+}
+
 async function getBranchMappings(supabase: Awaited<ReturnType<typeof requireRole>>["supabase"]) {
   const { data: branchesData } = await supabase
     .from("branches")
@@ -398,64 +604,7 @@ async function getTransactionsByScope(
 
   const { data } = await query;
   const rows = (data as TransactionRow[] | null) ?? [];
-
-  const actorIds = Array.from(
-    new Set(rows.flatMap((row) => [row.member_profile_id, row.agent_profile_id])),
-  );
-  const memberAccountIds = Array.from(new Set(rows.map((row) => row.member_account_id)));
-  const branchIds = Array.from(new Set(rows.map((row) => row.branch_id)));
-
-  const [{ data: profileData }, { data: branchData }, { data: accountData }] = await Promise.all([
-    actorIds.length
-      ? supabase
-          .from("profiles")
-          .select("id, full_name")
-          .in("id", actorIds)
-      : Promise.resolve({ data: [] as ProfileRow[] }),
-    branchIds.length
-      ? supabase.from("branches").select("id, name").in("id", branchIds)
-      : Promise.resolve({ data: [] as BranchRow[] }),
-    memberAccountIds.length
-      ? supabase
-          .from("member_accounts")
-          .select("id, account_type")
-          .in("id", memberAccountIds)
-      : Promise.resolve({ data: [] as QueueMemberAccountRow[] }),
-  ]);
-
-  const profileMap = new Map(
-    ((profileData as ProfileRow[] | null) ?? []).map((profile) => [
-      profile.id,
-      profile.full_name,
-    ]),
-  );
-  const branchMap = new Map(
-    ((branchData as BranchRow[] | null) ?? []).map((branch) => [branch.id, branch.name]),
-  );
-  const accountMap = new Map(
-    ((accountData as QueueMemberAccountRow[] | null) ?? []).map((account) => [
-      account.id,
-      account.account_type,
-    ]),
-  );
-
-  const transactions = rows.map(
-    (row): TransactionRequest => ({
-      id: row.id,
-      memberId: row.member_profile_id,
-      memberName: profileMap.get(row.member_profile_id) ?? row.member_profile_id,
-      branchId: row.branch_id,
-      branchName: branchMap.get(row.branch_id) ?? row.branch_id,
-      agentId: row.agent_profile_id,
-      agentName: profileMap.get(row.agent_profile_id) ?? row.agent_profile_id,
-      type: row.transaction_type,
-      accountType: accountMap.get(row.member_account_id) ?? "savings",
-      amount: toNumber(row.amount),
-      status: row.status,
-      createdAt: row.created_at,
-      note: row.note ?? undefined,
-    }),
-  );
+  const transactions = await mapTransactions(supabase, rows);
 
   if (!filters.accountType) {
     return transactions;
@@ -528,17 +677,7 @@ export async function getTransactionQueuePageData(
 
   const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
   const branchId = profile.role === "branch_manager" ? profile.branch_id ?? undefined : undefined;
-
-  const branchLabel =
-    profile.role === "admin"
-      ? "All branches"
-      : (
-          await supabase
-            .from("branches")
-            .select("name")
-          .eq("id", profile.branch_id ?? "")
-          .maybeSingle()
-        ).data?.name ?? "Branch";
+  const branchLabel = await getCurrentBranchLabel(supabase, profile);
 
   const scopedFilters: TransactionPageFilters = {
     accountType: filters.accountType,
@@ -926,9 +1065,122 @@ export async function getReportsPageData(): Promise<ReportsPageData> {
   };
 }
 
+export async function getAgentsPageData(): Promise<AgentsPageData> {
+  if (!hasSupabaseEnv()) {
+    return {
+      currentBranchLabel: "Branch",
+      profile: emptyProfile("branch_manager"),
+      agents: [],
+      isLive: false,
+    };
+  }
+
+  const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
+  const branchId = profile.role === "branch_manager" ? profile.branch_id ?? undefined : undefined;
+  const today = currentDateIso();
+
+  let agentQuery = supabase
+    .from("profiles")
+    .select("id, full_name, phone, branch_id, is_active")
+    .eq("role", "agent")
+    .order("full_name", { ascending: true });
+
+  if (branchId) {
+    agentQuery = agentQuery.eq("branch_id", branchId);
+  }
+
+  const { data: agentData } = await agentQuery;
+  const agents = (agentData as ProfileRow[] | null) ?? [];
+  const agentIds = agents.map((agent) => agent.id);
+  const branchIds = Array.from(
+    new Set(
+      agents
+        .map((agent) => agent.branch_id)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+
+  const [
+    { data: branchRows },
+    { data: memberProfileRows },
+    { data: todayTransactionRows },
+    { data: pendingTransactionRows },
+    { data: cashRowsData },
+  ] = await Promise.all([
+    branchIds.length
+      ? supabase.from("branches").select("id, name").in("id", branchIds)
+      : Promise.resolve({ data: [] as BranchRow[] }),
+    agentIds.length
+      ? supabase
+          .from("member_profiles")
+          .select(
+            "profile_id, branch_id, assigned_agent_id, status, occupation, residential_address",
+          )
+          .in("assigned_agent_id", agentIds)
+      : Promise.resolve({ data: [] as MemberProfileRegistryRow[] }),
+    agentIds.length
+      ? supabase
+          .from("transaction_requests")
+          .select(
+            "id, branch_id, member_profile_id, member_account_id, agent_profile_id, transaction_type, amount, note, status, created_at",
+          )
+          .in("agent_profile_id", agentIds)
+          .gte("created_at", `${today}T00:00:00.000Z`)
+      : Promise.resolve({ data: [] as TransactionRow[] }),
+    agentIds.length
+      ? supabase
+          .from("transaction_requests")
+          .select("id, branch_id, member_profile_id, member_account_id, agent_profile_id, transaction_type, amount, note, status, created_at")
+          .in("agent_profile_id", agentIds)
+          .eq("status", "pending_approval")
+      : Promise.resolve({ data: [] as TransactionRow[] }),
+    agentIds.length
+      ? supabase
+          .from("cash_drawers")
+          .select("branch_id, agent_profile_id, expected_cash, variance")
+          .in("agent_profile_id", agentIds)
+          .eq("business_date", today)
+      : Promise.resolve({ data: [] as CashDrawerRow[] }),
+  ]);
+
+  const branchMap = new Map(
+    ((branchRows as BranchRow[] | null) ?? []).map((branch) => [branch.id, branch.name]),
+  );
+  const assignedMembers = (memberProfileRows as MemberProfileRegistryRow[] | null) ?? [];
+  const todayTransactions = (todayTransactionRows as TransactionRow[] | null) ?? [];
+  const pendingTransactions = (pendingTransactionRows as TransactionRow[] | null) ?? [];
+  const cashRows = (cashRowsData as CashDrawerRow[] | null) ?? [];
+
+  return {
+    currentBranchLabel: await getCurrentBranchLabel(supabase, profile),
+    profile,
+    agents: agents.map((agent) => ({
+      id: agent.id,
+      fullName: agent.full_name,
+      branchName: agent.branch_id ? branchMap.get(agent.branch_id) ?? agent.branch_id : "Unassigned",
+      phone: agent.phone ?? "No phone",
+      status: agent.is_active ? "active" : "inactive",
+      assignedMemberCount: assignedMembers.filter(
+        (member) => member.assigned_agent_id === agent.id,
+      ).length,
+      collectionsToday: todayTransactions
+        .filter((transaction) => transaction.agent_profile_id === agent.id)
+        .reduce((sum, transaction) => sum + toNumber(transaction.amount), 0),
+      pendingApprovals: pendingTransactions.filter(
+        (transaction) => transaction.agent_profile_id === agent.id,
+      ).length,
+      cashVariance: cashRows
+        .filter((cash) => cash.agent_profile_id === agent.id)
+        .reduce((sum, cash) => sum + toNumber(cash.variance), 0),
+    })),
+    isLive: true,
+  };
+}
+
 export async function getMembersPageData(): Promise<MembersPageData> {
   if (!hasSupabaseEnv()) {
     return {
+      currentBranchLabel: "Branch",
       profile: emptyProfile("branch_manager"),
       members: [],
       isLive: false,
@@ -984,6 +1236,7 @@ export async function getMembersPageData(): Promise<MembersPageData> {
   );
 
   return {
+    currentBranchLabel: await getCurrentBranchLabel(supabase, profile),
     profile,
     members: memberProfiles.map((member) => {
       const memberRow = memberMap.get(member.profile_id);
@@ -991,6 +1244,7 @@ export async function getMembersPageData(): Promise<MembersPageData> {
       return {
         id: member.profile_id,
         fullName: memberRow?.full_name ?? member.profile_id,
+        agentId: member.assigned_agent_id,
         agentName: agentMap.get(member.assigned_agent_id ?? "") ?? "Unassigned",
         branchName: branchMap.get(member.branch_id) ?? member.branch_id,
         phone: memberRow?.phone ?? "No phone",
@@ -1003,47 +1257,387 @@ export async function getMembersPageData(): Promise<MembersPageData> {
   };
 }
 
-export async function getMemberDetailPageData(memberId: string) {
-  const data = await getMembersPageData();
-  const member = data.members.find((row) => row.id === memberId) ?? null;
+export async function getMemberDetailPageData(memberId: string): Promise<MemberDetailPageData> {
+  if (!hasSupabaseEnv()) {
+    return {
+      currentBranchLabel: "Branch",
+      profile: emptyProfile("branch_manager"),
+      member: null,
+      accounts: [],
+      recentTransactions: [],
+      activityTrend: buildActivityTrend([]),
+      isLive: false,
+    };
+  }
+
+  const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
+  const currentBranchLabel = await getCurrentBranchLabel(supabase, profile);
+
+  let memberQuery = supabase
+    .from("member_profiles")
+    .select(
+      "profile_id, branch_id, assigned_agent_id, status, occupation, residential_address",
+    )
+    .eq("profile_id", memberId);
+
+  if (profile.role === "branch_manager" && profile.branch_id) {
+    memberQuery = memberQuery.eq("branch_id", profile.branch_id);
+  }
+
+  const { data: memberProfileData } = await memberQuery.maybeSingle();
+  const memberProfile = (memberProfileData as MemberProfileRegistryRow | null) ?? null;
+
+  if (!memberProfile) {
+    return {
+      currentBranchLabel,
+      profile,
+      member: null,
+      accounts: [],
+      recentTransactions: [],
+      activityTrend: buildActivityTrend([]),
+      isLive: true,
+    };
+  }
+
+  const [
+    { data: memberRow },
+    { data: agentRow },
+    { data: branchRow },
+    { data: accountRowsData },
+    { data: transactionRowsData },
+    pendingTransactionsResult,
+    { data: loanRowsData },
+  ] = await Promise.all([
+    supabase.from("profiles").select("id, full_name, phone").eq("id", memberId).maybeSingle(),
+    memberProfile.assigned_agent_id
+      ? supabase
+          .from("profiles")
+          .select("id, full_name")
+          .eq("id", memberProfile.assigned_agent_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null as ProfileRow | null }),
+    supabase.from("branches").select("id, name").eq("id", memberProfile.branch_id).maybeSingle(),
+    supabase
+      .from("member_accounts")
+      .select("id, account_type, account_number, status")
+      .eq("member_profile_id", memberId)
+      .order("account_type", { ascending: true }),
+    supabase
+      .from("transaction_requests")
+      .select(
+        "id, branch_id, member_profile_id, member_account_id, agent_profile_id, transaction_type, amount, note, status, created_at",
+      )
+      .eq("member_profile_id", memberId)
+      .order("created_at", { ascending: false })
+      .limit(40),
+    supabase
+      .from("transaction_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("member_profile_id", memberId)
+      .eq("status", "pending_approval"),
+    supabase
+      .from("loans")
+      .select("id, branch_id, member_profile_id, approved_principal, remaining_principal, monthly_interest_rate, status")
+      .eq("member_profile_id", memberId),
+  ]);
+
+  const accounts = (accountRowsData as MemberAccountRow[] | null) ?? [];
+  const accountDetails = await Promise.all(
+    accounts.map(async (account) => {
+      const { data } = await supabase.rpc("get_member_account_balance", {
+        p_member_account_id: account.id,
+      });
+
+      return {
+        id: account.id,
+        accountType: account.account_type,
+        accountNumber: account.account_number,
+        status: account.status,
+        balance: toNumber(data as number | string | null),
+      };
+    }),
+  );
+
+  const recentTransactions = await mapTransactions(
+    supabase,
+    (transactionRowsData as TransactionRow[] | null) ?? [],
+  );
+  const loans = (loanRowsData as LoanRow[] | null) ?? [];
+  const savingsBalance = accountDetails.find((account) => account.accountType === "savings")?.balance ?? 0;
+  const depositBalance = accountDetails.find((account) => account.accountType === "deposit")?.balance ?? 0;
 
   return {
-    ...data,
-    member,
+    currentBranchLabel,
+    profile,
+    member: {
+      id: memberProfile.profile_id,
+      fullName: (memberRow as ProfileRow | null)?.full_name ?? memberProfile.profile_id,
+      agentId: memberProfile.assigned_agent_id,
+      agentName: (agentRow as ProfileRow | null)?.full_name ?? "Unassigned",
+      branchName: (branchRow as BranchRow | null)?.name ?? memberProfile.branch_id,
+      phone: (memberRow as ProfileRow | null)?.phone ?? "No phone",
+      status: memberProfile.status,
+      occupation: memberProfile.occupation,
+      address: memberProfile.residential_address,
+      activeLoanCount: loans.filter((loan) => toNumber(loan.remaining_principal) > 0).length,
+      outstandingLoanBalance: loans.reduce(
+        (sum, loan) => sum + toNumber(loan.remaining_principal),
+        0,
+      ),
+      pendingTransactions: pendingTransactionsResult.count ?? 0,
+      savingsBalance,
+      depositBalance,
+    },
+    accounts: accountDetails,
+    recentTransactions,
+    activityTrend: buildActivityTrend(recentTransactions),
+    isLive: true,
   };
 }
 
-export async function getUsersPageData(): Promise<UsersPageData> {
+export async function getAgentDetailPageData(agentId: string): Promise<AgentDetailPageData> {
+  if (!hasSupabaseEnv()) {
+    return {
+      currentBranchLabel: "Branch",
+      profile: emptyProfile("branch_manager"),
+      agent: null,
+      members: [],
+      recentTransactions: [],
+      activityTrend: buildActivityTrend([]),
+      isLive: false,
+    };
+  }
+
+  const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
+  const currentBranchLabel = await getCurrentBranchLabel(supabase, profile);
+  const today = currentDateIso();
+
+  let agentQuery = supabase
+    .from("profiles")
+    .select("id, full_name, phone, branch_id, is_active")
+    .eq("id", agentId)
+    .eq("role", "agent");
+
+  if (profile.role === "branch_manager" && profile.branch_id) {
+    agentQuery = agentQuery.eq("branch_id", profile.branch_id);
+  }
+
+  const { data: agentRowData } = await agentQuery.maybeSingle();
+  const agentRow = (agentRowData as ProfileRow | null) ?? null;
+
+  if (!agentRow) {
+    return {
+      currentBranchLabel,
+      profile,
+      agent: null,
+      members: [],
+      recentTransactions: [],
+      activityTrend: buildActivityTrend([]),
+      isLive: true,
+    };
+  }
+
+  const [
+    { data: branchRow },
+    { data: memberProfileRowsData },
+    { data: memberRowsData },
+    { data: transactionRowsData },
+    pendingTransactionsResult,
+    { data: cashRowsData },
+  ] = await Promise.all([
+    agentRow.branch_id
+      ? supabase.from("branches").select("id, name").eq("id", agentRow.branch_id).maybeSingle()
+      : Promise.resolve({ data: null as BranchRow | null }),
+    supabase
+      .from("member_profiles")
+      .select(
+        "profile_id, branch_id, assigned_agent_id, status, occupation, residential_address",
+      )
+      .eq("assigned_agent_id", agentId)
+      .order("profile_id", { ascending: true }),
+    supabase
+      .from("profiles")
+      .select("id, full_name, phone")
+      .eq("role", "member"),
+    supabase
+      .from("transaction_requests")
+      .select(
+        "id, branch_id, member_profile_id, member_account_id, agent_profile_id, transaction_type, amount, note, status, created_at",
+      )
+      .eq("agent_profile_id", agentId)
+      .order("created_at", { ascending: false })
+      .limit(40),
+    supabase
+      .from("transaction_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("agent_profile_id", agentId)
+      .eq("status", "pending_approval"),
+    supabase
+      .from("cash_drawers")
+      .select("branch_id, agent_profile_id, expected_cash, variance")
+      .eq("agent_profile_id", agentId)
+      .eq("business_date", today),
+  ]);
+
+  const memberProfiles = (memberProfileRowsData as MemberProfileRegistryRow[] | null) ?? [];
+  const memberRows = (memberRowsData as ProfileRow[] | null) ?? [];
+  const memberMap = new Map(memberRows.map((member) => [member.id, member]));
+  const recentTransactions = await mapTransactions(
+    supabase,
+    (transactionRowsData as TransactionRow[] | null) ?? [],
+  );
+  const collectionsTotal = recentTransactions.reduce(
+    (sum, transaction) => sum + transaction.amount,
+    0,
+  );
+  const collectionsToday = recentTransactions
+    .filter((transaction) => transaction.createdAt.startsWith(today))
+    .reduce((sum, transaction) => sum + transaction.amount, 0);
+  const cashRows = (cashRowsData as CashDrawerRow[] | null) ?? [];
+
+  return {
+    currentBranchLabel,
+    profile,
+    agent: {
+      id: agentRow.id,
+      fullName: agentRow.full_name,
+      branchName: (branchRow as BranchRow | null)?.name ?? agentRow.branch_id ?? "Unassigned",
+      phone: agentRow.phone ?? "No phone",
+      status: agentRow.is_active ? "active" : "inactive",
+      assignedMemberCount: memberProfiles.length,
+      collectionsTotal,
+      collectionsToday,
+      pendingApprovals: pendingTransactionsResult.count ?? 0,
+      cashVariance: cashRows.reduce((sum, cash) => sum + toNumber(cash.variance), 0),
+    },
+    members: memberProfiles.map((member) => {
+      const memberRow = memberMap.get(member.profile_id);
+
+      return {
+        id: member.profile_id,
+        fullName: memberRow?.full_name ?? member.profile_id,
+        agentId: member.assigned_agent_id,
+        agentName: agentRow.full_name,
+        branchName: (branchRow as BranchRow | null)?.name ?? member.branch_id,
+        phone: memberRow?.phone ?? "No phone",
+        status: member.status,
+        occupation: member.occupation,
+        address: member.residential_address,
+      };
+    }),
+    recentTransactions,
+    activityTrend: buildActivityTrend(recentTransactions),
+    isLive: true,
+  };
+}
+
+export async function getManagersPageData(): Promise<ManagersPageData> {
   if (!hasSupabaseEnv()) {
     return {
       profile: emptyProfile("admin"),
-      users: [],
+      managers: [],
       isLive: false,
     };
   }
 
   const { supabase, profile } = await requireRole(["admin"]);
-  const [{ data: profileData }, { data: branchData }] = await Promise.all([
+  const [{ data: managerRowsData }, { data: branchRows }] = await Promise.all([
     supabase
       .from("profiles")
-      .select("id, full_name, role, branch_id, is_active")
-      .order("created_at", { ascending: false }),
+      .select("id, full_name, phone, branch_id, is_active")
+      .eq("role", "branch_manager")
+      .order("full_name", { ascending: true }),
     supabase.from("branches").select("id, name"),
   ]);
 
   const branchMap = new Map(
-    ((branchData as BranchRow[] | null) ?? []).map((branch) => [branch.id, branch.name]),
+    ((branchRows as BranchRow[] | null) ?? []).map((branch) => [branch.id, branch.name]),
   );
 
   return {
     profile,
-    users: ((profileData as ProfileRow[] | null) ?? []).map((row) => ({
+    managers: ((managerRowsData as ProfileRow[] | null) ?? []).map((row) => ({
       id: row.id,
       fullName: row.full_name,
-      role: row.role ?? "member",
-      branchName: row.branch_id ? branchMap.get(row.branch_id) ?? row.branch_id : "Institution",
+      branchName: row.branch_id ? branchMap.get(row.branch_id) ?? row.branch_id : "Unassigned",
+      phone: row.phone ?? "No phone",
       status: row.is_active ? "active" : "inactive",
     })),
+    isLive: true,
+  };
+}
+
+export async function getManagerDetailPageData(
+  managerId: string,
+): Promise<ManagerDetailPageData> {
+  if (!hasSupabaseEnv()) {
+    return {
+      currentBranchLabel: "All branches",
+      profile: emptyProfile("admin"),
+      manager: null,
+      branch: null,
+      isLive: false,
+    };
+  }
+
+  const { supabase, profile } = await requireRole(["admin"]);
+  const { data: managerRowData } = await supabase
+    .from("profiles")
+    .select("id, email, full_name, phone, branch_id, is_active")
+    .eq("id", managerId)
+    .eq("role", "branch_manager")
+    .maybeSingle();
+
+  const managerRow = (managerRowData as ProfileRow | null) ?? null;
+
+  if (!managerRow) {
+    return {
+      currentBranchLabel: "All branches",
+      profile,
+      manager: null,
+      branch: null,
+      isLive: true,
+    };
+  }
+
+  let branch: BranchSummary | null = null;
+
+  if (managerRow.branch_id) {
+    const [{ branches, managerMap }, snapshot] = await Promise.all([
+      getBranchMappings(supabase),
+      getBranchDashboardSnapshot(supabase, managerRow.branch_id),
+    ]);
+
+    const branchMeta = branches.find((item) => item.id === managerRow.branch_id);
+    branch = {
+      id: snapshot.summary.branchId,
+      name: branchMeta?.name ?? snapshot.summary.branchName,
+      managerName:
+        managerMap.get(branchMeta?.manager_profile_id ?? "") ?? managerRow.full_name,
+      memberCount: snapshot.summary.totalMembers,
+      agentCount: snapshot.summary.activeAgents,
+      totalSavings: snapshot.summary.totalSavings,
+      totalDeposits: snapshot.summary.totalDeposits,
+      totalLoans: snapshot.summary.totalLoans,
+      outstandingPrincipal: snapshot.summary.outstandingPrincipal,
+      pendingApprovals: snapshot.summary.pendingApprovals,
+      cashVariance: snapshot.summary.cashVariance,
+    };
+  }
+
+  return {
+    currentBranchLabel: "All branches",
+    profile,
+    manager: {
+      id: managerRow.id,
+      branchId: managerRow.branch_id,
+      branchName: branch?.name ?? "Unassigned",
+      email: managerRow.email ?? null,
+      fullName: managerRow.full_name,
+      phone: managerRow.phone ?? "No phone",
+      status: managerRow.is_active ? "active" : "inactive",
+    },
+    branch,
     isLive: true,
   };
 }

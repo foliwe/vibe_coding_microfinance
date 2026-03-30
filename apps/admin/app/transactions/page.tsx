@@ -10,6 +10,7 @@ import {
   getTransactionQueuePageData,
   type TransactionPageFilters,
 } from "../../lib/dashboard-data";
+import { breadcrumb, withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import { prettyCurrency } from "../../lib/format";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -259,12 +260,14 @@ export default async function TransactionsPage({
   } = await getTransactionQueuePageData(filterValues);
   const result = firstParam(params?.result);
   const detail = firstParam(params?.detail);
+  const role = profile.role === "admin" ? "admin" : "branch_manager";
 
   return (
     <AdminShell
+      breadcrumbs={withDashboardBreadcrumbs(role, [breadcrumb("Transactions")])}
       currentBranchLabel={branchLabel}
       currentUserName={profile.full_name}
-      role={profile.role === "admin" ? "admin" : "branch_manager"}
+      role={role}
       statusBadge={isLive ? "Live Supabase" : "Supabase setup needed"}
       title="Transactions"
       subtitle="Pending approvals stay pinned at the top while full transaction history remains searchable below."
