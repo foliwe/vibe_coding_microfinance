@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 
@@ -18,35 +18,68 @@ import {
   TransactionRow,
 } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
+import { useAppSession } from "@/lib/app-session";
 import { mobileData } from "@/lib/mobile-data";
-import type { AgentDashboard, AssignedMember, SyncQueueItem } from "@/mocks/mobile-data";
+import type { AgentTransactionTarget } from "@/lib/mobile-data";
+import { useResource } from "@/lib/use-resource";
+import type { AgentDashboard, SyncQueueItem } from "@/mocks/mobile-data";
 import type { TransactionRequest } from "@credit-union/shared";
 import { colors, spacing, typography } from "@/theme/tokens";
 
-function useDemoResource<T>(loader: () => Promise<T>) {
-  const [data, setData] = useState<T | null>(null);
+function ResourceErrorCard({ message }: { message: string }) {
+  return (
+    <SurfaceCard accent="#F7EEE0">
+      <StatusPill label="REJECTED" />
+      <Text style={[styles.heroCaption, { marginTop: spacing.sm }]}>{message}</Text>
+    </SurfaceCard>
+  );
+}
 
-  useEffect(() => {
-    let active = true;
+function SubmissionErrorCard({ message }: { message: string }) {
+  return (
+    <SurfaceCard accent="#F7EEE0">
+      <StatusPill label="REJECTED" />
+      <Text style={[styles.heroCaption, { marginTop: spacing.sm }]}>{message}</Text>
+    </SurfaceCard>
+  );
+}
 
-    loader().then((value) => {
-      if (active) {
-        setData(value);
-      }
-    });
+async function submitTransaction(
+  target: AgentTransactionTarget,
+  transactionType: "deposit" | "withdrawal",
+  amountValue: string,
+  note: string,
+) {
+  const amount = Number(amountValue);
 
-    return () => {
-      active = false;
-    };
-  }, [loader]);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Enter an amount greater than zero.");
+  }
 
-  return data;
+  if (transactionType === "withdrawal" && amount > target.availableBalance) {
+    throw new Error("Withdrawal amount cannot exceed the selected account balance.");
+  }
+
+  await mobileData.createAgentTransactionRequest({
+    amount,
+    memberAccountId: target.accountId,
+    note,
+    transactionType,
+  });
 }
 
 export function AgentHomeScreen() {
-  const data = useDemoResource(mobileData.getAgentDashboard);
+  const { data, error, loading } = useResource(mobileData.getAgentDashboard);
 
-  if (!data) {
+  if (error) {
+    return (
+      <Screen title="Home" subtitle="We could not load the field dashboard.">
+        <ResourceErrorCard message={error} />
+      </Screen>
+    );
+  }
+
+  if (loading || !data) {
     return (
       <Screen title="Agent Home" subtitle="Loading the field dashboard preview.">
         <SkeletonCard />
@@ -122,7 +155,7 @@ export function AgentHomeScreen() {
 }
 
 export function AgentMembersScreen() {
-  const members = useDemoResource(mobileData.getAssignedMembers);
+  const { data: members, error, loading } = useResource(mobileData.getAssignedMembers);
 
   return (
     <Screen
@@ -132,7 +165,9 @@ export function AgentMembersScreen() {
     >
       <InputField label="Search" onChangeText={() => undefined} placeholder="Alice K., MB-0001, village..." value="" />
 
-      {!members ? (
+      {error ? (
+        <ResourceErrorCard message={error} />
+      ) : loading || !members ? (
         <>
           <SkeletonCard />
           <SkeletonCard />
@@ -160,13 +195,13 @@ export function AgentMembersScreen() {
 }
 
 export function AgentTransactionsScreen() {
-  const transactions = useDemoResource(mobileData.getAgentTransactions);
+  const { data: transactions, error, loading } = useResource(mobileData.getAgentTransactions);
 
   return (
-    <Screen subtitle="Every money state stays explicit in the UI-first shell." title="Transactions">
+    <Screen subtitle="Every money state stays explicit in the live field shell." title="Transactions">
       <SurfaceCard accent="#EEF4ED">
         <Text style={styles.heroTitle}>Transaction capture remains member-first.</Text>
-        <Text style={styles.heroCaption}>Use the deposit and withdrawal forms to preview offline and approval states.</Text>
+        <Text style={styles.heroCaption}>Use the deposit and withdrawal forms to preserve the write flow while read-only history now comes from Supabase.</Text>
         <View style={styles.buttonRow}>
           <View style={{ flex: 1 }}>
             <PrimaryButton label="New Deposit" onPress={() => router.push("/agent/transactions/deposit")} />
@@ -177,7 +212,9 @@ export function AgentTransactionsScreen() {
         </View>
       </SurfaceCard>
 
-      {!transactions ? (
+      {error ? (
+        <ResourceErrorCard message={error} />
+      ) : loading || !transactions ? (
         <>
           <SkeletonCard />
           <SkeletonCard />
@@ -198,13 +235,14 @@ export function AgentTransactionsScreen() {
 }
 
 export function AgentMoreScreen() {
-  const data = useDemoResource(mobileData.getAgentDashboard);
+  const { signOut } = useAppSession();
+  const { data, error, loading } = useResource(mobileData.getAgentDashboard);
 
   return (
-    <Screen subtitle="Utilities, support actions, and session controls for the demo shell." title="More">
-      {!data ? <SkeletonCard /> : <StatusPill label={data.syncState} />}
+    <Screen subtitle="Utilities, support actions, and session controls for the signed-in shell." title="More">
+      {error ? <ResourceErrorCard message={error} /> : loading || !data ? <SkeletonCard /> : <StatusPill label={data.syncState} />}
       <ActionTile
-        caption="Preview locally stored items that will move in phase 2 sync."
+        caption="Preview locally stored items until queue persistence returns."
         icon="cloud-upload-outline"
         onPress={() => router.push("/agent/more/sync-queue")}
         title="Sync Queue"
@@ -222,10 +260,16 @@ export function AgentMoreScreen() {
         title="Profile"
       />
       <ActionTile
-        caption="Keep the first-password-change flow visible in the new UI."
+        caption="Keep the first-password-change flow visible while auth writes return."
         icon="key-outline"
         onPress={() => router.push("/agent/change-password")}
         title="Change Password"
+      />
+      <SecondaryButton
+        label="Sign Out"
+        onPress={() => {
+          void signOut();
+        }}
       />
     </Screen>
   );
@@ -256,28 +300,59 @@ export function AgentAddMemberScreen() {
 }
 
 export function AgentDepositScreen() {
-  const members = useDemoResource(mobileData.getAssignedMembers);
+  const { data: target, error, loading } = useResource(mobileData.getDepositTarget);
   const [amount, setAmount] = useState("10000");
   const [note, setNote] = useState("Daily collections from market round");
-
-  const selected = members?.[0];
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
 
   return (
     <Screen subtitle="Step 3 of the guided cash capture flow." title="Deposit">
-      {!selected ? (
+      {error ? (
+        <ResourceErrorCard message={error} />
+      ) : loading ? (
         <SkeletonCard />
+      ) : !target ? (
+        <SubmissionErrorCard message="No assigned member with an active account is ready for deposit capture yet." />
       ) : (
         <>
           <SurfaceCard>
-            <InfoRow label="Member" value={selected.fullName} />
-            <InfoRow label="Code" value={selected.code} />
-            <InfoRow label="Status" value="Offline save will show as pending sync" />
+            <InfoRow label="Member" value={target.memberName} />
+            <InfoRow label="Code" value={target.memberCode} />
+            <InfoRow label="Account" value={`${target.accountNumber} · ${target.accountType.toUpperCase()}`} />
+            <InfoRow label="Current balance" value={formatCurrency(target.availableBalance)} />
           </SurfaceCard>
           <InputField label="Amount" onChangeText={setAmount} placeholder="0" value={amount} />
           <InputField label="Note" multiline onChangeText={setNote} placeholder="Add collection context" value={note} />
-          <StatusPill label="PENDING SYNC" />
+          <StatusPill label="PENDING APPROVAL" />
+          {submissionError ? <SubmissionErrorCard message={submissionError} /> : null}
           <View style={{ marginTop: spacing.md }}>
-            <PrimaryButton label="Save Deposit Preview" onPress={() => router.back()} />
+            <PrimaryButton
+              label={isSubmitting ? "Submitting Deposit..." : "Submit Deposit"}
+              onPress={() => {
+                if (isSubmitting) {
+                  return;
+                }
+
+                setSubmissionError(null);
+                setIsSubmitting(true);
+
+                void submitTransaction(target, "deposit", amount, note)
+                  .then(() => {
+                    router.replace("/agent/(tabs)/transactions");
+                  })
+                  .catch((nextError) => {
+                    setSubmissionError(
+                      nextError instanceof Error
+                        ? nextError.message
+                        : "We could not submit the deposit.",
+                    );
+                  })
+                  .finally(() => {
+                    setIsSubmitting(false);
+                  });
+              }}
+            />
           </View>
         </>
       )}
@@ -286,28 +361,60 @@ export function AgentDepositScreen() {
 }
 
 export function AgentWithdrawalScreen() {
-  const members = useDemoResource(mobileData.getAssignedMembers);
+  const { data: target, error, loading } = useResource(mobileData.getWithdrawalTarget);
   const [amount, setAmount] = useState("5000");
   const [reason, setReason] = useState("Working capital withdrawal request");
-
-  const selected = members?.[0];
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
 
   return (
     <Screen subtitle="Withdrawals stay explicit about approvals and available cash." title="Withdrawal">
-      {!selected ? (
+      {error ? (
+        <ResourceErrorCard message={error} />
+      ) : loading ? (
         <SkeletonCard />
+      ) : !target ? (
+        <SubmissionErrorCard message="No assigned member with an active account is ready for withdrawal capture yet." />
       ) : (
         <>
           <SurfaceCard accent="#F7EEE0">
-            <InfoRow label="Member" value={selected.fullName} />
-            <InfoRow label="Available balance" value={formatCurrency(18500)} />
+            <InfoRow label="Member" value={target.memberName} />
+            <InfoRow label="Code" value={target.memberCode} />
+            <InfoRow label="Account" value={`${target.accountNumber} · ${target.accountType.toUpperCase()}`} />
+            <InfoRow label="Available balance" value={formatCurrency(target.availableBalance)} />
             <InfoRow label="Branch rule" value="Requires approval above teller threshold" />
           </SurfaceCard>
           <InputField label="Amount" onChangeText={setAmount} placeholder="0" value={amount} />
           <InputField label="Reason" multiline onChangeText={setReason} placeholder="Describe why the cash is needed" value={reason} />
           <StatusPill label="PENDING APPROVAL" />
+          {submissionError ? <SubmissionErrorCard message={submissionError} /> : null}
           <View style={{ marginTop: spacing.md }}>
-            <PrimaryButton label="Save Withdrawal Preview" onPress={() => router.back()} />
+            <PrimaryButton
+              label={isSubmitting ? "Submitting Withdrawal..." : "Submit Withdrawal"}
+              onPress={() => {
+                if (isSubmitting) {
+                  return;
+                }
+
+                setSubmissionError(null);
+                setIsSubmitting(true);
+
+                void submitTransaction(target, "withdrawal", amount, reason)
+                  .then(() => {
+                    router.replace("/agent/(tabs)/transactions");
+                  })
+                  .catch((nextError) => {
+                    setSubmissionError(
+                      nextError instanceof Error
+                        ? nextError.message
+                        : "We could not submit the withdrawal.",
+                    );
+                  })
+                  .finally(() => {
+                    setIsSubmitting(false);
+                  });
+              }}
+            />
           </View>
         </>
       )}
@@ -316,12 +423,14 @@ export function AgentWithdrawalScreen() {
 }
 
 export function AgentSyncQueueScreen() {
-  const queue = useDemoResource(mobileData.getSyncQueue);
+  const { data: queue, error, loading } = useResource(mobileData.getSyncQueue);
 
   return (
     <Screen subtitle="Everything waiting locally is visible before reconnecting persistence." title="Sync Queue">
       <StatusPill label="OFFLINE" />
-      {!queue ? (
+      {error ? (
+        <ResourceErrorCard message={error} />
+      ) : loading || !queue ? (
         <>
           <SkeletonCard />
           <SkeletonCard />
@@ -338,10 +447,18 @@ export function AgentSyncQueueScreen() {
 }
 
 export function AgentReconciliationScreen() {
-  const data = useDemoResource(mobileData.getAgentDashboard);
+  const { data, error, loading } = useResource(mobileData.getAgentDashboard);
   const [actualCash, setActualCash] = useState("33000");
 
-  if (!data) {
+  if (error) {
+    return (
+      <Screen subtitle="We could not load reconciliation data." title="Reconciliation">
+        <ResourceErrorCard message={error} />
+      </Screen>
+    );
+  }
+
+  if (loading || !data) {
     return (
       <Screen subtitle="Loading reconciliation snapshot." title="Reconciliation">
         <SkeletonCard />
@@ -368,9 +485,17 @@ export function AgentReconciliationScreen() {
 }
 
 export function AgentProfileScreen() {
-  const data = useDemoResource(mobileData.getAgentDashboard);
+  const { data, error, loading } = useResource(mobileData.getAgentDashboard);
 
-  if (!data) {
+  if (error) {
+    return (
+      <Screen subtitle="We could not load the agent profile." title="Profile">
+        <ResourceErrorCard message={error} />
+      </Screen>
+    );
+  }
+
+  if (loading || !data) {
     return (
       <Screen subtitle="Loading profile preview." title="Profile">
         <SkeletonCard />
@@ -390,9 +515,9 @@ export function AgentProfileScreen() {
       </SurfaceCard>
       <SurfaceCard accent="#EEF4ED">
         <InfoRow label="Branch" value={data.branchName} />
-        <InfoRow label="Support" value="Main Branch Ops Desk" />
-        <InfoRow label="Contact" value="+233 20 555 0100" />
-        <InfoRow label="Mode" value="Demo shell before auth wiring" />
+        <InfoRow label="Support" value="Branch operations desk" />
+        <InfoRow label="Contact" value="See the assigned branch record in Supabase" />
+        <InfoRow label="Mode" value="Signed-in live read shell" />
       </SurfaceCard>
     </Screen>
   );
@@ -406,10 +531,10 @@ export function AgentChangePasswordScreen() {
   return (
     <Screen subtitle="The first-password-change and PIN setup UI is preserved for later logic." title="Change Password">
       <InputField label="Current Password" onChangeText={setOldPassword} placeholder="Enter current password" value={oldPassword} />
-      <InputField label="New Password" onChangeText={setNewPassword} placeholder="Enter new password" value={newPassword} />
-      <InputField label="Transaction PIN" onChangeText={setPin} placeholder="Create a 4-digit PIN" value={pin} />
+      <InputField label="New Password" onChangeText={setNewPassword} placeholder="Enter new password" secureTextEntry value={newPassword} />
+      <InputField label="Transaction PIN" onChangeText={setPin} placeholder="Create a 4-digit PIN" secureTextEntry value={pin} />
       <SurfaceCard accent="#EEF4ED">
-        <Text style={styles.heroCaption}>This is a UI-only flow in phase 1. Supabase auth and secure PIN storage return in the next pass.</Text>
+        <Text style={styles.heroCaption}>Session boot is now live. Password change and secure PIN writes return in the next pass.</Text>
       </SurfaceCard>
       <PrimaryButton label="Update Credentials Preview" onPress={() => router.back()} />
     </Screen>

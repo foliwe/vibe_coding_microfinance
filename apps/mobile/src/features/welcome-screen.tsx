@@ -1,52 +1,135 @@
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
-import { router } from "expo-router";
+import { Image, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
 
-import { FadeInView, HeroBadge, Screen, StatusPill, SurfaceCard } from "@/components/ui";
+import {
+  FadeInView,
+  HeroBadge,
+  InputField,
+  PrimaryButton,
+  Screen,
+  SecondaryButton,
+  StatusPill,
+  SurfaceCard,
+} from "@/components/ui";
+import { useAppSession } from "@/lib/app-session";
 import { colors, radii, spacing, typography } from "@/theme/tokens";
 
 const logoGlow = require("../../assets/images/logo-glow.png");
 
 export function WelcomeScreen() {
+  const { authError, envReady, isSigningIn, session, signIn, signOut } = useAppSession();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+
+  async function handleSignIn() {
+    if (!email.trim() || !password.trim()) {
+      setFormError("Enter both email and password to continue.");
+      return;
+    }
+
+    setFormError(null);
+
+    try {
+      await signIn({
+        email: email.trim(),
+        password,
+      });
+    } catch {
+      // The provider exposes the readable message through authError.
+    }
+  }
+
+  const message = formError ?? authError;
+
   return (
     <Screen
       title="Credit Union Mobile"
-      subtitle="A fresh Expo SDK 55 shell built for UI-first agent and member previews. No auth gate, no backend dependency, and every route is ready for phase 2 wiring."
+      subtitle="Sign in with a Supabase-backed agent or member account to load your live mobile workspace."
     >
       <FadeInView>
-        <HeroBadge label="Demo mode" />
+        <HeroBadge label={envReady ? "Secure sign-in" : "Setup required"} />
         <SurfaceCard accent="#EDF4EE">
           <View style={styles.heroCard}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.heroTitle}>Field-ready finance flows with cleaner navigation and stronger state visibility.</Text>
+              <Text style={styles.heroTitle}>Role-aware mobile access now boots from the real session instead of a mock role picker.</Text>
               <Text style={styles.heroBody}>
-                Explore the agent dashboard, queue, reconciliation, and member self-service views before any Supabase integration is added.
+                Agent accounts open the field shell. Member accounts open the read-only self-service shell. Branch manager and admin accounts stay on the web app.
               </Text>
               <View style={styles.heroStatusRow}>
-                <StatusPill label="OFFLINE" />
-                <StatusPill label="PENDING SYNC" />
+                <StatusPill label={envReady ? "ONLINE" : "OFFLINE"} />
+                <StatusPill label={session ? "SIGNED IN" : "SIGNED OUT"} />
               </View>
             </View>
             <Image source={logoGlow} style={styles.heroImage} />
           </View>
         </SurfaceCard>
 
-        <View style={styles.roleGrid}>
-          <Pressable onPress={() => router.push("/agent")} style={({ pressed }) => [styles.roleCard, pressed && styles.roleCardPressed]}>
-            <Text style={styles.roleEyebrow}>Agent flow</Text>
-            <Text style={styles.roleTitle}>Capture cash activity, add members, and manage the queue.</Text>
-            <Text style={styles.roleCaption}>Home, Transactions, Members, and More are all live in preview mode.</Text>
-          </Pressable>
+        <SurfaceCard>
+          <Text style={styles.sectionTitle}>Sign In</Text>
+          <Text style={styles.bodyText}>
+            Use the seeded mobile accounts from the Supabase bootstrap flow, or any real member/agent account already provisioned in `public.profiles`.
+          </Text>
 
-          <Pressable onPress={() => router.push("/member")} style={({ pressed }) => [styles.roleCard, styles.memberCard, pressed && styles.roleCardPressed]}>
-            <Text style={styles.roleEyebrow}>Member flow</Text>
-            <Text style={styles.roleTitle}>Review balances, loans, and statements in a read-only shell.</Text>
-            <Text style={styles.roleCaption}>The member experience stays simple, calm, and trust-oriented.</Text>
-          </Pressable>
-        </View>
+          <View style={styles.form}>
+            <InputField
+              autoCapitalize="none"
+              label="Email"
+              onChangeText={setEmail}
+              placeholder="member@example.com"
+              value={email}
+            />
+            <InputField
+              autoCapitalize="none"
+              label="Password"
+              onChangeText={setPassword}
+              placeholder="Enter password"
+              secureTextEntry
+              value={password}
+            />
+          </View>
+
+          {message ? (
+            <View style={styles.notice}>
+              <StatusPill label="REJECTED" />
+              <Text style={styles.noticeText}>{message}</Text>
+            </View>
+          ) : null}
+
+          {!envReady ? (
+            <View style={styles.notice}>
+              <StatusPill label="PENDING APPROVAL" />
+              <Text style={styles.noticeText}>
+                Add `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, then restart the mobile app.
+              </Text>
+            </View>
+          ) : null}
+
+          <PrimaryButton
+            label={isSigningIn ? "Signing In..." : "Sign In"}
+            onPress={() => {
+              if (!isSigningIn) {
+                void handleSignIn();
+              }
+            }}
+          />
+          {session ? (
+            <View style={{ marginTop: spacing.sm }}>
+              <SecondaryButton
+                label="Sign Out"
+                onPress={() => {
+                  void signOut();
+                }}
+              />
+            </View>
+          ) : null}
+        </SurfaceCard>
 
         <SurfaceCard>
-          <Text style={styles.sectionTitle}>What this reset changes</Text>
-          <Text style={styles.bodyText}>Expo now lives only inside the mobile workspace, the route tree is stable, and the next backend phase can attach to a single app-local data layer instead of rebuilding screens again.</Text>
+          <Text style={styles.sectionTitle}>Mobile Scope</Text>
+          <Text style={styles.bodyText}>
+            This phase restores session boot, role detection, route guards, and live read-only data. Offline queue persistence and transaction submission return next.
+          </Text>
         </SurfaceCard>
       </FadeInView>
     </Screen>
@@ -83,42 +166,6 @@ const styles = StyleSheet.create({
     resizeMode: "contain",
     width: 112,
   },
-  roleGrid: {
-    gap: spacing.md,
-    marginBottom: spacing.md,
-  },
-  roleCard: {
-    backgroundColor: colors.brand,
-    borderRadius: radii.lg,
-    padding: spacing.lg,
-  },
-  memberCard: {
-    backgroundColor: "#36526C",
-  },
-  roleCardPressed: {
-    opacity: 0.88,
-  },
-  roleEyebrow: {
-    color: "#D9ECE7",
-    fontFamily: typography.medium,
-    fontSize: 12,
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  roleTitle: {
-    color: colors.white,
-    fontFamily: typography.display,
-    fontSize: 21,
-    lineHeight: 26,
-    marginTop: spacing.sm,
-  },
-  roleCaption: {
-    color: "#D9ECE7",
-    fontFamily: typography.body,
-    fontSize: 14,
-    lineHeight: 21,
-    marginTop: spacing.sm,
-  },
   sectionTitle: {
     color: colors.ink,
     fontFamily: typography.heading,
@@ -129,5 +176,23 @@ const styles = StyleSheet.create({
     fontFamily: typography.body,
     fontSize: 14,
     lineHeight: 22,
+  },
+  form: {
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  notice: {
+    backgroundColor: "#F4EEE0",
+    borderRadius: radii.md,
+    marginBottom: spacing.sm,
+    marginTop: spacing.md,
+    padding: spacing.md,
+  },
+  noticeText: {
+    color: colors.inkMuted,
+    fontFamily: typography.body,
+    fontSize: 13,
+    lineHeight: 20,
+    marginTop: spacing.sm,
   },
 });

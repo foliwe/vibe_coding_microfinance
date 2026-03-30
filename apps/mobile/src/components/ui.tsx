@@ -188,21 +188,28 @@ export function InputField({
   onChangeText,
   placeholder,
   multiline = false,
+  autoCapitalize = "sentences",
+  secureTextEntry = false,
 }: {
   label: string;
   value: string;
   onChangeText: (next: string) => void;
   placeholder: string;
   multiline?: boolean;
+  autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  secureTextEntry?: boolean;
 }) {
   return (
     <View style={styles.fieldGroup}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
+        autoCapitalize={autoCapitalize}
+        autoCorrect={false}
         multiline={multiline}
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor={colors.inkMuted}
+        secureTextEntry={secureTextEntry}
         style={[styles.input, multiline && styles.multilineInput]}
         value={value}
       />

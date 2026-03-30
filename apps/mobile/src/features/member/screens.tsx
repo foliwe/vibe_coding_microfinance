@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 
@@ -8,6 +8,7 @@ import {
   MiniBarChart,
   PrimaryButton,
   Screen,
+  SecondaryButton,
   SectionHeader,
   SkeletonCard,
   StatCard,
@@ -16,35 +17,34 @@ import {
   TransactionRow,
 } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
+import { useAppSession } from "@/lib/app-session";
 import { mobileData } from "@/lib/mobile-data";
+import { useResource } from "@/lib/use-resource";
 import type { LoanCard, MemberDashboard } from "@/mocks/mobile-data";
 import type { TransactionRequest } from "@credit-union/shared";
 import { colors, spacing, typography } from "@/theme/tokens";
 
-function useDemoResource<T>(loader: () => Promise<T>) {
-  const [data, setData] = useState<T | null>(null);
-
-  useEffect(() => {
-    let active = true;
-
-    loader().then((value) => {
-      if (active) {
-        setData(value);
-      }
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [loader]);
-
-  return data;
+function ResourceErrorCard({ message }: { message: string }) {
+  return (
+    <SurfaceCard accent="#F7EEE0">
+      <StatusPill label="REJECTED" />
+      <Text style={[styles.heroCaption, { marginTop: spacing.sm }]}>{message}</Text>
+    </SurfaceCard>
+  );
 }
 
 export function MemberHomeScreen() {
-  const data = useDemoResource(mobileData.getMemberDashboard);
+  const { data, error, loading } = useResource(mobileData.getMemberDashboard);
 
-  if (!data) {
+  if (error) {
+    return (
+      <Screen subtitle="We could not load your member dashboard." title="Home">
+        <ResourceErrorCard message={error} />
+      </Screen>
+    );
+  }
+
+  if (loading || !data) {
     return (
       <Screen subtitle="Loading the member preview." title="Home">
         <SkeletonCard />
@@ -80,7 +80,7 @@ export function MemberHomeScreen() {
 
       <SectionHeader title="Trend" />
       <SurfaceCard>
-        <Text style={styles.heroCaption}>Read-only balance momentum from mock account data.</Text>
+        <Text style={styles.heroCaption}>Recent account activity pulled from approved transaction history.</Text>
         <MiniBarChart data={data.flowTrend} />
       </SurfaceCard>
     </Screen>
@@ -88,11 +88,13 @@ export function MemberHomeScreen() {
 }
 
 export function MemberTransactionsScreen() {
-  const transactions = useDemoResource(mobileData.getMemberTransactions);
+  const { data: transactions, error, loading } = useResource(mobileData.getMemberTransactions);
 
   return (
     <Screen subtitle="Pending and approved activity stays easy to read." title="Transactions">
-      {!transactions ? (
+      {error ? (
+        <ResourceErrorCard message={error} />
+      ) : loading || !transactions ? (
         <>
           <SkeletonCard />
           <SkeletonCard />
@@ -113,11 +115,13 @@ export function MemberTransactionsScreen() {
 }
 
 export function MemberLoansScreen() {
-  const loans = useDemoResource(mobileData.getLoans);
+  const { data: loans, error, loading } = useResource(mobileData.getLoans);
 
   return (
     <Screen subtitle="Stage changes remain visible even in a UI-only build." title="Loans">
-      {!loans ? (
+      {error ? (
+        <ResourceErrorCard message={error} />
+      ) : loading || !loans ? (
         <SkeletonCard />
       ) : (
         loans.map((loan) => (
@@ -129,31 +133,50 @@ export function MemberLoansScreen() {
 }
 
 export function MemberMoreScreen() {
-  const data = useDemoResource(mobileData.getMemberDashboard);
+  const { signOut } = useAppSession();
+  const { data, error, loading } = useResource(mobileData.getMemberDashboard);
 
   return (
     <Screen subtitle="Support, profile, and account controls for the read-only member shell." title="More">
-      {!data ? (
+      {error ? (
+        <ResourceErrorCard message={error} />
+      ) : loading || !data ? (
         <SkeletonCard />
       ) : (
         <SurfaceCard accent="#EEF4ED">
           <InfoRow label="Support" value={data.branchContact} />
           <InfoRow label="Branch" value={data.branchName} />
-          <InfoRow label="Session" value="Demo mode preview" />
+          <InfoRow label="Session" value="Signed-in member access" />
         </SurfaceCard>
       )}
       <PrimaryButton label="View Profile" onPress={() => router.push("/member/more/profile")} />
       <View style={{ marginTop: spacing.sm }}>
         <PrimaryButton label="Change Password" onPress={() => router.push("/member/change-password")} />
       </View>
+      <View style={{ marginTop: spacing.sm }}>
+        <SecondaryButton
+          label="Sign Out"
+          onPress={() => {
+            void signOut();
+          }}
+        />
+      </View>
     </Screen>
   );
 }
 
 export function MemberProfileScreen() {
-  const profile = useDemoResource(mobileData.getMemberProfile);
+  const { data: profile, error, loading } = useResource(mobileData.getMemberProfile);
 
-  if (!profile) {
+  if (error) {
+    return (
+      <Screen subtitle="We could not load your member profile." title="Profile">
+        <ResourceErrorCard message={error} />
+      </Screen>
+    );
+  }
+
+  if (loading || !profile) {
     return (
       <Screen subtitle="Loading member profile." title="Profile">
         <SkeletonCard />
@@ -187,10 +210,10 @@ export function MemberChangePasswordScreen() {
   return (
     <Screen subtitle="Password and PIN setup stays visible for the later auth pass." title="Change Password">
       <InputField label="Current Password" onChangeText={setCurrentPassword} placeholder="Enter current password" value={currentPassword} />
-      <InputField label="New Password" onChangeText={setNewPassword} placeholder="Enter new password" value={newPassword} />
-      <InputField label="PIN / biometric fallback" onChangeText={setPin} placeholder="Choose your security code" value={pin} />
+      <InputField label="New Password" onChangeText={setNewPassword} placeholder="Enter new password" secureTextEntry value={newPassword} />
+      <InputField label="PIN / biometric fallback" onChangeText={setPin} placeholder="Choose your security code" secureTextEntry value={pin} />
       <SurfaceCard accent="#EEF4ED">
-        <Text style={styles.heroCaption}>No auth write happens yet. This screen exists to preserve the member shell and route contract.</Text>
+        <Text style={styles.heroCaption}>Member auth boot is now live. Password and PIN writes still stay on the next implementation pass.</Text>
       </SurfaceCard>
       <PrimaryButton label="Update Security Preview" onPress={() => router.back()} />
     </Screen>

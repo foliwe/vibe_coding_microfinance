@@ -10,6 +10,8 @@ import {
   SpaceGrotesk_700Bold,
 } from "@expo-google-fonts/space-grotesk";
 
+import { AppSessionProvider } from "@/lib/app-session";
+
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 const preloadAssets = [
@@ -45,7 +47,7 @@ export default function RootLayout() {
   }
 
   return (
-    <>
+    <AppSessionProvider>
       <StatusBar style="dark" />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
@@ -54,6 +56,6 @@ export default function RootLayout() {
         <Stack.Screen name="member" />
         <Stack.Screen name="+not-found" />
       </Stack>
-    </>
+    </AppSessionProvider>
   );
 }
