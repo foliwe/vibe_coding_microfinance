@@ -20,6 +20,8 @@ Sidebar sections:
 
 ## Admin pages
 
+For the consolidated description of loan lifecycle expectations versus the current admin implementation, see [`docs/loans.md`](/Users/foliwefossung/Vibe_code/docs/loans.md).
+
 - institution dashboard
 - branches list
 - branch detail

@@ -35,6 +35,7 @@ The institution is cash-only in v1. No electronic sending, wallet transfer, or c
 
 ## Loans
 
+- See [`docs/loans.md`](/Users/foliwefossung/Vibe_code/docs/loans.md) for the consolidated loan specification, current implementation status, and known gaps.
 - loans are created at the branch office
 - members see loan status and repayment history in mobile
 - interest is calculated monthly on remaining principal

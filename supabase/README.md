@@ -18,3 +18,5 @@ This folder contains the schema-first backend for the credit union app.
 - `approve_transaction_request` posts journals + entries, updates cash drawers, and writes approval/audit rows
 - `reject_transaction_request` preserves history without posting ledger entries
 - `create_admin_transaction` allows admins and branch managers to create branch-office deposits and withdrawals that auto-approve immediately against a selected agent cash drawer
+- `migrations/0008_loan_workflows.sql` adds loan application, review, approval, disbursement, and repayment RPCs
+- loan disbursement and repayment now write loan-linked ledger journals and adjust the selected agent cash drawer

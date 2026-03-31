@@ -35,6 +35,8 @@
 
 ## Member flows
 
+For the consolidated loan behavior, current mobile implementation, and timeline/detail gaps, see [`docs/loans.md`](/Users/foliwefossung/Vibe_code/docs/loans.md).
+
 ### Primary navigation
 
 - `Home`
