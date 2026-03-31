@@ -2,6 +2,7 @@
 
 ## Core tables
 
+- For the consolidated loan schema and workflow notes, see [`docs/loans.md`](/Users/foliwefossung/Vibe_code/docs/loans.md).
 - `branches`
 - `profiles`
 - `staff_users`

@@ -10,7 +10,7 @@ Greenfield monorepo scaffold for a cash-based microfinance credit union platform
 
 ## Getting started
 
-1. Review the docs in [`docs/`](/Users/foliwefossung/Vibe_code/docs).
+1. Review the docs in [`docs/`](/Users/foliwefossung/Vibe_code/docs). For loan functionality, start with [`docs/loans.md`](/Users/foliwefossung/Vibe_code/docs/loans.md).
 2. Install workspace dependencies with `npm install`.
 3. Run the admin shell with `npm run dev:admin`.
 4. Run the mobile shell with `npm run dev:mobile`.

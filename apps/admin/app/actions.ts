@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import type { Route } from "next";
 import { redirect } from "next/navigation";
-import type { TransactionType } from "@credit-union/shared";
+import type { RepaymentMode, TransactionType } from "@credit-union/shared";
 
 import { requireRole } from "../lib/auth";
 import { hasSupabaseEnv, hasSupabaseServiceEnv } from "../lib/supabase/env";
@@ -36,6 +36,27 @@ function requiredValue(formData: FormData, key: string, label: string) {
 function optionalValue(formData: FormData, key: string) {
   const value = String(formData.get(key) ?? "").trim();
   return value || null;
+}
+
+function booleanValue(formData: FormData, key: string) {
+  const value = String(formData.get(key) ?? "").trim().toLowerCase();
+  return value === "true" || value === "yes" || value === "on";
+}
+
+function requiredNumberValue(formData: FormData, key: string, label: string) {
+  const value = Number(requiredValue(formData, key, label));
+
+  if (!Number.isFinite(value)) {
+    throw new Error(`${label} must be a valid number.`);
+  }
+
+  return value;
+}
+
+function revalidateLoanPaths() {
+  revalidatePath("/loans");
+  revalidatePath("/");
+  revalidatePath("/branch");
 }
 
 function accountNumber(branchCode: string, prefix: "SAV" | "DEP") {
@@ -221,6 +242,215 @@ export async function createDepositAction(formData: FormData) {
 
 export async function createWithdrawalAction(formData: FormData) {
   await createAdminTransactionAction("withdrawal", "/transactions/withdrawal", formData);
+}
+
+export async function createLoanApplicationAction(formData: FormData) {
+  if (!hasSupabaseEnv()) {
+    redirect(buildRedirect("/loans", "error", "Supabase credentials are missing."));
+  }
+
+  try {
+    const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
+    const memberProfileId = requiredValue(formData, "memberProfileId", "Member");
+    const requestedAmount = requiredNumberValue(formData, "requestedAmount", "Requested amount");
+    const monthlyInterestRate = requiredNumberValue(
+      formData,
+      "monthlyInterestRate",
+      "Monthly interest rate",
+    );
+    const termMonths = requiredNumberValue(formData, "termMonths", "Term months");
+    const collateralRequired = booleanValue(formData, "collateralRequired");
+    const collateralNotes = optionalValue(formData, "collateralNotes");
+    const note = optionalValue(formData, "note");
+
+    const { error } = await supabase.rpc("create_loan_application", {
+      p_actor_id: profile.id,
+      p_member_profile_id: memberProfileId,
+      p_requested_amount: requestedAmount,
+      p_monthly_interest_rate: monthlyInterestRate,
+      p_term_months: Math.trunc(termMonths),
+      p_collateral_required: collateralRequired,
+      p_collateral_notes: collateralNotes,
+      p_note: note,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  } catch (error) {
+    redirect(
+      buildRedirect(
+        "/loans",
+        "error",
+        error instanceof Error ? error.message : "Unable to create loan application.",
+      ),
+    );
+  }
+
+  revalidateLoanPaths();
+  redirect(buildRedirect("/loans", "success", "Loan application created."));
+}
+
+async function mutateLoanApplicationAction(
+  action:
+    | "start_loan_application_review"
+    | "approve_loan_application"
+    | "reject_loan_application",
+  formData: FormData,
+) {
+  if (!hasSupabaseEnv()) {
+    redirect(buildRedirect("/loans", "error", "Supabase credentials are missing."));
+  }
+
+  try {
+    const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
+    const applicationId = requiredValue(formData, "applicationId", "Loan application");
+    const note = optionalValue(formData, "note");
+
+    if (action === "approve_loan_application") {
+      const approvedPrincipal = requiredNumberValue(
+        formData,
+        "approvedPrincipal",
+        "Approved principal",
+      );
+      const { error } = await supabase.rpc(action, {
+        p_application_id: applicationId,
+        p_actor_id: profile.id,
+        p_approved_principal: approvedPrincipal,
+        p_note: note,
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+    } else {
+      const { error } = await supabase.rpc(action, {
+        p_application_id: applicationId,
+        p_actor_id: profile.id,
+        p_note: note,
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+    }
+  } catch (error) {
+    redirect(
+      buildRedirect(
+        "/loans",
+        "error",
+        error instanceof Error ? error.message : "Unable to update loan application.",
+      ),
+    );
+  }
+
+  revalidateLoanPaths();
+
+  const detail =
+    action === "start_loan_application_review"
+      ? "Loan application marked under review."
+      : action === "approve_loan_application"
+        ? "Loan application approved."
+        : "Loan application rejected.";
+
+  redirect(buildRedirect("/loans", "success", detail));
+}
+
+export async function startLoanApplicationReviewAction(formData: FormData) {
+  await mutateLoanApplicationAction("start_loan_application_review", formData);
+}
+
+export async function approveLoanApplicationAction(formData: FormData) {
+  await mutateLoanApplicationAction("approve_loan_application", formData);
+}
+
+export async function rejectLoanApplicationAction(formData: FormData) {
+  await mutateLoanApplicationAction("reject_loan_application", formData);
+}
+
+export async function disburseLoanAction(formData: FormData) {
+  if (!hasSupabaseEnv()) {
+    redirect(buildRedirect("/loans", "error", "Supabase credentials are missing."));
+  }
+
+  try {
+    const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
+    const loanId = requiredValue(formData, "loanId", "Loan");
+    const cashAgentProfileId = requiredValue(formData, "cashAgentProfileId", "Cash drawer agent");
+    const note = optionalValue(formData, "note");
+
+    const { error } = await supabase.rpc("disburse_loan", {
+      p_loan_id: loanId,
+      p_actor_id: profile.id,
+      p_cash_agent_profile_id: cashAgentProfileId,
+      p_note: note,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  } catch (error) {
+    redirect(
+      buildRedirect(
+        "/loans",
+        "error",
+        error instanceof Error ? error.message : "Unable to disburse loan.",
+      ),
+    );
+  }
+
+  revalidateLoanPaths();
+  redirect(buildRedirect("/loans", "success", "Loan disbursed."));
+}
+
+export async function recordLoanRepaymentAction(formData: FormData) {
+  if (!hasSupabaseEnv()) {
+    redirect(buildRedirect("/loans", "error", "Supabase credentials are missing."));
+  }
+
+  try {
+    const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
+    const loanId = requiredValue(formData, "loanId", "Loan");
+    const cashAgentProfileId = requiredValue(formData, "cashAgentProfileId", "Cash drawer agent");
+    const amount = requiredNumberValue(formData, "amount", "Repayment amount");
+    const repaymentMode = requiredValue(
+      formData,
+      "repaymentMode",
+      "Repayment mode",
+    ) as RepaymentMode;
+    const note = optionalValue(formData, "note");
+
+    if (
+      repaymentMode !== "interest_only" &&
+      repaymentMode !== "interest_plus_principal"
+    ) {
+      throw new Error("Repayment mode is invalid.");
+    }
+
+    const { error } = await supabase.rpc("record_loan_repayment", {
+      p_loan_id: loanId,
+      p_actor_id: profile.id,
+      p_cash_agent_profile_id: cashAgentProfileId,
+      p_amount: amount,
+      p_repayment_mode: repaymentMode,
+      p_note: note,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  } catch (error) {
+    redirect(
+      buildRedirect(
+        "/loans",
+        "error",
+        error instanceof Error ? error.message : "Unable to record loan repayment.",
+      ),
+    );
+  }
+
+  revalidateLoanPaths();
+  redirect(buildRedirect("/loans", "success", "Loan repayment recorded."));
 }
 
 export async function createBranchAction(formData: FormData) {

@@ -98,6 +98,7 @@ Core tables/entities:
   - max pending amount before sync/approval
 
 #### Loan management
+- Primary consolidated reference: [`docs/loans.md`](/Users/foliwefossung/Vibe_code/docs/loans.md).
 - Use single manual loan type in v1.
 - Interest method is fixed to monthly interest on remaining principal.
 - Loan application is created at branch office by branch manager or admin; member can view status in mobile.

@@ -154,16 +154,34 @@ export type AgentDetailPageData = {
 
 export type LoanRegistryRow = {
   id: string;
+  applicationId: string;
+  branchId: string;
   memberName: string;
   approvedPrincipal: number;
   remainingPrincipal: number;
   monthlyInterestRate: number;
   nextInterestDue: number;
   status: LoanStatus;
+  disbursedAt: string | null;
+  createdAt: string;
+};
+
+export type LoanApplicationRegistryRow = {
+  id: string;
+  branchId: string;
+  memberName: string;
+  requestedAmount: number;
+  monthlyInterestRate: number;
+  termMonths: number;
+  collateralRequired: boolean;
+  collateralNotes: string | null;
+  status: LoanStatus;
+  createdAt: string;
 };
 
 export type LoansPageData = {
   profile: AdminProfile;
+  applications: LoanApplicationRegistryRow[];
   loans: LoanRegistryRow[];
   isLive: boolean;
 };
@@ -242,12 +260,28 @@ type ProfileRow = {
 
 type LoanRow = {
   id?: string;
+  application_id: string;
   branch_id: string;
   member_profile_id?: string;
   approved_principal: number | string | null;
   remaining_principal: number | string | null;
   monthly_interest_rate?: number | string | null;
   status: LoanStatus;
+  disbursed_at: string | null;
+  created_at: string;
+};
+
+type LoanApplicationRow = {
+  id: string;
+  branch_id: string;
+  member_profile_id: string;
+  requested_amount: number | string | null;
+  monthly_interest_rate: number | string | null;
+  term_months: number | string | null;
+  collateral_required: boolean | null;
+  collateral_notes: string | null;
+  status: LoanStatus;
+  created_at: string;
 };
 
 type RepaymentRow = {
@@ -1646,6 +1680,7 @@ export async function getLoansPageData(): Promise<LoansPageData> {
   if (!hasSupabaseEnv()) {
     return {
       profile: emptyProfile("branch_manager"),
+      applications: [],
       loans: [],
       isLive: false,
     };
@@ -1654,23 +1689,33 @@ export async function getLoansPageData(): Promise<LoansPageData> {
   const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
   const branchId = profile.role === "branch_manager" ? profile.branch_id ?? undefined : undefined;
 
-  let query = supabase
+  let loanQuery = supabase
     .from("loans")
     .select(
-      "id, branch_id, member_profile_id, approved_principal, remaining_principal, monthly_interest_rate, status",
+      "id, application_id, branch_id, member_profile_id, approved_principal, remaining_principal, monthly_interest_rate, status, disbursed_at, created_at",
+    )
+    .order("created_at", { ascending: false });
+  let applicationQuery = supabase
+    .from("loan_applications")
+    .select(
+      "id, branch_id, member_profile_id, requested_amount, monthly_interest_rate, term_months, collateral_required, collateral_notes, status, created_at",
     )
     .order("created_at", { ascending: false });
 
   if (branchId) {
-    query = query.eq("branch_id", branchId);
+    loanQuery = loanQuery.eq("branch_id", branchId);
+    applicationQuery = applicationQuery.eq("branch_id", branchId);
   }
 
-  const { data: loanData } = await query;
+  const [{ data: loanData }, { data: applicationData }] = await Promise.all([
+    loanQuery,
+    applicationQuery,
+  ]);
   const loans = (loanData as LoanRow[] | null) ?? [];
+  const applications = (applicationData as LoanApplicationRow[] | null) ?? [];
   const memberIds = Array.from(
     new Set(
-      loans
-        .map((loan) => loan.member_profile_id)
+      [...loans.map((loan) => loan.member_profile_id), ...applications.map((application) => application.member_profile_id)]
         .filter((value): value is string => Boolean(value)),
     ),
   );
@@ -1683,18 +1728,34 @@ export async function getLoansPageData(): Promise<LoansPageData> {
 
   return {
     profile,
+    applications: applications.map((application) => ({
+      id: application.id,
+      branchId: application.branch_id,
+      memberName: memberMap.get(application.member_profile_id) ?? "Unknown member",
+      requestedAmount: toNumber(application.requested_amount),
+      monthlyInterestRate: toNumber(application.monthly_interest_rate),
+      termMonths: Number(application.term_months ?? 0),
+      collateralRequired: Boolean(application.collateral_required),
+      collateralNotes: application.collateral_notes,
+      status: application.status,
+      createdAt: application.created_at,
+    })),
     loans: loans.map((loan) => {
       const remainingPrincipal = toNumber(loan.remaining_principal);
       const monthlyInterestRate = toNumber(loan.monthly_interest_rate);
 
       return {
         id: loan.id ?? "loan",
+        applicationId: loan.application_id,
+        branchId: loan.branch_id,
         memberName: memberMap.get(loan.member_profile_id ?? "") ?? "Unknown member",
         approvedPrincipal: toNumber(loan.approved_principal),
         remainingPrincipal,
         monthlyInterestRate,
         nextInterestDue: calculateMonthlyInterest(remainingPrincipal, monthlyInterestRate),
         status: loan.status,
+        disbursedAt: loan.disbursed_at,
+        createdAt: loan.created_at,
       };
     }),
     isLive: true,

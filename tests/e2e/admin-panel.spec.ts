@@ -1,7 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
-  createLoanForMemberEmail,
   createPendingTransactionRequest,
   getMemberAccountsByEmail,
   getProfileByEmail,
@@ -266,7 +265,7 @@ test.describe("admin panel end-to-end flows", () => {
     await expect(page).toHaveURL(/\/members\/new\?result=success/);
     await expect(page.getByText(`Created member ${member.fullName}.`)).toBeVisible();
 
-    await waitForProfile(member.email);
+    const createdMember = await waitForProfile(member.email);
     const memberAccounts = await waitForMemberAccounts(member.email);
     expect(memberAccounts.map((account) => account.account_number)).toEqual(
       expect.arrayContaining([member.savingsAccountNumber, member.depositAccountNumber]),
@@ -279,17 +278,60 @@ test.describe("admin panel end-to-end flows", () => {
     await expect(page.getByLabel("breadcrumb")).toContainText("Members");
     await expect(page.getByText("Account Summary")).toBeVisible();
 
-    const loan = await createLoanForMemberEmail({
-      approvedPrincipal: 800,
-      createdByEmail: manager.email,
-      memberEmail: member.email,
-      monthlyInterestRate: 0.03,
-    });
-
     await page.goto("/loans");
     await expect(page.getByRole("heading", { level: 1, name: "Loans" })).toBeVisible();
-    await expect(page.locator("tr").filter({ hasText: loan.reference })).toBeVisible();
-    await expect(page.locator("tr").filter({ hasText: member.fullName })).toBeVisible();
+    await page.locator('select[name="memberProfileId"]').selectOption(createdMember.id);
+    await page.getByLabel("Requested amount").fill("800");
+    await page.getByLabel("Monthly interest rate").fill("0.03");
+    await page.getByLabel("Term (months)").fill("12");
+    await page.getByLabel("Application note").fill("Playwright loan workflow");
+    await page.getByRole("button", { name: "Create Loan Application" }).click();
+    await expect(page).toHaveURL(/\/loans\?result=success/);
+    await expect(page.getByText("Loan application created.")).toBeVisible();
+
+    const applicationRow = page
+      .locator("tr")
+      .filter({ hasText: member.fullName })
+      .filter({ hasText: "application_submitted" })
+      .first();
+    await expect(applicationRow).toBeVisible();
+    await applicationRow.getByRole("button", { name: "Mark In Review" }).click();
+    await expect(page.getByText("Loan application marked under review.")).toBeVisible();
+
+    const reviewRow = page
+      .locator("tr")
+      .filter({ hasText: member.fullName })
+      .filter({ hasText: "under_review" })
+      .first();
+    await expect(reviewRow).toBeVisible();
+    await reviewRow.locator('input[name="approvedPrincipal"]').fill("800");
+    await reviewRow.getByRole("button", { name: "Approve Application" }).click();
+    await expect(page.getByText("Loan application approved.")).toBeVisible();
+
+    const disburseRow = page
+      .locator("tr")
+      .filter({ hasText: member.fullName })
+      .filter({ hasText: "approved" })
+      .filter({ has: page.getByRole("button", { name: "Disburse Loan" }) })
+      .first();
+    await expect(disburseRow).toBeVisible();
+    await disburseRow.locator('select[name="cashAgentProfileId"]').selectOption(createdAgent.id);
+    await disburseRow.getByRole("button", { name: "Disburse Loan" }).click();
+    await expect(page.getByText("Loan disbursed.")).toBeVisible();
+
+    const repaymentRow = page
+      .locator("tr")
+      .filter({ hasText: member.fullName })
+      .filter({ hasText: "disbursed" })
+      .filter({ has: page.getByRole("button", { name: "Record Repayment" }) })
+      .first();
+    await expect(repaymentRow).toBeVisible();
+    await repaymentRow.locator('select[name="cashAgentProfileId"]').selectOption(createdAgent.id);
+    await repaymentRow.locator('input[name="amount"]').fill("50");
+    await repaymentRow.locator('select[name="repaymentMode"]').selectOption("interest_plus_principal");
+    await repaymentRow.getByRole("button", { name: "Record Repayment" }).click();
+    await expect(page.getByText("Loan repayment recorded.")).toBeVisible();
+    await expect(page.locator("tr").filter({ hasText: member.fullName }).filter({ hasText: "active" })).toBeVisible();
 
     await signOut(page);
   });
