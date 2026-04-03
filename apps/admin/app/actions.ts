@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import type { Route } from "next";
 import { redirect } from "next/navigation";
 import type { RepaymentMode, TransactionType } from "@credit-union/shared";
@@ -15,6 +16,8 @@ import { createServiceClient } from "../lib/supabase/service";
 import { createClient } from "../lib/supabase/server";
 
 type RedirectResult = "success" | "error";
+
+const MEMBER_CREATION_FLASH_COOKIE = "member_creation_flash";
 
 type ServiceClient = ReturnType<typeof createServiceClient>;
 
@@ -49,6 +52,35 @@ function buildRedirect(path: string, result: RedirectResult, detail?: string): R
   }
 
   return `${path}?${params.toString()}` as Route;
+}
+
+async function clearMemberCreationFlash() {
+  const cookieStore = await cookies();
+  cookieStore.set(MEMBER_CREATION_FLASH_COOKIE, "", {
+    httpOnly: true,
+    maxAge: 0,
+    path: "/members/new",
+    sameSite: "lax",
+  });
+}
+
+async function setMemberCreationFlash(input: {
+  fullName: string;
+  signInCode: string;
+  temporaryPassword: string;
+}) {
+  const cookieStore = await cookies();
+  cookieStore.set(
+    MEMBER_CREATION_FLASH_COOKIE,
+    JSON.stringify(input),
+    {
+      httpOnly: true,
+      maxAge: 300,
+      path: "/members/new",
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    },
+  );
 }
 
 function requiredValue(formData: FormData, key: string, label: string) {
@@ -898,6 +930,7 @@ export async function createMemberAction(formData: FormData) {
 
   const { profile } = await requireRole(["admin", "branch_manager"]);
   let successDetail = "";
+  await clearMemberCreationFlash();
 
   try {
     const fullName = requiredValue(formData, "fullName", "Full name");
@@ -934,8 +967,14 @@ export async function createMemberAction(formData: FormData) {
       },
     });
 
-    successDetail = `Created member ${fullName}. Share sign-in code ${signInCode} and temporary password ${temporaryPassword}.`;
+    await setMemberCreationFlash({
+      fullName,
+      signInCode,
+      temporaryPassword,
+    });
+    successDetail = `Created member ${fullName}. Credentials are ready below for secure handoff.`;
   } catch (error) {
+    await clearMemberCreationFlash();
     redirect(
       buildRedirect(
         "/members/new",

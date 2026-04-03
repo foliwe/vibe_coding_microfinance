@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { createMemberAction } from "../../actions";
 import { AdminShell } from "../../../components/admin-shell";
 import { SectionCard } from "../../../components/section-card";
@@ -22,12 +23,48 @@ function Notice({
   );
 }
 
+function CredentialNotice({
+  fullName,
+  signInCode,
+  temporaryPassword,
+}: {
+  fullName: string;
+  signInCode: string;
+  temporaryPassword: string;
+}) {
+  return (
+    <div className="notice notice-success">
+      <strong>Secure member credentials for {fullName}:</strong>
+      <br />
+      Sign-in code: {signInCode}
+      <br />
+      Temporary password: {temporaryPassword}
+    </div>
+  );
+}
+
 export default async function CreateMemberPage({
   searchParams,
 }: {
   searchParams?: Promise<{ result?: string; detail?: string }>;
 }) {
   const params = await searchParams;
+  const cookieStore = await cookies();
+  const flashValue = cookieStore.get("member_creation_flash")?.value;
+  const memberCreationFlash =
+    params?.result === "success" && flashValue
+      ? (() => {
+          try {
+            return JSON.parse(flashValue) as {
+              fullName: string;
+              signInCode: string;
+              temporaryPassword: string;
+            };
+          } catch {
+            return null;
+          }
+        })()
+      : null;
   const { agents, branches, currentBranchLabel, isLive, profile } =
     await getOnboardingPageContext(["admin", "branch_manager"]);
   const role = profile.role === "admin" ? "admin" : "branch_manager";
@@ -51,6 +88,13 @@ export default async function CreateMemberPage({
         description="This form creates the member account, assignment, and member accounts from only the core identity fields. Sign-in code and temporary password are generated automatically."
       >
         <Notice detail={params?.detail} result={params?.result} />
+        {memberCreationFlash ? (
+          <CredentialNotice
+            fullName={memberCreationFlash.fullName}
+            signInCode={memberCreationFlash.signInCode}
+            temporaryPassword={memberCreationFlash.temporaryPassword}
+          />
+        ) : null}
         <form action={createMemberAction}>
           <div className="form-grid">
             <label className="field">
