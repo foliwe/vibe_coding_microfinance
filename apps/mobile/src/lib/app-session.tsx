@@ -1,20 +1,32 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
 import type { ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
+import { buildMemberLoginEmail } from "@credit-union/shared";
 
 import {
   getCurrentMobileProfile,
   isMobileRole,
   type MobileProfile,
 } from "./mobile-auth";
+import { getErrorMessage } from "./errors";
 import { getSupabaseClient } from "./supabase/client";
 import { hasSupabaseEnv } from "./supabase/env";
 
 type Credentials = {
-  email: string;
+  identifier: string;
   password: string;
 };
+
+function normalizeSignInIdentifier(identifier: string) {
+  const trimmed = identifier.trim();
+
+  if (!trimmed || trimmed.includes("@")) {
+    return trimmed;
+  }
+
+  return buildMemberLoginEmail(trimmed);
+}
 
 interface AppSessionValue {
   authError: string | null;
@@ -22,6 +34,7 @@ interface AppSessionValue {
   isSigningIn: boolean;
   profile: MobileProfile | null;
   ready: boolean;
+  refreshProfile: () => Promise<MobileProfile | null>;
   session: Session | null;
   signIn: (credentials: Credentials) => Promise<void>;
   signOut: () => Promise<void>;
@@ -36,25 +49,42 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<MobileProfile | null>(null);
   const [ready, setReady] = useState(!envReady);
   const [session, setSession] = useState<Session | null>(null);
+  const hydrateRequestIdRef = useRef(0);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
-    if (!envReady) {
-      setReady(true);
-      return;
-    }
+    isMountedRef.current = true;
 
-    const supabase = getSupabaseClient();
-    let active = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
-    async function hydrate(nextSession?: Session | null) {
+  const hydrateSession = useCallback(
+    async (nextSession?: Session | null) => {
+      const requestId = ++hydrateRequestIdRef.current;
+
+      if (!envReady) {
+        if (!isMountedRef.current || hydrateRequestIdRef.current !== requestId) {
+          return null;
+        }
+
+        setSession(null);
+        setAuthError(null);
+        setProfile(null);
+        setReady(true);
+        return null;
+      }
+
+      const supabase = getSupabaseClient();
       setReady(false);
 
       const sessionToUse =
         nextSession ??
         (await supabase.auth.getSession()).data.session;
 
-      if (!active) {
-        return;
+      if (!isMountedRef.current || hydrateRequestIdRef.current !== requestId) {
+        return null;
       }
 
       setSession(sessionToUse);
@@ -63,14 +93,14 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
         setAuthError(null);
         setProfile(null);
         setReady(true);
-        return;
+        return null;
       }
 
       try {
         const nextProfile = await getCurrentMobileProfile();
 
-        if (!active) {
-          return;
+        if (!isMountedRef.current || hydrateRequestIdRef.current !== requestId) {
+          return null;
         }
 
         setProfile(nextProfile);
@@ -79,28 +109,37 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
             ? null
             : "This account can sign in, but it does not have mobile access.",
         );
+        return nextProfile;
       } catch (error) {
-        if (!active) {
-          return;
+        if (!isMountedRef.current || hydrateRequestIdRef.current !== requestId) {
+          return null;
         }
 
         setProfile(null);
-        setAuthError(
-          error instanceof Error ? error.message : "We could not load your profile.",
-        );
+        setAuthError(getErrorMessage(error, "We could not load your profile."));
+        return null;
       } finally {
-        if (active) {
+        if (isMountedRef.current && hydrateRequestIdRef.current === requestId) {
           setReady(true);
         }
       }
+    },
+    [envReady],
+  );
+
+  useEffect(() => {
+    if (!envReady) {
+      setReady(true);
+      return;
     }
 
-    void hydrate();
+    const supabase = getSupabaseClient();
+    void hydrateSession();
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      void hydrate(nextSession);
+      void hydrateSession(nextSession);
     });
 
     const appStateSubscription = AppState.addEventListener("change", (state) => {
@@ -114,12 +153,11 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
     supabase.auth.startAutoRefresh();
 
     return () => {
-      active = false;
       subscription.unsubscribe();
       appStateSubscription.remove();
       supabase.auth.stopAutoRefresh();
     };
-  }, [envReady]);
+  }, [envReady, hydrateSession]);
 
   const value = useMemo<AppSessionValue>(
     () => ({
@@ -128,8 +166,9 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
       isSigningIn,
       profile,
       ready,
+      refreshProfile: async () => hydrateSession(),
       session,
-      signIn: async ({ email, password }) => {
+      signIn: async ({ identifier, password }) => {
         if (!envReady) {
           throw new Error(
             "Supabase mobile environment variables are not configured yet.",
@@ -142,7 +181,7 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
         try {
           const supabase = getSupabaseClient();
           const { error } = await supabase.auth.signInWithPassword({
-            email,
+            email: normalizeSignInIdentifier(identifier),
             password,
           });
 
@@ -150,8 +189,7 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
             throw error;
           }
         } catch (error) {
-          const message =
-            error instanceof Error ? error.message : "We could not sign you in.";
+          const message = getErrorMessage(error, "We could not sign you in.");
           setAuthError(message);
           throw error;
         } finally {
@@ -178,7 +216,7 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
         setProfile(null);
       },
     }),
-    [authError, envReady, isSigningIn, profile, ready, session],
+    [authError, envReady, hydrateSession, isSigningIn, profile, ready, session],
   );
 
   return (

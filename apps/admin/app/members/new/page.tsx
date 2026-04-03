@@ -44,11 +44,11 @@ export default async function CreateMemberPage({
       role={role}
       statusBadge={isLive ? "Live Supabase" : "Supabase setup needed"}
       title="Create Member"
-      subtitle="Onboard a new member with branch assignment, agent ownership, accounts, and first-login credentials."
+      subtitle="Create the member with minimum identification now, then let the member complete the rest from the mobile profile page after first login."
     >
       <SectionCard
         title="Member Onboarding Form"
-        description="This form now creates the Auth user, profile, member registry row, agent assignment, and savings and deposit accounts."
+        description="This form creates the member account, assignment, and member accounts from only the core identity fields. Sign-in code and temporary password are generated automatically."
       >
         <Notice detail={params?.detail} result={params?.result} />
         <form action={createMemberAction}>
@@ -58,40 +58,12 @@ export default async function CreateMemberPage({
               <input name="fullName" placeholder="John Nkem" required />
             </label>
             <label className="field">
-              <span>Login Email</span>
-              <input name="email" placeholder="member@example.com" required type="email" />
-            </label>
-            <label className="field">
-              <span>Temporary Password</span>
-              <input minLength={8} name="password" placeholder="Member123456!" required />
-            </label>
-            <label className="field">
               <span>Phone Number</span>
               <input name="phone" placeholder="+2376..." required />
             </label>
             <label className="field">
-              <span>Date Of Birth</span>
-              <input name="dateOfBirth" placeholder="1990-08-24" type="date" />
-            </label>
-            <label className="field">
-              <span>Gender</span>
-              <select defaultValue="" name="gender">
-                <option value="">Select gender</option>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Occupation</span>
-              <input name="occupation" placeholder="Trader" />
-            </label>
-            <label className="field">
-              <span>ID Type</span>
-              <input name="idType" placeholder="National ID" />
-            </label>
-            <label className="field">
-              <span>ID Number</span>
-              <input name="idNumber" placeholder="CM123456789" />
+              <span>ID Card Number</span>
+              <input name="idNumber" placeholder="CM123456789" required />
             </label>
             <label className="field">
               <span>Branch</span>
@@ -122,30 +94,6 @@ export default async function CreateMemberPage({
                   </option>
                 ))}
               </select>
-            </label>
-            <label className="field">
-              <span>Next Of Kin Name</span>
-              <input name="nextOfKinName" placeholder="Jane Nkem" />
-            </label>
-            <label className="field">
-              <span>Next Of Kin Phone</span>
-              <input name="nextOfKinPhone" placeholder="+2376..." />
-            </label>
-            <label className="field">
-              <span>Next Of Kin Address</span>
-              <input name="nextOfKinAddress" placeholder="Mile 4 Nkwen" />
-            </label>
-            <label className="field">
-              <span>Savings Account Number</span>
-              <input name="savingsAccountNumber" placeholder="Auto-generate if left blank" />
-            </label>
-            <label className="field">
-              <span>Deposit Account Number</span>
-              <input name="depositAccountNumber" placeholder="Auto-generate if left blank" />
-            </label>
-            <label className="field">
-              <span>Residential Address</span>
-              <textarea name="residentialAddress" placeholder="Mile 4 Nkwen" />
             </label>
           </div>
           <div className="actions">

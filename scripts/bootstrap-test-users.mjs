@@ -24,10 +24,13 @@ const TEST_AGENT_PASSWORD = process.env.TEST_AGENT_PASSWORD ?? "Agent123456!";
 const TEST_AGENT_NAME = process.env.TEST_AGENT_NAME ?? "Field Agent One";
 const TEST_AGENT_PHONE = process.env.TEST_AGENT_PHONE ?? "+237600000102";
 
-const TEST_MEMBER_EMAIL = process.env.TEST_MEMBER_EMAIL ?? "member@example.com";
+const TEST_MEMBER_SIGN_IN_CODE =
+  process.env.TEST_MEMBER_SIGN_IN_CODE ?? `MM${TEST_BRANCH_CODE}ME01`;
+const TEST_MEMBER_EMAIL = `member-${TEST_MEMBER_SIGN_IN_CODE.toLowerCase()}@members.local`;
 const TEST_MEMBER_PASSWORD = process.env.TEST_MEMBER_PASSWORD ?? "Member123456!";
 const TEST_MEMBER_NAME = process.env.TEST_MEMBER_NAME ?? "Member One";
 const TEST_MEMBER_PHONE = process.env.TEST_MEMBER_PHONE ?? "+237600000103";
+const TEST_MEMBER_ID_NUMBER = process.env.TEST_MEMBER_ID_NUMBER ?? "MEMBER1-260402-2160";
 
 function fail(message) {
   console.error(`\nError: ${message}\n`);
@@ -174,6 +177,9 @@ async function upsertMemberProfile(profileId, branchId, assignedAgentId, created
         profile_id: profileId,
         branch_id: branchId,
         assigned_agent_id: assignedAgentId,
+        id_number: TEST_MEMBER_ID_NUMBER,
+        id_type: "ID Card",
+        sign_in_code: TEST_MEMBER_SIGN_IN_CODE,
         status: "active",
         created_by: createdBy,
         approved_by: createdBy,
@@ -366,7 +372,7 @@ async function main() {
   console.log("Test users:");
   console.log(`- Branch manager: ${TEST_MANAGER_EMAIL} / ${TEST_MANAGER_PASSWORD}`);
   console.log(`- Agent: ${TEST_AGENT_EMAIL} / ${TEST_AGENT_PASSWORD}`);
-  console.log(`- Member: ${TEST_MEMBER_EMAIL} / ${TEST_MEMBER_PASSWORD}`);
+  console.log(`- Member: ${TEST_MEMBER_SIGN_IN_CODE} / ${TEST_MEMBER_PASSWORD}`);
   console.log("");
   console.log("Seeded accounts:");
   console.log(`- Savings: ${savingsAccount.account_number}`);

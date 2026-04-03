@@ -70,6 +70,10 @@ function loadTestEnv() {
 
 loadTestEnv();
 
+const SEEDED_MEMBER_SIGN_IN_CODE =
+  process.env.TEST_MEMBER_SIGN_IN_CODE ?? `MM${process.env.TEST_BRANCH_CODE ?? "BAM"}ME01`;
+const SEEDED_MEMBER_EMAIL = `member-${SEEDED_MEMBER_SIGN_IN_CODE.toLowerCase()}@members.local`;
+
 function requiredEnv(key: string) {
   loadTestEnv();
   const value = process.env[key];
@@ -103,7 +107,7 @@ export const seededUsers: {
     fullName: process.env.TEST_AGENT_NAME ?? "Field Agent One",
   },
   member: {
-    email: process.env.TEST_MEMBER_EMAIL ?? "member@example.com",
+    email: SEEDED_MEMBER_EMAIL,
     password: process.env.TEST_MEMBER_PASSWORD ?? "Member123456!",
     fullName: process.env.TEST_MEMBER_NAME ?? "Member One",
   },
@@ -282,6 +286,21 @@ export async function getProfileByEmail(email: string) {
   return (data as ProfileLookup | null) ?? null;
 }
 
+export async function getProfileByPhone(phone: string) {
+  const service = createServiceClient();
+  const { data, error } = await service
+    .from("profiles")
+    .select("id, full_name, role, branch_id")
+    .eq("phone", phone)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data as ProfileLookup | null) ?? null;
+}
+
 export async function getMemberAccountsByEmail(email: string) {
   const profile = await getProfileByEmail(email);
 
@@ -289,11 +308,16 @@ export async function getMemberAccountsByEmail(email: string) {
     return [] as MemberAccountLookup[];
   }
 
+  return getMemberAccountsByProfileId(profile.id);
+}
+
+export async function getMemberAccountsByProfileId(profileId: string) {
   const service = createServiceClient();
+
   const { data, error } = await service
     .from("member_accounts")
     .select("account_number, account_type")
-    .eq("member_profile_id", profile.id)
+    .eq("member_profile_id", profileId)
     .order("account_type", { ascending: true });
 
   if (error) {

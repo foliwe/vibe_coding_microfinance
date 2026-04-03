@@ -44,7 +44,8 @@ The institution is cash-only in v1. No electronic sending, wallet transfer, or c
 
 ## Offline policy
 
-- agents may capture deposits, withdrawals, and pending-member drafts offline
+- agents may capture deposits and pending-member drafts offline
+- withdrawals require both connectivity and a valid transaction PIN
 - offline approval, reversal, and loan disbursement are not allowed
 - every offline write must carry an idempotency key and device context
 - stale sync submissions must be rejected safely and logged
@@ -52,6 +53,8 @@ The institution is cash-only in v1. No electronic sending, wallet transfer, or c
 ## Security rules
 
 - first-login password change for member, agent, and branch_manager
+- agents must also set a 4-digit transaction PIN before entering the field workspace
+- members sign in with generated sign-in codes, not ID card numbers
 - password + device binding + transaction PIN for staff
 - member app re-entry guarded with local PIN or biometric
 - audit log for all sensitive actions
@@ -71,3 +74,9 @@ Admin sees institution-wide totals:
 - reconciliation variances
 
 Branch managers see only their branch totals and operational summaries.
+
+Cash reconciliation now follows a submit-and-review workflow:
+
+- agents submit counted cash from mobile
+- `branch_manager` or `admin` approve or reject the submitted reconciliation
+- rejected reconciliations reopen the drawer so the agent can resubmit

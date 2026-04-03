@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 import type { Route } from "next";
 import { redirect } from "next/navigation";
 import type { RepaymentMode, TransactionType } from "@credit-union/shared";
+import {
+  assertValidBranchCode,
+  provisionMember,
+} from "@credit-union/shared";
 
 import { requireRole } from "../lib/auth";
 import { hasSupabaseEnv, hasSupabaseServiceEnv } from "../lib/supabase/env";
@@ -11,6 +15,30 @@ import { createServiceClient } from "../lib/supabase/service";
 import { createClient } from "../lib/supabase/server";
 
 type RedirectResult = "success" | "error";
+
+type ServiceClient = ReturnType<typeof createServiceClient>;
+
+type MemberProvisionInput = {
+  actorId: string;
+  approvedById?: string;
+  assignedAgentId: string;
+  branchId: string;
+  createdById?: string;
+  dateOfBirth?: string | null;
+  depositAccountNumber?: string;
+  fullName: string;
+  gender?: string | null;
+  idNumber: string;
+  idType?: string | null;
+  nextOfKinAddress?: string | null;
+  nextOfKinName?: string | null;
+  nextOfKinPhone?: string | null;
+  occupation?: string | null;
+  password?: string | null;
+  phone: string;
+  residentialAddress?: string | null;
+  savingsAccountNumber?: string;
+};
 
 function buildRedirect(path: string, result: RedirectResult, detail?: string): Route {
   const params = new URLSearchParams();
@@ -59,11 +87,6 @@ function revalidateLoanPaths() {
   revalidatePath("/branch");
 }
 
-function accountNumber(branchCode: string, prefix: "SAV" | "DEP") {
-  const entropy = `${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 900 + 100)}`;
-  return `${branchCode.toUpperCase()}-${prefix}-${entropy}`;
-}
-
 async function createAuthUser(email: string, password: string, fullName: string) {
   const service = createServiceClient();
   const response = await service.auth.admin.createUser({
@@ -80,6 +103,15 @@ async function createAuthUser(email: string, password: string, fullName: string)
   }
 
   return response.data.user;
+}
+
+async function deleteAuthUserIfPresent(userId: string | null) {
+  if (!userId) {
+    return;
+  }
+
+  const service = createServiceClient();
+  await service.auth.admin.deleteUser(userId).catch(() => undefined);
 }
 
 async function getBranchRecord(branchId: string) {
@@ -99,6 +131,122 @@ async function getBranchRecord(branchId: string) {
     name: string;
     code: string;
     manager_profile_id: string | null;
+  };
+}
+
+async function assertAssignedAgent(
+  service: ServiceClient,
+  branchId: string,
+  assignedAgentId: string,
+) {
+  const response = await service
+    .from("profiles")
+    .select("id, branch_id, role")
+    .eq("id", assignedAgentId)
+    .single();
+
+  if (response.error || !response.data) {
+    throw new Error(response.error?.message ?? "Assigned agent was not found.");
+  }
+
+  if (response.data.role !== "agent" || response.data.branch_id !== branchId) {
+    throw new Error("Assigned agent must belong to the selected branch.");
+  }
+
+  return response.data;
+}
+
+async function writeAuditLogEntry(
+  service: ServiceClient,
+  input: {
+    actorId: string;
+    branchId: string;
+    action: string;
+    entityType: string;
+    entityId: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  const response = await service.from("audit_logs").insert({
+    actor_id: input.actorId,
+    branch_id: input.branchId,
+    action: input.action,
+    entity_type: input.entityType,
+    entity_id: input.entityId,
+    metadata: input.metadata ?? {},
+  });
+
+  if (response.error) {
+    throw new Error(response.error.message);
+  }
+}
+
+function revalidateMemberPaths(memberId?: string) {
+  revalidatePath("/members");
+  revalidatePath("/members/new");
+  revalidatePath("/agents");
+  revalidatePath("/branch");
+  revalidatePath("/");
+
+  if (memberId) {
+    revalidatePath(`/members/${memberId}`);
+  }
+}
+
+async function provisionMemberRecord({
+  actorId,
+  approvedById,
+  assignedAgentId,
+  branchId,
+  createdById,
+  dateOfBirth,
+  depositAccountNumber,
+  fullName,
+  gender,
+  idNumber,
+  idType,
+  nextOfKinAddress,
+  nextOfKinName,
+  nextOfKinPhone,
+  occupation,
+  password,
+  phone,
+  residentialAddress,
+  savingsAccountNumber,
+}: MemberProvisionInput) {
+  const service = createServiceClient();
+  const branch = await getBranchRecord(branchId);
+  await assertAssignedAgent(service, branch.id, assignedAgentId);
+  const provisionedMember = await provisionMember(service, {
+    actorId,
+    approvedById,
+    assignedAgentId,
+    branch,
+    createdById,
+    dateOfBirth,
+    depositAccountNumber,
+    fallbackSeed: branch.id,
+    fullName,
+    gender,
+    idNumber,
+    idType,
+    nextOfKinAddress,
+    nextOfKinName,
+    nextOfKinPhone,
+    occupation,
+    password,
+    phone,
+    residentialAddress,
+    savingsAccountNumber,
+  });
+
+  return {
+    branch,
+    idNumber: provisionedMember.idNumber,
+    loginEmail: provisionedMember.loginEmail,
+    memberId: provisionedMember.memberId,
+    signInCode: provisionedMember.signInCode,
+    temporaryPassword: provisionedMember.temporaryPassword,
   };
 }
 
@@ -178,6 +326,58 @@ export async function approveTransactionRequestAction(formData: FormData) {
 
 export async function rejectTransactionRequestAction(formData: FormData) {
   await mutateTransactionRequest("reject_transaction_request", formData);
+}
+
+export async function reviewCashReconciliationAction(formData: FormData) {
+  if (!hasSupabaseEnv()) {
+    redirect(buildRedirect("/reconciliation", "error", "Supabase credentials are missing."));
+  }
+
+  try {
+    const reconciliationId = requiredValue(
+      formData,
+      "reconciliationId",
+      "Cash reconciliation",
+    );
+    const reviewAction = requiredValue(formData, "reviewAction", "Review action");
+    const reviewNote = optionalValue(formData, "reviewNote");
+
+    if (reviewAction !== "approve" && reviewAction !== "reject") {
+      throw new Error("Review action must be approve or reject.");
+    }
+
+    const { supabase } = await requireRole(["admin", "branch_manager"]);
+    const { error } = await supabase.rpc("review_cash_reconciliation", {
+      p_action: reviewAction,
+      p_reconciliation_id: reconciliationId,
+      p_review_note: reviewNote,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  } catch (error) {
+    redirect(
+      buildRedirect(
+        "/reconciliation",
+        "error",
+        error instanceof Error ? error.message : "Unable to review the cash reconciliation.",
+      ),
+    );
+  }
+
+  revalidatePath("/reconciliation");
+  revalidatePath("/branch");
+  revalidatePath("/");
+  redirect(
+    buildRedirect(
+      "/reconciliation",
+      "success",
+      requiredValue(formData, "reviewAction", "Review action") === "approve"
+        ? "Cash reconciliation approved."
+        : "Cash reconciliation rejected.",
+    ),
+  );
 }
 
 async function createAdminTransactionAction(
@@ -462,7 +662,7 @@ export async function createBranchAction(formData: FormData) {
 
   try {
     const name = requiredValue(formData, "name", "Branch name");
-    const code = requiredValue(formData, "code", "Branch code").toUpperCase();
+    const code = assertValidBranchCode(requiredValue(formData, "code", "Branch code"));
     const city = optionalValue(formData, "city");
     const region = optionalValue(formData, "region");
     const phone = optionalValue(formData, "phone");
@@ -536,6 +736,7 @@ export async function createManagerAction(formData: FormData) {
   await requireRole(["admin"]);
   const service = createServiceClient();
   let successDetail = "";
+  let createdUserId: string | null = null;
 
   try {
     const fullName = requiredValue(formData, "fullName", "Full name");
@@ -549,6 +750,7 @@ export async function createManagerAction(formData: FormData) {
     }
 
     const user = await createAuthUser(email, password, fullName);
+    createdUserId = user.id;
     const branch = await getBranchRecord(branchId);
 
     const profileResponse = await service
@@ -595,6 +797,7 @@ export async function createManagerAction(formData: FormData) {
     }
     successDetail = `Created branch manager ${fullName}.`;
   } catch (error) {
+    await deleteAuthUserIfPresent(createdUserId);
     redirect(
       buildRedirect(
         "/managers/new",
@@ -617,6 +820,7 @@ export async function createAgentAction(formData: FormData) {
   const { profile } = await requireRole(["admin", "branch_manager"]);
   const service = createServiceClient();
   let successDetail = "";
+  let createdUserId: string | null = null;
 
   try {
     const fullName = requiredValue(formData, "fullName", "Full name");
@@ -635,6 +839,7 @@ export async function createAgentAction(formData: FormData) {
 
     const branch = await getBranchRecord(branchId);
     const user = await createAuthUser(email, password, fullName);
+    createdUserId = user.id;
 
     const profileResponse = await service
       .from("profiles")
@@ -671,6 +876,7 @@ export async function createAgentAction(formData: FormData) {
     }
     successDetail = `Created agent ${fullName}.`;
   } catch (error) {
+    await deleteAuthUserIfPresent(createdUserId);
     redirect(
       buildRedirect(
         "/agents/new",
@@ -691,146 +897,44 @@ export async function createMemberAction(formData: FormData) {
   assertServiceEnv("/members/new");
 
   const { profile } = await requireRole(["admin", "branch_manager"]);
-  const service = createServiceClient();
   let successDetail = "";
 
   try {
     const fullName = requiredValue(formData, "fullName", "Full name");
-    const email = requiredValue(formData, "email", "Login email");
     const phone = requiredValue(formData, "phone", "Phone");
-    const password = requiredValue(formData, "password", "Temporary password");
+    const idNumber = requiredValue(formData, "idNumber", "ID card number");
     const branchId = assertBranchForRole(
       profile.role === "admin" ? "admin" : "branch_manager",
       profile.branch_id,
       optionalValue(formData, "branchId"),
     );
     const assignedAgentId = requiredValue(formData, "assignedAgentId", "Assigned agent");
-    const dateOfBirth = optionalValue(formData, "dateOfBirth");
-    const gender = optionalValue(formData, "gender");
-    const occupation = optionalValue(formData, "occupation");
-    const idType = optionalValue(formData, "idType");
-    const idNumber = optionalValue(formData, "idNumber");
-    const nextOfKinName = optionalValue(formData, "nextOfKinName");
-    const nextOfKinPhone = optionalValue(formData, "nextOfKinPhone");
-    const nextOfKinAddress = optionalValue(formData, "nextOfKinAddress");
-    const residentialAddress = optionalValue(formData, "residentialAddress");
-    const savingsAccountNumber =
-      optionalValue(formData, "savingsAccountNumber") ?? undefined;
-    const depositAccountNumber =
-      optionalValue(formData, "depositAccountNumber") ?? undefined;
-
-    if (password.length < 8) {
-      throw new Error("Temporary password must be at least 8 characters.");
-    }
-
-    const branch = await getBranchRecord(branchId);
-    const agentResponse = await service
-      .from("profiles")
-      .select("id, branch_id, role")
-      .eq("id", assignedAgentId)
-      .single();
-
-    if (agentResponse.error || !agentResponse.data) {
-      throw new Error(agentResponse.error?.message ?? "Assigned agent was not found.");
-    }
-
-    if (agentResponse.data.role !== "agent" || agentResponse.data.branch_id !== branch.id) {
-      throw new Error("Assigned agent must belong to the selected branch.");
-    }
-
-    const user = await createAuthUser(email, password, fullName);
-
-    const profileResponse = await service
-      .from("profiles")
-      .insert({
-        id: user.id,
-        role: "member",
-        full_name: fullName,
+    const { memberId, signInCode, temporaryPassword } =
+      await provisionMemberRecord({
+        actorId: profile.id,
+        approvedById: profile.id,
+        assignedAgentId,
+        branchId,
+        createdById: profile.id,
+        fullName,
+        idNumber,
         phone,
-        email,
-        branch_id: branch.id,
-        must_change_password: true,
-        requires_pin_setup: true,
-        is_active: true,
-      })
-      .select("id")
-      .single();
+      });
 
-    if (profileResponse.error || !profileResponse.data) {
-      throw new Error(profileResponse.error?.message ?? "Unable to create member profile.");
-    }
-
-    const memberResponse = await service
-      .from("member_profiles")
-      .insert({
-        profile_id: user.id,
-        branch_id: branch.id,
-        assigned_agent_id: assignedAgentId,
-        date_of_birth: dateOfBirth,
-        gender,
-        residential_address: residentialAddress,
-        occupation,
-        id_type: idType,
-        id_number: idNumber,
-        next_of_kin_name: nextOfKinName,
-        next_of_kin_phone: nextOfKinPhone,
-        next_of_kin_address: nextOfKinAddress,
-        status: "active",
-        created_by: profile.id,
-        approved_by: profile.id,
-      })
-      .select("profile_id")
-      .single();
-
-    if (memberResponse.error || !memberResponse.data) {
-      throw new Error(memberResponse.error?.message ?? "Unable to create member registry row.");
-    }
-
-    const accounts = [
-      {
-        member_profile_id: user.id,
-        branch_id: branch.id,
-        account_type: "savings",
-        account_number:
-          savingsAccountNumber ?? accountNumber(branch.code, "SAV"),
-        status: "active",
+    const service = createServiceClient();
+    await writeAuditLogEntry(service, {
+      actorId: profile.id,
+      branchId,
+      action: "create_member",
+      entityType: "member_profile",
+      entityId: memberId,
+      metadata: {
+        assignedAgentId,
+        source: "admin_panel",
       },
-      {
-        member_profile_id: user.id,
-        branch_id: branch.id,
-        account_type: "deposit",
-        account_number:
-          depositAccountNumber ?? accountNumber(branch.code, "DEP"),
-        status: "active",
-      },
-    ];
+    });
 
-    const accountsResponse = await service
-      .from("member_accounts")
-      .insert(accounts)
-      .select("id");
-
-    if (accountsResponse.error) {
-      throw new Error(accountsResponse.error.message);
-    }
-
-    const assignmentResponse = await service
-      .from("agent_member_assignments")
-      .insert({
-        member_profile_id: user.id,
-        agent_profile_id: assignedAgentId,
-        branch_id: branch.id,
-        is_active: true,
-      })
-      .select("id")
-      .single();
-
-    if (assignmentResponse.error || !assignmentResponse.data) {
-      throw new Error(
-        assignmentResponse.error?.message ?? "Unable to create agent assignment.",
-      );
-    }
-    successDetail = `Created member ${fullName}.`;
+    successDetail = `Created member ${fullName}. Share sign-in code ${signInCode} and temporary password ${temporaryPassword}.`;
   } catch (error) {
     redirect(
       buildRedirect(
@@ -841,11 +945,7 @@ export async function createMemberAction(formData: FormData) {
     );
   }
 
-  revalidatePath("/members");
-  revalidatePath("/members/new");
-  revalidatePath("/agents");
-  revalidatePath("/branch");
-  revalidatePath("/");
+  revalidateMemberPaths();
   redirect(buildRedirect("/members/new", "success", successDetail));
 }
 

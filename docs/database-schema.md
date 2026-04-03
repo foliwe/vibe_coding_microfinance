@@ -28,7 +28,10 @@
 
 - one active branch per staff user
 - one active branch and one active assigned agent per member
+- `member_profiles.sign_in_code` is the unique member login identifier
 - a user cannot approve a financial request they created
+- agent withdrawals require a stored transaction PIN and cannot be submitted offline
+- cash reconciliations move through `pending_review`, `approved`, or `rejected`
 - approved ledger rows are immutable
 - branch aggregates must only include accounts and loans tied to that branch
 

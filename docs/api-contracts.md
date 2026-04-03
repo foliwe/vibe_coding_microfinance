@@ -18,20 +18,25 @@ For the loan-specific workflow summary and current implementation gaps, see [`do
 Use RPCs or Edge Functions for:
 
 - creating transaction requests
+- setting transaction PINs
 - approving/rejecting transaction requests
 - reversing transactions
 - submitting loan applications
 - approving/disbursing loans
 - ingesting offline sync batches
-- closing cash reconciliation
+- submitting cash reconciliation
+- reviewing cash reconciliation
 - generating report jobs
 
 ## Transaction RPCs
 
-- `create_transaction_request(actor_id, member_account_id, transaction_type, amount, note, idempotency_key, submitted_offline, device_id, payload_hash)`
+- `create_transaction_request(actor_id, member_account_id, transaction_type, amount, note, idempotency_key, submitted_offline, device_id, payload_hash, transaction_pin)`
 - `create_admin_transaction(actor_id, member_account_id, cash_agent_profile_id, transaction_type, amount, note)`
 - `approve_transaction_request(request_id, actor_id, note)`
 - `reject_transaction_request(request_id, actor_id, note)`
+- `set_my_transaction_pin(pin)`
+- `submit_cash_reconciliation(counted_cash, variance_reason)`
+- `review_cash_reconciliation(reconciliation_id, action, review_note)`
 
 ## Loan RPCs
 
@@ -55,12 +60,15 @@ Behavior:
 Behavior:
 
 - request creation is limited to the authenticated `agent` or `service_role` acting on that agent
+- agent withdrawals require a valid transaction PIN and live connectivity
 - admin-panel transaction creation is limited to authenticated `branch_manager` or `admin`
 - admin-panel transaction creation requires selecting the agent drawer that should receive or release the cash
 - admin-panel transactions are auto-approved immediately, post ledger entries in the same write, update the selected agent cash drawer, and write audit logs
 - approvals are limited to authenticated `branch_manager` or `admin`
 - approvals enforce maker-checker, post immutable ledger journals and entries, update the agent cash drawer, and write audit logs
 - rejections preserve the request, skip ledger posting, and still write approval + audit records
+- cash reconciliation submission is limited to the authenticated agent for the current drawer
+- reconciliation review is limited to authenticated `branch_manager` or `admin`
 
 ## Offline sync
 

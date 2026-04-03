@@ -50,15 +50,19 @@ Implement the new mobile design as a structured refactor of the current Expo app
 - Add a mobile-local status mapping layer so backend values are translated into the exact UI labels required by the design.
 - Extend queue summaries to support the global status strip and sync queue screen.
 - Keep member mobile read-only in v1.
-- Treat cash reconciliation as a local workflow until backend submission is available.
+- Route agent reconciliation submission through Supabase RPCs and surface manager review state back in mobile.
+- Keep offline queue support for deposits, but require live connectivity for withdrawals so transaction PIN verification stays server-side.
 
 ## Test Plan
 
 - Agent login, password change, and transaction PIN setup.
-- Offline deposit and offline withdrawal with visible `PENDING SYNC`.
+- Offline deposit with visible `PENDING SYNC`.
+- Offline withdrawal blocked with a clear connectivity error.
 - Online transaction submission with visible `PENDING APPROVAL`.
+- Agent first-login password change plus transaction PIN setup before shell access.
 - Queue persistence after app restart.
 - Sync queue retry and sync actions.
+- Reconciliation submission and pending-review visibility.
 - Member list search and add-member draft flow.
 - Member read-only balances, transactions, and loans in the new shell.
 - Member PIN and biometric settings.

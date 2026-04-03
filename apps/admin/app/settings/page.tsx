@@ -31,7 +31,7 @@ export default async function SettingsPage() {
           </div>
           <div className="list-item">
             <strong>Require transaction PIN</strong>
-            <span className="chip">enabled for mobile withdrawals</span>
+            <span className="chip">enforced for live mobile withdrawals</span>
           </div>
           <div className="list-item">
             <strong>Device binding</strong>

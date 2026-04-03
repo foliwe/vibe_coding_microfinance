@@ -100,8 +100,15 @@ export interface MemberProfile {
   fullName: string;
   phone: string;
   status: "active" | "pending" | "suspended";
+  dateOfBirth?: string;
+  gender?: string;
   occupation?: string;
   address?: string;
+  idType?: string;
+  idNumber?: string;
+  nextOfKinName?: string;
+  nextOfKinPhone?: string;
+  nextOfKinAddress?: string;
 }
 
 export interface MemberAccountSummary {

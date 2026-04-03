@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 
@@ -20,6 +20,7 @@ import {
 } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
 import { useAppSession } from "@/lib/app-session";
+import { getErrorMessage } from "@/lib/errors";
 import { mobileData, formatTransactionMonthLabel } from "@/lib/mobile-data";
 import {
   buildTransactionDayGroups,
@@ -28,7 +29,7 @@ import {
   getCurrentTransactionMonthKey,
 } from "@/lib/transaction-history";
 import { useResource } from "@/lib/use-resource";
-import type { LoanCard, MemberDashboard } from "@/mocks/mobile-data";
+import type { LoanCard } from "@/mocks/mobile-data";
 import type { TransactionRequest } from "@credit-union/shared";
 import { colors, spacing, typography } from "@/theme/tokens";
 
@@ -173,7 +174,7 @@ export function MemberMoreScreen() {
   const { data, error, loading } = useResource(mobileData.getMemberDashboard);
 
   return (
-    <Screen subtitle="Support, profile, and account controls for the read-only member shell." title="More">
+    <Screen subtitle="Support, profile, and account controls for the self-service member shell." title="More">
       {error ? (
         <ResourceErrorCard message={error} />
       ) : loading || !data ? (
@@ -203,6 +204,36 @@ export function MemberMoreScreen() {
 
 export function MemberProfileScreen() {
   const { data: profile, error, loading } = useResource(mobileData.getMemberProfile);
+  const [currentProfile, setCurrentProfile] = useState<typeof profile | null>(null);
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
+  const [gender, setGender] = useState("");
+  const [occupation, setOccupation] = useState("");
+  const [residentialAddress, setResidentialAddress] = useState("");
+  const [nextOfKinName, setNextOfKinName] = useState("");
+  const [nextOfKinPhone, setNextOfKinPhone] = useState("");
+  const [nextOfKinAddress, setNextOfKinAddress] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!profile) {
+      return;
+    }
+
+    setCurrentProfile(profile);
+    setFullName(profile.fullName);
+    setPhone(profile.phone);
+    setDateOfBirth(profile.dateOfBirth ?? "");
+    setGender(profile.gender ?? "");
+    setOccupation(profile.occupation ?? "");
+    setResidentialAddress(profile.address ?? "");
+    setNextOfKinName(profile.nextOfKinName ?? "");
+    setNextOfKinPhone(profile.nextOfKinPhone ?? "");
+    setNextOfKinAddress(profile.nextOfKinAddress ?? "");
+  }, [profile]);
 
   if (error) {
     return (
@@ -220,38 +251,162 @@ export function MemberProfileScreen() {
     );
   }
 
+  const activeProfile = currentProfile ?? profile;
+
   return (
-    <Screen subtitle="Read-only identity card and support details." title="Profile">
+    <Screen subtitle="Complete the rest of your member record here after onboarding." title="Profile">
       <SurfaceCard>
-        <Text style={styles.heroTitle}>{profile.fullName}</Text>
-        <Text style={styles.heroCaption}>{profile.code}</Text>
-        <InfoRow label="Phone" value={profile.phone} />
-        <InfoRow label="Village" value={profile.village} />
-        <InfoRow label="Agent" value={profile.agentName} />
+        <Text style={styles.heroTitle}>{activeProfile.fullName}</Text>
+        <Text style={styles.heroCaption}>{activeProfile.code}</Text>
+        <InfoRow label="Phone" value={activeProfile.phone} />
+        <InfoRow label="ID Card" value={activeProfile.idNumber ?? "Pending"} />
+        <InfoRow label="Agent" value={activeProfile.agentName} />
       </SurfaceCard>
       <SurfaceCard accent="#EEF4ED">
-        <InfoRow label="Savings" value={formatCurrency(profile.savingsBalance)} />
-        <InfoRow label="Deposit" value={formatCurrency(profile.depositBalance)} />
-        <InfoRow label="Status" value={profile.status} />
+        <InfoRow label="Savings" value={formatCurrency(activeProfile.savingsBalance)} />
+        <InfoRow label="Deposit" value={formatCurrency(activeProfile.depositBalance)} />
+        <InfoRow label="Status" value={activeProfile.status} />
       </SurfaceCard>
+      <InputField label="Full Name" onChangeText={setFullName} placeholder="Enter your full name" value={fullName} />
+      <InputField label="Phone" onChangeText={setPhone} placeholder="+2376..." value={phone} />
+      <InputField label="Date Of Birth" onChangeText={setDateOfBirth} placeholder="1990-08-24" value={dateOfBirth} />
+      <InputField label="Gender" onChangeText={setGender} placeholder="Female, Male, or other" value={gender} />
+      <InputField label="Occupation" onChangeText={setOccupation} placeholder="Trader" value={occupation} />
+      <InputField
+        label="Residential Address"
+        multiline
+        onChangeText={setResidentialAddress}
+        placeholder="Mile 4 Nkwen"
+        value={residentialAddress}
+      />
+      <InputField label="Next Of Kin Name" onChangeText={setNextOfKinName} placeholder="Jane Nkem" value={nextOfKinName} />
+      <InputField label="Next Of Kin Phone" onChangeText={setNextOfKinPhone} placeholder="+2376..." value={nextOfKinPhone} />
+      <InputField
+        label="Next Of Kin Address"
+        multiline
+        onChangeText={setNextOfKinAddress}
+        placeholder="Mile 4 Nkwen"
+        value={nextOfKinAddress}
+      />
+      {successMessage ? (
+        <SurfaceCard accent="#EEF4ED">
+          <StatusPill label="APPROVED" />
+          <Text style={[styles.heroCaption, { marginTop: spacing.sm }]}>{successMessage}</Text>
+        </SurfaceCard>
+      ) : null}
+      {submissionError ? <ResourceErrorCard message={submissionError} /> : null}
+      <PrimaryButton
+        label={isSubmitting ? "Saving Profile..." : "Save Profile"}
+        onPress={() => {
+          if (isSubmitting) {
+            return;
+          }
+
+          setSubmissionError(null);
+          setSuccessMessage(null);
+          setIsSubmitting(true);
+
+          void mobileData
+            .updateMemberProfile({
+              dateOfBirth,
+              fullName,
+              gender,
+              nextOfKinAddress,
+              nextOfKinName,
+              nextOfKinPhone,
+              occupation,
+              phone,
+              residentialAddress,
+            })
+            .then((updatedProfile) => {
+              setCurrentProfile(updatedProfile);
+              setSuccessMessage("Your profile details were saved.");
+            })
+            .catch((nextError) => {
+              setSubmissionError(getErrorMessage(nextError, "We could not update your profile."));
+            })
+            .finally(() => {
+              setIsSubmitting(false);
+            });
+        }}
+      />
     </Screen>
   );
 }
 
 export function MemberChangePasswordScreen() {
+  const { refreshProfile } = useAppSession();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [pin, setPin] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   return (
-    <Screen subtitle="Password and PIN setup stays visible for the later auth pass." title="Change Password">
-      <InputField label="Current Password" onChangeText={setCurrentPassword} placeholder="Enter current password" value={currentPassword} />
-      <InputField label="New Password" onChangeText={setNewPassword} placeholder="Enter new password" secureTextEntry value={newPassword} />
-      <InputField label="PIN / biometric fallback" onChangeText={setPin} placeholder="Choose your security code" secureTextEntry value={pin} />
-      <SurfaceCard accent="#EEF4ED">
-        <Text style={styles.heroCaption}>Member auth boot is now live. Password and PIN writes still stay on the next implementation pass.</Text>
-      </SurfaceCard>
-      <PrimaryButton label="Update Security Preview" onPress={() => router.back()} />
+    <Screen subtitle="Update the temporary password before entering the member workspace." title="Change Password">
+      <InputField
+        label="Current Password"
+        onChangeText={setCurrentPassword}
+        placeholder="Enter temporary password"
+        secureTextEntry
+        value={currentPassword}
+      />
+      <InputField
+        label="New Password"
+        onChangeText={setNewPassword}
+        placeholder="Choose a new password"
+        secureTextEntry
+        value={newPassword}
+      />
+      <InputField
+        label="Confirm New Password"
+        onChangeText={setConfirmPassword}
+        placeholder="Re-enter new password"
+        secureTextEntry
+        value={confirmPassword}
+      />
+      {submissionError ? <ResourceErrorCard message={submissionError} /> : null}
+      {successMessage ? (
+        <SurfaceCard accent="#EEF4ED">
+          <StatusPill label="APPROVED" />
+          <Text style={[styles.heroCaption, { marginTop: spacing.sm }]}>{successMessage}</Text>
+        </SurfaceCard>
+      ) : null}
+      <PrimaryButton
+        label={isSubmitting ? "Updating Password..." : "Update Password"}
+        onPress={() => {
+          if (isSubmitting) {
+            return;
+          }
+
+          if (newPassword.trim() !== confirmPassword.trim()) {
+            setSubmissionError("Your new password and confirmation must match.");
+            return;
+          }
+
+          setIsSubmitting(true);
+          setSubmissionError(null);
+          setSuccessMessage(null);
+
+          void mobileData
+            .changeMemberPassword({
+              currentPassword,
+              newPassword,
+            })
+            .then(async () => {
+              await refreshProfile();
+              setSuccessMessage("Password updated. Redirecting to your member workspace.");
+              router.replace("/member");
+            })
+            .catch((nextError) => {
+              setSubmissionError(getErrorMessage(nextError, "We could not update your password."));
+            })
+            .finally(() => {
+              setIsSubmitting(false);
+            });
+        }}
+      />
     </Screen>
   );
 }
