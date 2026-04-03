@@ -855,7 +855,9 @@ export const mobileData = {
         .reduce((sum, row) => sum + toNumber(row.amount), 0),
       pendingApprovals: hydratedTransactions.filter((row) => row.status === "pending_approval").length,
       cashOnHand:
-        toNumber(cashDrawer?.counted_cash) || toNumber(cashDrawer?.expected_cash),
+        cashDrawer?.counted_cash == null
+          ? toNumber(cashDrawer?.expected_cash)
+          : toNumber(cashDrawer.counted_cash),
       expectedCash: toNumber(cashDrawer?.expected_cash),
       activity: hydratedTransactions.slice(0, 5).map((row) => ({
         id: row.id,
@@ -1414,7 +1416,9 @@ export const mobileData = {
       : toNumber(drawer.expected_cash);
     const actualCash = reconciliation
       ? toNumber(reconciliation.counted_cash)
-      : toNumber(drawer.counted_cash) || expectedCash;
+      : drawer.counted_cash == null
+        ? expectedCash
+        : toNumber(drawer.counted_cash);
     const difference = reconciliation
       ? toNumber(reconciliation.variance)
       : roundCurrency(actualCash - expectedCash);
