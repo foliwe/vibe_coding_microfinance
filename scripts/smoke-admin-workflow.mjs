@@ -20,7 +20,9 @@ const TEST_ADMIN_EMAIL = process.env.TEST_ADMIN_EMAIL ?? "admin@example.com";
 const TEST_ADMIN_PASSWORD = process.env.TEST_ADMIN_PASSWORD ?? "Admin123456!";
 const TEST_MANAGER_EMAIL = process.env.TEST_MANAGER_EMAIL ?? "manager@example.com";
 const TEST_MANAGER_PASSWORD = process.env.TEST_MANAGER_PASSWORD ?? "Manager123456!";
-const TEST_MEMBER_EMAIL = process.env.TEST_MEMBER_EMAIL ?? "member@example.com";
+const TEST_MEMBER_SIGN_IN_CODE =
+  process.env.TEST_MEMBER_SIGN_IN_CODE ?? `MM${TEST_BRANCH_CODE}ME01`;
+const TEST_MEMBER_EMAIL = `member-${TEST_MEMBER_SIGN_IN_CODE.toLowerCase()}@members.local`;
 const TEST_AGENT_EMAIL = process.env.TEST_AGENT_EMAIL ?? "agent@example.com";
 
 function fail(message) {
@@ -65,7 +67,7 @@ async function getSeededContext() {
 
   const member = await fetchSingle(
     supabase.from("profiles").select("id, full_name").eq("email", TEST_MEMBER_EMAIL).maybeSingle(),
-    `member ${TEST_MEMBER_EMAIL}`,
+    `member ${TEST_MEMBER_SIGN_IN_CODE}`,
   );
 
   const agent = await fetchSingle(

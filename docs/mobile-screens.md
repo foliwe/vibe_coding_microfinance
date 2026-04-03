@@ -29,9 +29,10 @@
 
 - guided member-first workflow
 - always show sync state and last-sync timestamp
-- withdrawals require PIN confirmation
+- withdrawals require PIN confirmation and live connectivity
 - pending approvals remain visible after sync
-- queue survives app restarts
+- deposit queue survives app restarts
+- cash reconciliation submits for branch-manager review instead of staying local-only
 
 ## Member flows
 

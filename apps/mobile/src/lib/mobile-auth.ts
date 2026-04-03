@@ -1,40 +1,17 @@
 import type { UserRole } from "@credit-union/shared";
 
+import {
+  toMobileProfile,
+  type MobileProfile,
+  type ProfileRpcRow,
+} from "./mobile-profile";
 import { getSupabaseClient } from "./supabase/client";
 
 export type MobileRole = Extract<UserRole, "agent" | "member">;
-
-export interface MobileProfile {
-  id: string;
-  role: UserRole;
-  fullName: string;
-  email: string | null;
-  branchId: string | null;
-  isActive: boolean;
-}
-
-type ProfileRpcRow = {
-  id: string;
-  role: UserRole;
-  full_name: string;
-  email: string | null;
-  branch_id: string | null;
-  is_active: boolean;
-};
+export type { MobileProfile };
 
 export function isMobileRole(role: UserRole): role is MobileRole {
   return role === "agent" || role === "member";
-}
-
-export function toMobileProfile(row: ProfileRpcRow): MobileProfile {
-  return {
-    id: row.id,
-    role: row.role,
-    fullName: row.full_name,
-    email: row.email,
-    branchId: row.branch_id,
-    isActive: row.is_active,
-  };
 }
 
 export async function getCurrentMobileProfile() {

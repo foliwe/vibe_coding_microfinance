@@ -230,6 +230,34 @@ export type BranchDetailPageData = {
   isLive: boolean;
 };
 
+export type ReconciliationReviewRow = {
+  id: string;
+  agentName: string;
+  branchName: string;
+  businessDate: string;
+  countedCash: number;
+  expectedCash: number;
+  reviewNote: string | null;
+  reviewedAt: string | null;
+  status: "pending_review" | "approved" | "rejected";
+  submittedAt: string;
+  variance: number;
+  varianceReason: string | null;
+};
+
+export type ReconciliationPageData = {
+  currentBranchLabel: string;
+  pendingRows: ReconciliationReviewRow[];
+  profile: AdminProfile;
+  recentRows: ReconciliationReviewRow[];
+  summary: {
+    cashVariance: number;
+    expectedCashToday: number;
+    pendingApprovals: number;
+  };
+  isLive: boolean;
+};
+
 type BranchDashboardRow = {
   branch_id: string;
   branch_name: string;
@@ -290,10 +318,28 @@ type RepaymentRow = {
 };
 
 type CashDrawerRow = {
+  id?: string;
   branch_id: string;
   agent_profile_id: string;
+  business_date?: string;
+  counted_cash?: number | string | null;
+  status?: string;
   expected_cash: number | string | null;
   variance: number | string | null;
+};
+
+type CashReconciliationTableRow = {
+  id: string;
+  branch_id: string;
+  cash_drawer_id: string;
+  counted_cash: number | string | null;
+  expected_cash: number | string | null;
+  review_note: string | null;
+  reviewed_at: string | null;
+  status: "pending_review" | "approved" | "rejected";
+  submitted_at: string;
+  variance: number | string | null;
+  variance_reason: string | null;
 };
 
 type TransactionRow = {
@@ -584,6 +630,21 @@ async function getBranchMappings(supabase: Awaited<ReturnType<typeof requireRole
   );
 
   return { branches, managerMap };
+}
+
+async function getProfileNameMap(
+  supabase: Awaited<ReturnType<typeof requireRole>>["supabase"],
+  ids: string[],
+) {
+  if (ids.length === 0) {
+    return new Map<string, string>();
+  }
+
+  const { data } = await supabase.from("profiles").select("id, full_name").in("id", ids);
+
+  return new Map(
+    ((data as ProfileRow[] | null) ?? []).map((profile) => [profile.id, profile.full_name]),
+  );
 }
 
 async function getPendingTransactions(
@@ -981,6 +1042,131 @@ export async function getBranchDashboardData() {
   return {
     profile,
     ...snapshot,
+    isLive: true,
+  };
+}
+
+export async function getReconciliationPageData(): Promise<ReconciliationPageData> {
+  if (!hasSupabaseEnv()) {
+    return {
+      currentBranchLabel: "Supabase setup needed",
+      pendingRows: [],
+      profile: emptyProfile("branch_manager"),
+      recentRows: [],
+      summary: {
+        cashVariance: 0,
+        expectedCashToday: 0,
+        pendingApprovals: 0,
+      },
+      isLive: false,
+    };
+  }
+
+  const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
+  const branchScope = profile.role === "branch_manager" ? profile.branch_id ?? undefined : undefined;
+
+  if (profile.role === "branch_manager" && !branchScope) {
+    return {
+      currentBranchLabel: "Unassigned branch",
+      pendingRows: [],
+      profile,
+      recentRows: [],
+      summary: {
+        cashVariance: 0,
+        expectedCashToday: 0,
+        pendingApprovals: 0,
+      },
+      isLive: true,
+    };
+  }
+
+  const today = currentDateIso();
+  let reconciliationQuery = supabase
+    .from("cash_reconciliations")
+    .select(
+      "id, branch_id, cash_drawer_id, counted_cash, expected_cash, variance, variance_reason, status, submitted_at, reviewed_at, review_note",
+    )
+    .order("submitted_at", { ascending: false })
+    .limit(40);
+  let cashDrawerQuery = supabase
+    .from("cash_drawers")
+    .select("id, branch_id, agent_profile_id, business_date, counted_cash, expected_cash, status, variance")
+    .eq("business_date", today);
+  let pendingApprovalsQuery = supabase
+    .from("transaction_requests")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "pending_approval");
+
+  if (branchScope) {
+    reconciliationQuery = reconciliationQuery.eq("branch_id", branchScope);
+    cashDrawerQuery = cashDrawerQuery.eq("branch_id", branchScope);
+    pendingApprovalsQuery = pendingApprovalsQuery.eq("branch_id", branchScope);
+  }
+
+  const [{ branches }, reconciliationResponse, cashDrawerResponse, pendingApprovalsResponse] =
+    await Promise.all([
+      getBranchMappings(supabase),
+      reconciliationQuery,
+      cashDrawerQuery,
+      pendingApprovalsQuery,
+    ]);
+
+  const reconciliationRows =
+    (reconciliationResponse.data as CashReconciliationTableRow[] | null) ?? [];
+  const cashDrawerRows = (cashDrawerResponse.data as CashDrawerRow[] | null) ?? [];
+  const drawerMap = new Map(
+    cashDrawerRows
+      .filter((row): row is CashDrawerRow & { id: string } => Boolean(row.id))
+      .map((row) => [row.id, row]),
+  );
+  const branchMap = new Map(branches.map((branch) => [branch.id, branch.name]));
+  const agentIds = Array.from(
+    new Set(
+      cashDrawerRows
+        .map((row) => row.agent_profile_id)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+  const agentMap = await getProfileNameMap(supabase, agentIds);
+
+  const rows = reconciliationRows.map((row) => {
+    const drawer = drawerMap.get(row.cash_drawer_id);
+
+    return {
+      id: row.id,
+      agentName:
+        agentMap.get(drawer?.agent_profile_id ?? "") ??
+        drawer?.agent_profile_id ??
+        "Assigned agent",
+      branchName: branchMap.get(row.branch_id) ?? row.branch_id,
+      businessDate: drawer?.business_date ?? today,
+      countedCash: toNumber(row.counted_cash),
+      expectedCash: toNumber(row.expected_cash),
+      reviewNote: row.review_note,
+      reviewedAt: row.reviewed_at,
+      status: row.status,
+      submittedAt: row.submitted_at,
+      variance: toNumber(row.variance),
+      varianceReason: row.variance_reason,
+    } satisfies ReconciliationReviewRow;
+  });
+
+  return {
+    currentBranchLabel:
+      profile.role === "admin"
+        ? "All branches"
+        : branchMap.get(branchScope ?? "") ?? "Assigned branch",
+    pendingRows: rows.filter((row) => row.status === "pending_review"),
+    profile,
+    recentRows: rows.filter((row) => row.status !== "pending_review").slice(0, 12),
+    summary: {
+      cashVariance: cashDrawerRows.reduce((sum, row) => sum + toNumber(row.variance), 0),
+      expectedCashToday: cashDrawerRows.reduce(
+        (sum, row) => sum + toNumber(row.expected_cash),
+        0,
+      ),
+      pendingApprovals: pendingApprovalsResponse.count ?? 0,
+    },
     isLive: true,
   };
 }

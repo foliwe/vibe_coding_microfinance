@@ -18,7 +18,7 @@ Default credentials:
 
 - branch manager: `manager@example.com` / `Manager123456!`
 - agent: `agent@example.com` / `Agent123456!`
-- member: `member@example.com` / `Member123456!`
+- member: `MMBAMME01` / `Member123456!`
 
 Seeded accounts:
 
@@ -30,7 +30,7 @@ Seeded accounts:
 - creates or reuses Supabase Auth users for a branch manager, agent, and member
 - upserts matching rows into `public.profiles`
 - upserts `staff_users` rows for the branch manager and agent
-- upserts the member profile and active agent assignment
+- upserts the member profile with a sign-in code and active agent assignment
 - creates one savings account and one deposit account for the member
 - assigns the branch manager to the branch record
 
@@ -40,11 +40,11 @@ Seeded accounts:
 TEST_BRANCH_CODE="DOU" \
 TEST_MANAGER_EMAIL="douala-manager@example.com" \
 TEST_AGENT_EMAIL="douala-agent@example.com" \
-TEST_MEMBER_EMAIL="douala-member@example.com" \
+TEST_MEMBER_SIGN_IN_CODE="MMDOUME01" \
 npm run create:test-users
 ```
 
-You can also override any of the default names, phones, and passwords with matching `TEST_*` environment variables.
+You can also override any of the default names, phones, passwords, member ID number, and member sign-in code with matching `TEST_*` environment variables.
 
 ## Requirements
 
@@ -59,4 +59,4 @@ After bootstrapping:
 1. Sign in to the admin app as the branch manager.
 2. Sign in to the mobile app as the agent and submit a deposit.
 3. Approve the transaction from the admin transactions page.
-4. Sign in to the mobile app as the member and refresh balances/history.
+4. Sign in to the mobile app as the member with the generated sign-in code and refresh balances/history.

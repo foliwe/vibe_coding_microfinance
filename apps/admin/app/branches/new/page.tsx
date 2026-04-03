@@ -43,11 +43,11 @@ export default async function CreateBranchPage({
       role="admin"
       statusBadge={isLive ? "Live Supabase" : "Supabase setup needed"}
       title="Create Branch"
-      subtitle="Register a new branch, assign an existing manager if needed, and establish the branch identity used by every downstream workflow."
+      subtitle="Register a new branch, assign an existing manager if needed, and establish the 3-character branch code used by downstream member credentials."
     >
       <SectionCard
         title="Branch Setup"
-        description="Admins create branches. A manager can be assigned now or later from the branch-manager creation flow."
+        description="Admins create branches. Branch codes must be exactly 3 uppercase letters or numbers. A manager can be assigned now or later from the branch-manager creation flow."
       >
         <Notice detail={params?.detail} result={params?.result} />
         <form action={createBranchAction}>
@@ -58,7 +58,7 @@ export default async function CreateBranchPage({
             </label>
             <label className="field">
               <span>Branch Code</span>
-              <input name="code" placeholder="BAM" required />
+              <input maxLength={3} name="code" pattern="[A-Za-z0-9]{3}" placeholder="BAM" required />
             </label>
             <label className="field">
               <span>City</span>

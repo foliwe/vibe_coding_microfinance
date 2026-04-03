@@ -1,9 +1,19 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Link, type Href } from "expo-router";
-import { Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  Animated,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
+import { BarChart, type barDataItem } from "react-native-gifted-charts";
 
 import { formatCompact, formatCurrency } from "@/lib/format";
 import { getStatusTone } from "@/lib/status";
@@ -189,6 +199,7 @@ export function InputField({
   placeholder,
   multiline = false,
   autoCapitalize = "sentences",
+  editable = true,
   secureTextEntry = false,
 }: {
   label: string;
@@ -197,6 +208,7 @@ export function InputField({
   placeholder: string;
   multiline?: boolean;
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  editable?: boolean;
   secureTextEntry?: boolean;
 }) {
   return (
@@ -205,6 +217,7 @@ export function InputField({
       <TextInput
         autoCapitalize={autoCapitalize}
         autoCorrect={false}
+        editable={editable}
         multiline={multiline}
         onChangeText={onChangeText}
         placeholder={placeholder}
@@ -220,12 +233,22 @@ export function InputField({
 export function PrimaryButton({
   label,
   onPress,
+  disabled = false,
 }: {
   label: string;
   onPress: () => void;
+  disabled?: boolean;
 }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]}>
+    <Pressable
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.primaryButton,
+        disabled && styles.buttonDisabled,
+        pressed && !disabled && styles.primaryButtonPressed,
+      ]}
+    >
       <Text style={styles.primaryButtonText}>{label}</Text>
     </Pressable>
   );
@@ -234,12 +257,22 @@ export function PrimaryButton({
 export function SecondaryButton({
   label,
   onPress,
+  disabled = false,
 }: {
   label: string;
   onPress: () => void;
+  disabled?: boolean;
 }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.secondaryButton, pressed && styles.secondaryButtonPressed]}>
+    <Pressable
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.secondaryButton,
+        disabled && styles.buttonDisabled,
+        pressed && !disabled && styles.secondaryButtonPressed,
+      ]}
+    >
       <Text style={styles.secondaryButtonText}>{label}</Text>
     </Pressable>
   );
@@ -249,25 +282,82 @@ export function MiniBarChart({
   data,
   formatValue = false,
 }: {
-  data: Array<{ label: string; value: number }>;
+  data: { label: string; value: number }[];
   formatValue?: boolean;
 }) {
-  const max = useMemo(() => Math.max(...data.map((item) => item.value), 1), [data]);
+  const { width: screenWidth } = useWindowDimensions();
+  const rawMax = useMemo(
+    () => data.reduce((max, item) => Math.max(max, item.value), 0),
+    [data],
+  );
+  const chartMax = useMemo(() => {
+    if (rawMax <= 0) {
+      return 4;
+    }
+
+    const magnitude = 10 ** Math.floor(Math.log10(rawMax));
+    const normalized = rawMax / magnitude;
+    const roundedNormalized = normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+
+    return roundedNormalized * magnitude;
+  }, [rawMax]);
+  const chartData = useMemo<barDataItem[]>(
+    () =>
+      data.map((item, index) => ({
+        value: item.value,
+        label: item.label,
+        frontColor: index % 2 === 0 ? colors.brand : colors.brandSoft,
+        labelTextStyle: styles.chartLabel,
+        barBorderTopLeftRadius: radii.sm,
+        barBorderTopRightRadius: radii.sm,
+        topLabelComponent: () => (
+          <Text style={styles.chartValue}>
+            {formatValue ? formatCompact(item.value) : String(item.value)}
+          </Text>
+        ),
+      })),
+    [data, formatValue],
+  );
+  const chartWidth = Math.max(
+    Math.min(layout.maxContentWidth, screenWidth) - spacing.xl * 2,
+    220,
+  );
+
+  if (data.length === 0) {
+    return (
+      <View style={styles.chartEmptyState}>
+        <Text style={styles.chartEmptyText}>No chart data available yet.</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.chartWrap}>
-      {data.map((item) => {
-        const height = Math.max((item.value / max) * 96, 14);
-        return (
-          <View key={item.label} style={styles.chartColumn}>
-            <Text style={styles.chartValue}>{formatValue ? formatCompact(item.value) : item.value}</Text>
-            <View style={styles.chartRail}>
-              <View style={[styles.chartBar, { height }]} />
-            </View>
-            <Text style={styles.chartLabel}>{item.label}</Text>
-          </View>
-        );
-      })}
+      <BarChart
+        adjustToWidth
+        barWidth={28}
+        data={chartData}
+        disablePress
+        disableScroll
+        endSpacing={0}
+        height={132}
+        hideRules
+        hideYAxisText
+        initialSpacing={0}
+        isAnimated
+        maxValue={chartMax}
+        noOfSections={4}
+        parentWidth={chartWidth}
+        roundedTop
+        showXAxisIndices={false}
+        spacing={spacing.md}
+        stepValue={chartMax / 4}
+        xAxisColor={colors.border}
+        xAxisLabelTextStyle={styles.chartLabel}
+        xAxisThickness={1}
+        yAxisColor="transparent"
+        yAxisThickness={0}
+      />
     </View>
   );
 }
@@ -346,7 +436,7 @@ export function MonthTabStrip({
   selectedKey,
   onSelect,
 }: {
-  tabs: Array<{ key: string; label: string }>;
+  tabs: { key: string; label: string }[];
   selectedKey: string;
   onSelect: (key: string) => void;
 }) {
@@ -632,45 +722,37 @@ const styles = StyleSheet.create({
   secondaryButtonPressed: {
     opacity: 0.88,
   },
+  buttonDisabled: {
+    opacity: 0.55,
+  },
   secondaryButtonText: {
     color: colors.brand,
     fontFamily: typography.medium,
     fontSize: 15,
   },
   chartWrap: {
-    alignItems: "flex-end",
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
     marginTop: spacing.sm,
   },
-  chartColumn: {
+  chartEmptyState: {
     alignItems: "center",
-    flex: 1,
-    gap: spacing.xs,
+    borderRadius: radii.pill,
+    paddingVertical: spacing.lg,
   },
-  chartValue: {
+  chartEmptyText: {
     color: colors.inkMuted,
-    fontFamily: typography.medium,
+    fontFamily: typography.body,
     fontSize: 13,
-  },
-  chartRail: {
-    backgroundColor: "#E4ECE4",
-    borderRadius: radii.pill,
-    height: 96,
-    justifyContent: "flex-end",
-    overflow: "hidden",
-    width: 24,
-  },
-  chartBar: {
-    backgroundColor: colors.brandSoft,
-    borderRadius: radii.pill,
-    width: "100%",
   },
   chartLabel: {
     color: colors.inkMuted,
     fontFamily: typography.medium,
     fontSize: 13,
+  },
+  chartValue: {
+    color: colors.inkMuted,
+    fontFamily: typography.medium,
+    fontSize: 12,
+    marginBottom: spacing.xs,
   },
   rowTop: {
     alignItems: "center",

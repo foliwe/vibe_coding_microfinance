@@ -18,13 +18,13 @@ const logoGlow = require("../../assets/images/logo-glow.png");
 
 export function WelcomeScreen() {
   const { authError, envReady, isSigningIn, session, signIn, signOut } = useAppSession();
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
   async function handleSignIn() {
-    if (!email.trim() || !password.trim()) {
-      setFormError("Enter both email and password to continue.");
+    if (!identifier.trim() || !password.trim()) {
+      setFormError("Enter both your sign-in ID and password to continue.");
       return;
     }
 
@@ -32,7 +32,7 @@ export function WelcomeScreen() {
 
     try {
       await signIn({
-        email: email.trim(),
+        identifier: identifier.trim(),
         password,
       });
     } catch {
@@ -45,7 +45,7 @@ export function WelcomeScreen() {
   return (
     <Screen
       title="Credit Union Mobile"
-      subtitle="Sign in with a Supabase-backed agent or member account to load your live mobile workspace."
+      subtitle="Sign in with an agent email or a member sign-in code to load your live mobile workspace."
     >
       <FadeInView>
         <HeroBadge label={envReady ? "Secure sign-in" : "Setup required"} />
@@ -54,7 +54,7 @@ export function WelcomeScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.heroTitle}>Role-aware mobile access now boots from the real session instead of a mock role picker.</Text>
               <Text style={styles.heroBody}>
-                Agent accounts open the field shell. Member accounts open the read-only self-service shell. Branch manager and admin accounts stay on the web app.
+                Agent accounts open the field shell. Member accounts open the self-service shell and can complete their own profile after onboarding. Branch manager and admin accounts stay on the web app.
               </Text>
               <View style={styles.heroStatusRow}>
                 <StatusPill label={envReady ? "ONLINE" : "OFFLINE"} />
@@ -68,16 +68,16 @@ export function WelcomeScreen() {
         <SurfaceCard>
           <Text style={styles.sectionTitle}>Sign In</Text>
           <Text style={styles.bodyText}>
-            Use the seeded mobile accounts from the Supabase bootstrap flow, or any real member/agent account already provisioned in `public.profiles`.
+            Agents sign in with email. Members sign in with their generated sign-in code and temporary password after account creation.
           </Text>
 
           <View style={styles.form}>
             <InputField
               autoCapitalize="none"
-              label="Email"
-              onChangeText={setEmail}
-              placeholder="member@example.com"
-              value={email}
+              label="Email or Sign-In Code"
+              onChangeText={setIdentifier}
+              placeholder="agent@example.com or MMBAM1A3F"
+              value={identifier}
             />
             <InputField
               autoCapitalize="none"
@@ -128,7 +128,7 @@ export function WelcomeScreen() {
         <SurfaceCard>
           <Text style={styles.sectionTitle}>Mobile Scope</Text>
           <Text style={styles.bodyText}>
-            This phase restores session boot, role detection, route guards, and live read-only data. Offline queue persistence and transaction submission return next.
+            Session boot, live data, transaction submission, minimal member creation, agent first-login security setup, reconciliation submission, and member self-service profile completion are wired. Live withdrawals now require both a transaction PIN and connectivity.
           </Text>
         </SurfaceCard>
       </FadeInView>

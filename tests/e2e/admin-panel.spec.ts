@@ -2,8 +2,9 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
   createPendingTransactionRequest,
-  getMemberAccountsByEmail,
+  getMemberAccountsByProfileId,
   getProfileByEmail,
+  getProfileByPhone,
   getSeededPanelContext,
   newTestId,
   seededBranch,
@@ -57,9 +58,20 @@ async function waitForProfile(email: string) {
   return profile;
 }
 
-async function waitForMemberAccounts(email: string) {
-  await expect.poll(async () => (await getMemberAccountsByEmail(email)).length).toBeGreaterThan(1);
-  return getMemberAccountsByEmail(email);
+async function waitForProfileByPhone(phone: string) {
+  await expect.poll(async () => (await getProfileByPhone(phone))?.id ?? null).not.toBeNull();
+  const profile = await getProfileByPhone(phone);
+
+  if (!profile) {
+    throw new Error(`Profile not found for ${phone}.`);
+  }
+
+  return profile;
+}
+
+async function waitForMemberAccounts(profileId: string) {
+  await expect.poll(async () => (await getMemberAccountsByProfileId(profileId)).length).toBeGreaterThan(1);
+  return getMemberAccountsByProfileId(profileId);
 }
 
 test.describe("admin panel end-to-end flows", () => {
@@ -186,11 +198,8 @@ test.describe("admin panel end-to-end flows", () => {
     };
     const member = {
       fullName: `Playwright Member ${runId}`,
-      email: `${runId}-member@example.com`,
       phone: `+23763${digits}`,
-      password: "Member123456!",
-      savingsAccountNumber: `${seededBranch.code}-SAV-${digits}`,
-      depositAccountNumber: `${seededBranch.code}-DEP-${digits}`,
+      idNumber: `PW${digits}`,
     };
 
     await signIn(page, seededUsers.admin);
@@ -252,24 +261,20 @@ test.describe("admin panel end-to-end flows", () => {
     await page.goto("/members/new");
     await expect(page.getByRole("heading", { level: 1, name: "Create Member" })).toBeVisible();
     await page.getByLabel("Full Name").fill(member.fullName);
-    await page.getByLabel("Login Email").fill(member.email);
-    await page.getByLabel("Temporary Password").fill(member.password);
     await page.getByLabel("Phone Number").fill(member.phone);
-    await page.getByLabel("Occupation").fill("Trader");
+    await page.getByLabel("ID Card Number").fill(member.idNumber);
     await page.locator('select[name="branchId"]').selectOption(context.branch.id);
     await assignedAgentSelect(page).selectOption(createdAgent.id);
-    await page.getByLabel("Savings Account Number").fill(member.savingsAccountNumber);
-    await page.getByLabel("Deposit Account Number").fill(member.depositAccountNumber);
-    await page.getByLabel("Residential Address").fill("Mile 4 Nkwen");
     await page.getByRole("button", { name: "Save Member" }).click();
     await expect(page).toHaveURL(/\/members\/new\?result=success/);
     await expect(page.getByText(`Created member ${member.fullName}.`)).toBeVisible();
 
-    const createdMember = await waitForProfile(member.email);
-    const memberAccounts = await waitForMemberAccounts(member.email);
-    expect(memberAccounts.map((account) => account.account_number)).toEqual(
-      expect.arrayContaining([member.savingsAccountNumber, member.depositAccountNumber]),
-    );
+    const createdMember = await waitForProfileByPhone(member.phone);
+    const memberAccounts = await waitForMemberAccounts(createdMember.id);
+    expect(memberAccounts.map((account) => account.account_type).sort()).toEqual([
+      "deposit",
+      "savings",
+    ]);
 
     await page.goto("/members");
     await expect(page.getByRole("heading", { level: 1, name: "Members" })).toBeVisible();

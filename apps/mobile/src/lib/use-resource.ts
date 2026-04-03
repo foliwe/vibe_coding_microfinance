@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { useIsFocused } from "@react-navigation/native";
 
+import { getErrorMessage } from "./errors";
+
 export function useResource<T>(loader: () => Promise<T>) {
   const isFocused = useIsFocused();
+  const [reloadToken, setReloadToken] = useState(0);
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,11 +34,7 @@ export function useResource<T>(loader: () => Promise<T>) {
         }
 
         setData(null);
-        setError(
-          nextError instanceof Error
-            ? nextError.message
-            : "We could not load this data.",
-        );
+        setError(getErrorMessage(nextError, "We could not load this data."));
       })
       .finally(() => {
         if (active) {
@@ -46,7 +45,14 @@ export function useResource<T>(loader: () => Promise<T>) {
     return () => {
       active = false;
     };
-  }, [isFocused, loader]);
+  }, [isFocused, loader, reloadToken]);
 
-  return { data, error, loading };
+  return {
+    data,
+    error,
+    loading,
+    reload: async () => {
+      setReloadToken((value) => value + 1);
+    },
+  };
 }

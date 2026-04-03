@@ -10,6 +10,44 @@ Build this as a greenfield monorepo with three applications and one shared domai
 
 The first release should be a production-ready v1 for a single institution operating in one currency, with strong auditability, cash controls, offline-capable agent workflows, and a strict approval model for all agent-originated financial transactions.
 
+## Current Status
+### Implemented as of April 2, 2026
+- Monorepo structure is in place with `apps/mobile`, `apps/admin`, `packages/shared`, and `supabase`.
+- Live Supabase-backed auth is working for `admin`, `branch_manager`, `agent`, and `member`.
+- Branch, manager, agent, and member creation flows are working.
+- Member onboarding now follows the current product rule:
+  - create members with minimum identity only
+  - keep members under an agent
+  - keep agents under a manager and branch
+  - let members complete the rest of their profile later from mobile
+- Agent mobile workflows are live for:
+  - assigned member list
+  - member creation
+  - deposit request submission
+  - withdrawal request submission
+  - sync queue visibility
+- Branch-manager and admin web workflows are live for:
+  - transaction approval and rejection
+  - direct member creation
+  - direct agent creation
+  - loan workflow actions already implemented in the current schema and admin app
+- Member mobile workflows are live for:
+  - dashboard and balances
+  - transaction history
+  - loan visibility
+  - self-service profile completion
+
+### Current Build Priorities
+- Finish real password-change enforcement and PIN setup for agent and member first login.
+- Implement device binding and branch-manager reset flow for staff devices.
+- Replace cash reconciliation preview with a real submit-and-review workflow.
+- Complete any remaining loan repayment UX gaps in mobile and admin where the backend already exists.
+- Tighten QA coverage around:
+  - direct member creation from mobile
+  - member self-service profile completion
+  - maker-checker transaction flow
+  - branch and agent scope enforcement
+
 ## Key Changes
 ### Product and access model
 - Roles are fixed to `member`, `agent`, `branch_manager`, and `admin`.
@@ -57,25 +95,21 @@ Core tables/entities:
 - `admin` creates branch managers.
 - `admin` and `branch_manager` create agents.
 - `branch_manager` and `admin` can create members directly from the web.
-- Because your requirements conflict slightly, lock this rule for v1: agents can capture new-member registration in the mobile app, but it becomes a `pending member profile` until approved by the branch manager or admin before activation.
+- `agent`, `branch_manager`, and `admin` can create members directly, and new members stay assigned under the creating/selected agent within the branch hierarchy.
 - Required first login password change applies to agent, branch manager, and member accounts.
-- Collect strong financial-app fields at onboarding:
+- Collect only the minimum identity set at member creation for v1:
   - Full legal name
-  - Date of birth
-  - Gender
   - Phone number
-  - Email if available
-  - National ID / passport / voter card type and number
-  - Profile photo
-  - Residential address
+  - ID card number
   - Branch
   - Assigned agent
+- The remaining member profile fields are completed later by the member from the mobile profile page:
+  - Date of birth
+  - Gender
+  - Residential address
   - Occupation / business type
   - Next of kin / emergency contact
-  - Guarantor fields when needed for loans
-  - Risk flags / notes
-  - Account opening date
-  - Status: active, suspended, closed, deceased, blacklisted
+  - Other non-blocking profile details
 
 #### Savings and deposit operations
 - Each member can have one or more cash-backed savings/deposit accounts as configured by the institution.
@@ -169,7 +203,7 @@ Core tables/entities:
   - recent transactions
   - loan status timeline
   - repayment history
-  - profile view
+  - profile view and self-service profile completion
 
 ### Reports
 Support report filters by date range, branch, agent, member, status, and transaction type.
