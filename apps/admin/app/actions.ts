@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import type { Route } from "next";
 import { redirect } from "next/navigation";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import type { RepaymentMode, TransactionType } from "@credit-union/shared";
 import {
   assertValidBranchCode,
@@ -15,7 +16,7 @@ import {
   registerCurrentWorkstation,
   syncWorkstationIdentityFromFormData,
 } from "../lib/staff-device";
-import { hasSupabaseEnv, hasSupabaseServiceEnv } from "../lib/supabase/env";
+import { getSupabaseEnv, hasSupabaseEnv, hasSupabaseServiceEnv } from "../lib/supabase/env";
 import { createServiceClient } from "../lib/supabase/service";
 import { createClient } from "../lib/supabase/server";
 
@@ -312,6 +313,24 @@ function assertBranchForRole(
   return requestedBranchId;
 }
 
+async function verifyCurrentPassword(email: string, password: string) {
+  const { url, publishableKey } = getSupabaseEnv();
+  const supabase = createSupabaseClient(url, publishableKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) {
+    throw new Error("Current temporary password is incorrect.");
+  }
+}
+
 async function mutateTransactionRequest(
   action: "approve_transaction_request" | "reject_transaction_request",
   formData: FormData,
@@ -378,6 +397,12 @@ export async function completeBranchManagerSetupAction(formData: FormData) {
         throw new Error("Current temporary password is required.");
       }
 
+      if (!profile.email) {
+        throw new Error("This branch-manager account is missing an email address.");
+      }
+
+      await verifyCurrentPassword(profile.email, currentPassword);
+
       if (newPassword.length < 8) {
         throw new Error("New password must be at least 8 characters.");
       }
@@ -439,6 +464,33 @@ export async function completeBranchManagerSetupAction(formData: FormData) {
   revalidatePath("/branch");
   revalidatePath("/settings");
   redirect(buildRedirect("/branch", "success", "Security setup complete."));
+}
+
+export async function rebindCurrentWorkstationAction(formData: FormData) {
+  if (!hasSupabaseEnv()) {
+    redirect(buildRedirect("/workstation-blocked", "error", "Supabase credentials are missing."));
+  }
+
+  try {
+    const { supabase } = await requireRole(["branch_manager"], {
+      allowUntrustedDevice: true,
+    });
+
+    await syncWorkstationIdentityFromFormData(formData);
+    await registerCurrentWorkstation(supabase);
+  } catch (error) {
+    redirect(
+      buildRedirect(
+        "/workstation-blocked",
+        "error",
+        error instanceof Error ? error.message : "Unable to trust this workstation.",
+      ),
+    );
+  }
+
+  revalidatePath("/branch");
+  revalidatePath("/staff-devices");
+  redirect(buildRedirect("/branch", "success", "This workstation is trusted again."));
 }
 
 export async function approveTransactionRequestAction(formData: FormData) {

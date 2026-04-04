@@ -6,15 +6,24 @@ import {
   SessionLoadingScreen,
 } from "@/features/session-status-screen";
 import { useAppSession } from "@/lib/app-session";
+import { registerMobileStaffDevice } from "@/lib/staff-device";
 
 export default function AgentLayout() {
-  const { profile, ready, session, signOut, staffDeviceAccess } = useAppSession();
+  const {
+    profile,
+    ready,
+    refreshProfile,
+    session,
+    signOut,
+    staffDeviceAccess,
+  } = useAppSession();
   const pathname = usePathname();
   const accessDenied = !!session && !!profile && profile.role !== "agent" && profile.role !== "member";
   const deviceBlocked =
     ready &&
     profile?.role === "agent" &&
     staffDeviceAccess?.access === "blocked";
+  const resetNeedsRebind = deviceBlocked && !staffDeviceAccess?.activeDeviceId;
 
   let redirectHref: Href | null = null;
 
@@ -62,10 +71,23 @@ export default function AgentLayout() {
     return (
       <AccessNoticeScreen
         title="Agent Shell"
-        subtitle="This agent account is blocked on the current phone."
-        message="This account is locked to a different phone"
-        actionLabel="Sign Out"
+        subtitle={
+          resetNeedsRebind
+            ? "Device trust was reset for this account."
+            : "This agent account is blocked on the current phone."
+        }
+        message={
+          resetNeedsRebind
+            ? "Trust this phone again to restore field access for this account."
+            : "This account is locked to a different phone"
+        }
+        actionLabel={resetNeedsRebind ? "Trust This Phone" : "Sign Out"}
         onAction={() => {
+          if (resetNeedsRebind) {
+            void registerMobileStaffDevice().then(() => refreshProfile());
+            return;
+          }
+
           void signOut();
         }}
       />

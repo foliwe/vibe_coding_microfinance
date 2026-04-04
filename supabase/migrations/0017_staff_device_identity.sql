@@ -253,6 +253,40 @@ begin
   limit 1;
 
   if not found then
+    select *
+    into v_registration
+    from public.device_registrations
+    where profile_id = v_actor.id
+    order by last_seen_at desc nulls last, created_at desc
+    limit 1;
+
+    if found then
+      perform public.write_audit_log(
+        v_actor.id,
+        v_actor.branch_id,
+        'device_access_denied',
+        'profile',
+        v_actor.id::text,
+        jsonb_strip_nulls(
+          jsonb_build_object(
+            'attempted_device_id', v_device_id,
+            'attempted_device_kind', p_device_kind,
+            'previous_device_id', v_registration.device_id,
+            'previous_device_kind', v_registration.device_kind,
+            'reason', 'rebind_required'
+          )
+        )
+      );
+
+      return query
+      select
+        'blocked'::text,
+        null::text,
+        null::text,
+        null::text;
+      return;
+    end if;
+
     return query
     select
       'needs_binding'::text,
