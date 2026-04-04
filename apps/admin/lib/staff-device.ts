@@ -1,5 +1,6 @@
 import { cookies, headers } from "next/headers";
 import type { UserRole } from "@credit-union/shared";
+import { toStaffDeviceRpcError } from "@credit-union/shared";
 
 import {
   buildWorkstationDeviceName,
@@ -111,7 +112,7 @@ export async function assertCurrentWorkstationAccess(supabase: RpcCapableClient)
   });
 
   if (error) {
-    throw new Error(error.message);
+    throw toStaffDeviceRpcError(error, "We could not verify workstation access.");
   }
 
   return toStaffDeviceAssertion(data);
@@ -131,7 +132,7 @@ export async function registerCurrentWorkstation(supabase: RpcCapableClient) {
   });
 
   if (error) {
-    throw new Error(error.message);
+    throw toStaffDeviceRpcError(error, "We could not trust this workstation yet.");
   }
 
   return data;
@@ -157,7 +158,7 @@ export async function ensureCurrentWorkstationAccess(
   });
 
   if (error) {
-    throw new Error(error.message);
+    throw toStaffDeviceRpcError(error, "We could not verify workstation access.");
   }
 
   const assertion = toStaffDeviceAssertion(data);
