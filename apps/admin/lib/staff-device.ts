@@ -1,12 +1,14 @@
 import { cookies, headers } from "next/headers";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import type { UserRole } from "@credit-union/shared";
 import { toStaffDeviceRpcError } from "@credit-union/shared";
 
 import {
   buildWorkstationDeviceName,
+  createWorkstationDeviceId,
   normalizeText,
-  STAFF_DEVICE_COOKIE,
   STAFF_DEVICE_NAME_COOKIE,
+  STAFF_DEVICE_TOKEN_COOKIE,
   toStaffDeviceAssertion,
   type StaffDeviceAccess,
   type StaffDeviceAssertion,
@@ -31,14 +33,97 @@ type WorkstationIdentity = {
   name: string;
 };
 
-function cookieOptions() {
+type StaffDeviceTokenPayload = {
+  deviceId: string;
+  deviceKind: "workstation";
+  exp: number;
+  v: 1;
+};
+
+const STAFF_DEVICE_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 365;
+
+function strictCookieOptions() {
   return {
-    httpOnly: false,
-    maxAge: 60 * 60 * 24 * 365,
+    httpOnly: true,
+    maxAge: STAFF_DEVICE_TOKEN_TTL_SECONDS,
     path: "/",
     sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
   };
+}
+
+function getSigningSecrets() {
+  const primary =
+    normalizeText(process.env.STAFF_DEVICE_TOKEN_SECRET) ??
+    normalizeText(process.env.NEXTAUTH_SECRET) ??
+    normalizeText(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) ??
+    "dev-staff-device-secret";
+  const previous = normalizeText(process.env.STAFF_DEVICE_TOKEN_SECRET_PREVIOUS);
+
+  return [primary, previous].filter((value): value is string => Boolean(value));
+}
+
+function signPayload(encodedPayload: string, secret: string) {
+  return createHmac("sha256", secret).update(encodedPayload).digest("base64url");
+}
+
+function encodeToken(payload: StaffDeviceTokenPayload) {
+  const encodedPayload = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = signPayload(encodedPayload, getSigningSecrets()[0]);
+  return `${encodedPayload}.${signature}`;
+}
+
+function decodeAndVerifyToken(token: string): StaffDeviceTokenPayload | null {
+  const [encodedPayload, signature] = token.split(".");
+
+  if (!encodedPayload || !signature) {
+    return null;
+  }
+
+  const verified = getSigningSecrets().some((secret) => {
+    const expected = signPayload(encodedPayload, secret);
+    const signatureBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expected);
+
+    if (signatureBuffer.length !== expectedBuffer.length) {
+      return false;
+    }
+
+    return timingSafeEqual(signatureBuffer, expectedBuffer);
+  });
+
+  if (!verified) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(
+      Buffer.from(encodedPayload, "base64url").toString("utf8"),
+    ) as StaffDeviceTokenPayload;
+    const now = Math.floor(Date.now() / 1000);
+
+    if (
+      payload?.v !== 1 ||
+      payload?.deviceKind !== "workstation" ||
+      !normalizeText(payload?.deviceId) ||
+      !Number.isFinite(payload?.exp) ||
+      payload.exp <= now
+    ) {
+      return null;
+    }
+
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+async function clearInvalidWorkstationIdentityCookie() {
+  const cookieStore = await cookies();
+  cookieStore.set(STAFF_DEVICE_TOKEN_COOKIE, "", {
+    ...strictCookieOptions(),
+    maxAge: 0,
+  });
 }
 
 export function isBranchManagerSetupComplete(profile: StaffProfile) {
@@ -46,7 +131,7 @@ export function isBranchManagerSetupComplete(profile: StaffProfile) {
 }
 
 export async function setWorkstationIdentityCookies(input: {
-  id?: string | null;
+  id: string;
   name?: string | null;
 }) {
   const cookieStore = await cookies();
@@ -54,17 +139,26 @@ export async function setWorkstationIdentityCookies(input: {
   const deviceName = normalizeText(input.name);
 
   if (deviceId) {
-    cookieStore.set(STAFF_DEVICE_COOKIE, deviceId, cookieOptions());
+    const token = encodeToken({
+      deviceId,
+      deviceKind: "workstation",
+      exp: Math.floor(Date.now() / 1000) + STAFF_DEVICE_TOKEN_TTL_SECONDS,
+      v: 1,
+    });
+    cookieStore.set(STAFF_DEVICE_TOKEN_COOKIE, token, strictCookieOptions());
   }
 
   if (deviceName) {
-    cookieStore.set(STAFF_DEVICE_NAME_COOKIE, deviceName, cookieOptions());
+    cookieStore.set(STAFF_DEVICE_NAME_COOKIE, deviceName, strictCookieOptions());
   }
 }
 
 export async function syncWorkstationIdentityFromFormData(formData: FormData) {
-  const deviceId = normalizeText(formData.get("staffDeviceId"));
+  const cookieStore = await cookies();
+  const tokenFromCookie = normalizeText(cookieStore.get(STAFF_DEVICE_TOKEN_COOKIE)?.value);
+  const currentPayload = tokenFromCookie ? decodeAndVerifyToken(tokenFromCookie) : null;
   const deviceName = normalizeText(formData.get("staffDeviceName"));
+  const deviceId = currentPayload?.deviceId ?? createWorkstationDeviceId();
 
   await setWorkstationIdentityCookies({
     id: deviceId,
@@ -79,11 +173,16 @@ export async function syncWorkstationIdentityFromFormData(formData: FormData) {
 
 export async function getCurrentWorkstationIdentity(): Promise<WorkstationIdentity> {
   const [cookieStore, headerStore] = await Promise.all([cookies(), headers()]);
-  const deviceId = normalizeText(cookieStore.get(STAFF_DEVICE_COOKIE)?.value);
+  const token = normalizeText(cookieStore.get(STAFF_DEVICE_TOKEN_COOKIE)?.value);
+  const tokenPayload = token ? decodeAndVerifyToken(token) : null;
   const deviceNameCookie = normalizeText(cookieStore.get(STAFF_DEVICE_NAME_COOKIE)?.value);
 
+  if (token && !tokenPayload) {
+    await clearInvalidWorkstationIdentityCookie();
+  }
+
   return {
-    id: deviceId,
+    id: tokenPayload?.deviceId ?? null,
     kind: "workstation",
     name:
       deviceNameCookie ??
@@ -99,7 +198,7 @@ export async function assertCurrentWorkstationAccess(supabase: RpcCapableClient)
 
   if (!identity.id) {
     return {
-      access: "needs_binding",
+      access: "blocked",
       activeDeviceId: null,
       activeDeviceKind: null,
       activeDeviceName: null,

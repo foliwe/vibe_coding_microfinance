@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import {
+  getCurrentWorkstationIdentity,
   isBranchManagerSetupComplete,
   syncWorkstationIdentityFromFormData,
 } from "../lib/staff-device";
@@ -22,6 +23,12 @@ async function signInAction(formData: FormData) {
   }
 
   await syncWorkstationIdentityFromFormData(formData);
+  const identity = await getCurrentWorkstationIdentity();
+
+  if (!identity.id) {
+    redirect("/login?reason=workstation-rebind");
+  }
+
   const supabase = await createClient();
   const result = await supabase.auth.signInWithPassword({ email, password });
 
