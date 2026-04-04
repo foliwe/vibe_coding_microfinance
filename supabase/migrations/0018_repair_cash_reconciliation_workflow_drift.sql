@@ -13,7 +13,7 @@ alter table public.cash_reconciliations
 
 update public.cash_reconciliations cr
 set
-  submitted_by = coalesce(cr.submitted_by, cr.reviewed_by),
+  submitted_by = coalesce(cr.submitted_by, cr.reviewed_by, cd.agent_profile_id),
   counted_cash = coalesce(cr.counted_cash, cd.counted_cash, cd.expected_cash, 0),
   expected_cash = coalesce(cr.expected_cash, cd.expected_cash, 0),
   variance = coalesce(
@@ -21,9 +21,25 @@ set
     cd.variance,
     coalesce(cd.counted_cash, cd.expected_cash, 0) - coalesce(cd.expected_cash, 0)
   ),
-  status = coalesce(cr.status, 'approved'),
+  status = coalesce(
+    cr.status,
+    case
+      when cr.reviewed_by is null then 'pending_review'
+      else 'approved'
+    end
+  ),
   submitted_at = coalesce(cr.submitted_at, cr.created_at),
-  reviewed_at = coalesce(cr.reviewed_at, cr.created_at)
+  reviewed_at = case
+    when cr.reviewed_at is not null then cr.reviewed_at
+    when coalesce(
+      cr.status,
+      case
+        when cr.reviewed_by is null then 'pending_review'
+        else 'approved'
+      end
+    ) = 'pending_review' then null
+    else cr.created_at
+  end
 from public.cash_drawers cd
 where cd.id = cr.cash_drawer_id;
 
