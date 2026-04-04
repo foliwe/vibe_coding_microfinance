@@ -48,6 +48,13 @@ type MemberProvisionInput = {
   savingsAccountNumber?: string;
 };
 
+type SafeUserErrorInput = {
+  action: string;
+  error: unknown;
+  userMessage: string;
+  errorCode: string;
+};
+
 function buildRedirect(path: string, result: RedirectResult, detail?: string): Route {
   const params = new URLSearchParams();
   params.set("result", result);
@@ -57,6 +64,31 @@ function buildRedirect(path: string, result: RedirectResult, detail?: string): R
   }
 
   return `${path}?${params.toString()}` as Route;
+}
+
+function toSafeUserError(input: SafeUserErrorInput) {
+  const correlationId = crypto.randomUUID();
+  const rawMessage =
+    input.error instanceof Error
+      ? input.error.message
+      : typeof input.error === "string"
+        ? input.error
+        : "Unknown error";
+  const stack = input.error instanceof Error ? input.error.stack : undefined;
+
+  console.error(
+    JSON.stringify({
+      level: "error",
+      event: "admin_action_failed",
+      action: input.action,
+      errorCode: input.errorCode,
+      correlationId,
+      rawMessage,
+      stack,
+    }),
+  );
+
+  return `${input.userMessage} (Code: ${input.errorCode}; Ref: ${correlationId})`;
 }
 
 async function clearMemberCreationFlash() {
@@ -350,7 +382,18 @@ async function mutateTransactionRequest(
   });
 
   if (error) {
-    redirect(buildRedirect("/transactions", "error", error.message));
+    redirect(
+      buildRedirect(
+        "/transactions",
+        "error",
+        toSafeUserError({
+          action,
+          error,
+          userMessage: "Unable to update this transaction request.",
+          errorCode: "TXN_REQUEST_FAILED",
+        }),
+      ),
+    );
   }
 
   revalidatePath("/transactions");
@@ -452,11 +495,17 @@ export async function completeBranchManagerSetupAction(formData: FormData) {
 
     await registerCurrentWorkstation(supabase);
   } catch (error) {
+    const safeMessage = toSafeUserError({
+      action: "completeBranchManagerSetupAction",
+      error,
+      userMessage: "Unable to complete setup.",
+      errorCode: "SETUP_FAILED",
+    });
     redirect(
       buildRedirect(
         "/setup",
         "error",
-        error instanceof Error ? error.message : "Unable to complete setup.",
+        safeMessage,
       ),
     );
   }
@@ -479,11 +528,17 @@ export async function rebindCurrentWorkstationAction(formData: FormData) {
     await syncWorkstationIdentityFromFormData(formData);
     await registerCurrentWorkstation(supabase);
   } catch (error) {
+    const safeMessage = toSafeUserError({
+      action: "rebindCurrentWorkstationAction",
+      error,
+      userMessage: "Unable to trust this workstation.",
+      errorCode: "WORKSTATION_REBIND_FAILED",
+    });
     redirect(
       buildRedirect(
         "/workstation-blocked",
         "error",
-        error instanceof Error ? error.message : "Unable to trust this workstation.",
+        safeMessage,
       ),
     );
   }
@@ -530,11 +585,17 @@ export async function reviewCashReconciliationAction(formData: FormData) {
       throw new Error(error.message);
     }
   } catch (error) {
+    const safeMessage = toSafeUserError({
+      action: "reviewCashReconciliationAction",
+      error,
+      userMessage: "Unable to review the cash reconciliation.",
+      errorCode: "RECON_REVIEW_FAILED",
+    });
     redirect(
       buildRedirect(
         "/reconciliation",
         "error",
-        error instanceof Error ? error.message : "Unable to review the cash reconciliation.",
+        safeMessage,
       ),
     );
   }
@@ -587,11 +648,17 @@ async function createAdminTransactionAction(
       throw new Error(error.message);
     }
   } catch (error) {
+    const safeMessage = toSafeUserError({
+      action: `createAdminTransactionAction:${transactionType}`,
+      error,
+      userMessage: "Unable to create transaction.",
+      errorCode: "TXN_CREATE_FAILED",
+    });
     redirect(
       buildRedirect(
         path,
         "error",
-        error instanceof Error ? error.message : "Unable to create transaction.",
+        safeMessage,
       ),
     );
   }
@@ -651,11 +718,17 @@ export async function createLoanApplicationAction(formData: FormData) {
       throw new Error(error.message);
     }
   } catch (error) {
+    const safeMessage = toSafeUserError({
+      action: "createLoanApplicationAction",
+      error,
+      userMessage: "Unable to create loan application.",
+      errorCode: "LOAN_CREATE_FAILED",
+    });
     redirect(
       buildRedirect(
         "/loans",
         "error",
-        error instanceof Error ? error.message : "Unable to create loan application.",
+        safeMessage,
       ),
     );
   }
@@ -708,11 +781,17 @@ async function mutateLoanApplicationAction(
       }
     }
   } catch (error) {
+    const safeMessage = toSafeUserError({
+      action,
+      error,
+      userMessage: "Unable to update loan application.",
+      errorCode: "LOAN_UPDATE_FAILED",
+    });
     redirect(
       buildRedirect(
         "/loans",
         "error",
-        error instanceof Error ? error.message : "Unable to update loan application.",
+        safeMessage,
       ),
     );
   }
@@ -763,11 +842,17 @@ export async function disburseLoanAction(formData: FormData) {
       throw new Error(error.message);
     }
   } catch (error) {
+    const safeMessage = toSafeUserError({
+      action: "disburseLoanAction",
+      error,
+      userMessage: "Unable to disburse loan.",
+      errorCode: "LOAN_DISBURSE_FAILED",
+    });
     redirect(
       buildRedirect(
         "/loans",
         "error",
-        error instanceof Error ? error.message : "Unable to disburse loan.",
+        safeMessage,
       ),
     );
   }
@@ -813,11 +898,17 @@ export async function recordLoanRepaymentAction(formData: FormData) {
       throw new Error(error.message);
     }
   } catch (error) {
+    const safeMessage = toSafeUserError({
+      action: "recordLoanRepaymentAction",
+      error,
+      userMessage: "Unable to record loan repayment.",
+      errorCode: "LOAN_REPAYMENT_FAILED",
+    });
     redirect(
       buildRedirect(
         "/loans",
         "error",
-        error instanceof Error ? error.message : "Unable to record loan repayment.",
+        safeMessage,
       ),
     );
   }
@@ -887,11 +978,17 @@ export async function createBranchAction(formData: FormData) {
     }
     successDetail = `Created branch ${name}.`;
   } catch (error) {
+    const safeMessage = toSafeUserError({
+      action: "createBranchAction",
+      error,
+      userMessage: "Unable to create branch.",
+      errorCode: "BRANCH_CREATE_FAILED",
+    });
     redirect(
       buildRedirect(
         "/branches/new",
         "error",
-        error instanceof Error ? error.message : "Unable to create branch.",
+        safeMessage,
       ),
     );
   }
@@ -971,11 +1068,17 @@ export async function createManagerAction(formData: FormData) {
     successDetail = `Created branch manager ${fullName}.`;
   } catch (error) {
     await deleteAuthUserIfPresent(createdUserId);
+    const safeMessage = toSafeUserError({
+      action: "createManagerAction",
+      error,
+      userMessage: "Unable to create branch manager.",
+      errorCode: "MANAGER_CREATE_FAILED",
+    });
     redirect(
       buildRedirect(
         "/managers/new",
         "error",
-        error instanceof Error ? error.message : "Unable to create branch manager.",
+        safeMessage,
       ),
     );
   }
@@ -1050,11 +1153,17 @@ export async function createAgentAction(formData: FormData) {
     successDetail = `Created agent ${fullName}.`;
   } catch (error) {
     await deleteAuthUserIfPresent(createdUserId);
+    const safeMessage = toSafeUserError({
+      action: "createAgentAction",
+      error,
+      userMessage: "Unable to create agent.",
+      errorCode: "AGENT_CREATE_FAILED",
+    });
     redirect(
       buildRedirect(
         "/agents/new",
         "error",
-        error instanceof Error ? error.message : "Unable to create agent.",
+        safeMessage,
       ),
     );
   }
@@ -1116,11 +1225,17 @@ export async function createMemberAction(formData: FormData) {
     successDetail = `Created member ${fullName}. Credentials are ready below for secure handoff.`;
   } catch (error) {
     await clearMemberCreationFlash();
+    const safeMessage = toSafeUserError({
+      action: "createMemberAction",
+      error,
+      userMessage: "Unable to create member.",
+      errorCode: "MEMBER_CREATE_FAILED",
+    });
     redirect(
       buildRedirect(
         "/members/new",
         "error",
-        error instanceof Error ? error.message : "Unable to create member.",
+        safeMessage,
       ),
     );
   }
@@ -1147,11 +1262,17 @@ export async function resetStaffDeviceAction(formData: FormData) {
       throw new Error(error.message);
     }
   } catch (error) {
+    const safeMessage = toSafeUserError({
+      action: "resetStaffDeviceAction",
+      error,
+      userMessage: "Unable to reset trusted device access.",
+      errorCode: "STAFF_DEVICE_RESET_FAILED",
+    });
     redirect(
       buildRedirect(
         "/staff-devices",
         "error",
-        error instanceof Error ? error.message : "Unable to reset trusted device access.",
+        safeMessage,
       ),
     );
   }
@@ -1200,11 +1321,17 @@ export async function requestReportAction(formData: FormData) {
       throw new Error(error.message);
     }
   } catch (error) {
+    const safeMessage = toSafeUserError({
+      action: "requestReportAction",
+      error,
+      userMessage: "Unable to queue report request.",
+      errorCode: "REPORT_QUEUE_FAILED",
+    });
     redirect(
       buildRedirect(
         "/reports",
         "error",
-        error instanceof Error ? error.message : "Unable to queue report request.",
+        safeMessage,
       ),
     );
   }
