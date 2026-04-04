@@ -19,6 +19,25 @@ const REQUIRED_TABLES = [
   "loan_collateral",
   "loan_repayments",
 ];
+const REQUIRED_RPCS = [
+  {
+    args: {
+      p_device_id: "smoke-device",
+      p_device_kind: "mobile",
+    },
+    acceptedErrors: ["active actor profile not found"],
+    name: "assert_staff_device_access",
+  },
+  {
+    args: {
+      p_device_id: "smoke-device",
+      p_device_kind: "mobile",
+      p_device_name: "Schema Smoke Device",
+    },
+    acceptedErrors: ["active actor profile not found"],
+    name: "register_my_device",
+  },
+];
 
 function fail(message) {
   console.error(`\nSchema smoke failed: ${message}\n`);
@@ -79,6 +98,20 @@ async function verifyLoanRoutine() {
   fail(`loan workflow RPC check failed: ${error.message}`);
 }
 
+async function verifyRpcExists({ name, args, acceptedErrors }) {
+  const { error } = await supabase.rpc(name, args);
+
+  if (!error) {
+    return;
+  }
+
+  if (acceptedErrors.some((message) => error.message.includes(message))) {
+    return;
+  }
+
+  fail(`required RPC ${name} is unavailable: ${error.message}`);
+}
+
 async function main() {
   for (const table of REQUIRED_TABLES) {
     await verifyTable(table);
@@ -87,9 +120,15 @@ async function main() {
   await verifyLoanColumns();
   await verifyLoanRoutine();
 
+  for (const rpc of REQUIRED_RPCS) {
+    await verifyRpcExists(rpc);
+  }
+
   console.log("Schema smoke passed.");
   console.log(`Verified tables: ${REQUIRED_TABLES.join(", ")}`);
-  console.log("Verified loan ledger columns and the ensure_loan_ledger_account RPC.");
+  console.log(
+    `Verified loan ledger columns plus RPCs: ensure_loan_ledger_account, ${REQUIRED_RPCS.map((rpc) => rpc.name).join(", ")}.`,
+  );
 }
 
 main().catch((error) => {

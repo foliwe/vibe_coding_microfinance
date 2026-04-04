@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Device from "expo-device";
+import { toStaffDeviceRpcError } from "@credit-union/shared";
 
 import { getSupabaseClient } from "./supabase/client";
 
@@ -116,7 +117,7 @@ export async function assertMobileStaffDeviceAccess() {
   });
 
   if (error) {
-    throw error;
+    throw toStaffDeviceRpcError(error, "We could not verify staff device access.");
   }
 
   return toAssertion(data);
@@ -132,7 +133,7 @@ export async function registerMobileStaffDevice() {
   });
 
   if (error) {
-    throw error;
+    throw toStaffDeviceRpcError(error, "We could not trust this phone yet.");
   }
 
   return data;
