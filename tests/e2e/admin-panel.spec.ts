@@ -23,6 +23,24 @@ async function signOut(page: Page) {
   await expect(page).toHaveURL(/\/login$/);
 }
 
+async function completeBranchManagerSetup(
+  page: Page,
+  input: {
+    currentPassword: string;
+    newPassword: string;
+    transactionPin: string;
+  },
+) {
+  await expect(page).toHaveURL(/\/setup$/);
+  await page.getByLabel("Current Temporary Password").fill(input.currentPassword);
+  await page.getByLabel("New Password").fill(input.newPassword);
+  await page.getByLabel("Confirm New Password").fill(input.newPassword);
+  await page.getByLabel("Transaction PIN").fill(input.transactionPin);
+  await page.getByLabel("Confirm Transaction PIN").fill(input.transactionPin);
+  await page.getByRole("button", { name: "Complete Security Setup" }).click();
+  await expect(page).toHaveURL(/\/branch\?result=success/);
+}
+
 function transactionRow(page: Page, reference: string): Locator {
   return page.locator("tr").filter({ hasText: reference });
 }
@@ -187,8 +205,10 @@ test.describe("admin panel end-to-end flows", () => {
     const manager = {
       fullName: `Playwright Manager ${runId}`,
       email: `${runId}-manager@example.com`,
+      finalPassword: "Manager654321!",
       phone: `+23761${digits}`,
       password: "Manager123456!",
+      transactionPin: "2468",
     };
     const agent = {
       fullName: `Playwright Agent ${runId}`,
@@ -235,7 +255,11 @@ test.describe("admin panel end-to-end flows", () => {
       email: manager.email,
       password: manager.password,
     });
-    await expect(page).toHaveURL(/\/branch$/);
+    await completeBranchManagerSetup(page, {
+      currentPassword: manager.password,
+      newPassword: manager.finalPassword,
+      transactionPin: manager.transactionPin,
+    });
 
     await page.goto("/agents/new");
     await expect(page.getByRole("heading", { level: 1, name: "Create Agent" })).toBeVisible();

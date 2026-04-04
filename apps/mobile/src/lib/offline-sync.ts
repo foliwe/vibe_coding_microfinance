@@ -5,7 +5,6 @@ import type { SyncQueueItem } from "@/mocks/mobile-data";
 
 import {
   createQueuedTransactionEntry,
-  OFFLINE_SYNC_DEVICE_ID,
   type OfflineSyncQueueEntry,
   type QueuedTransactionPayload,
   sortByCreatedAtDesc,
@@ -15,6 +14,7 @@ import {
   withRetryMetadata,
 } from "./offline-sync-core";
 import { getErrorMessage } from "./errors";
+import { getMobileStaffDeviceIdentity } from "./staff-device";
 import { getSupabaseClient } from "./supabase/client";
 
 const STORAGE_KEY = "credit-union/offline-sync-queue/v1";
@@ -151,9 +151,10 @@ export async function queueTransactionRequest(input: {
   note?: string;
   transactionType: QueuedTransactionPayload["transactionType"];
 }) {
+  const device = await getMobileStaffDeviceIdentity();
   const entry = createQueuedTransactionEntry({
     ...input,
-    deviceId: OFFLINE_SYNC_DEVICE_ID,
+    deviceId: device.id,
   });
 
   const queue = await readQueue();
