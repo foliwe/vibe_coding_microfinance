@@ -4,6 +4,7 @@ import { ReactNode } from "react";
 import { Montserrat } from "next/font/google";
 
 import { ThemeProvider } from "../components/theme-provider";
+import { WorkstationIdentityBootstrap } from "../components/workstation-identity-bootstrap";
 import { TooltipProvider } from "../components/ui/tooltip";
 
 const montserrat = Montserrat({
@@ -23,6 +24,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className="min-h-screen bg-background font-sans text-foreground antialiased">
         <ThemeProvider>
           <TooltipProvider>
+            <WorkstationIdentityBootstrap />
             {children}
           </TooltipProvider>
         </ThemeProvider>

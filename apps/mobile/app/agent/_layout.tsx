@@ -8,9 +8,13 @@ import {
 import { useAppSession } from "@/lib/app-session";
 
 export default function AgentLayout() {
-  const { profile, ready, session } = useAppSession();
+  const { profile, ready, session, signOut, staffDeviceAccess } = useAppSession();
   const pathname = usePathname();
   const accessDenied = !!session && !!profile && profile.role !== "agent" && profile.role !== "member";
+  const deviceBlocked =
+    ready &&
+    profile?.role === "agent" &&
+    staffDeviceAccess?.access === "blocked";
 
   let redirectHref: Href | null = null;
 
@@ -50,6 +54,20 @@ export default function AgentLayout() {
         title="Agent Shell"
         subtitle="This route is limited to signed-in field agents."
         message="Use a member account for member screens, or sign in with an agent account to continue here."
+      />
+    );
+  }
+
+  if (deviceBlocked) {
+    return (
+      <AccessNoticeScreen
+        title="Agent Shell"
+        subtitle="This agent account is blocked on the current phone."
+        message="This account is locked to a different phone"
+        actionLabel="Sign Out"
+        onAction={() => {
+          void signOut();
+        }}
       />
     );
   }

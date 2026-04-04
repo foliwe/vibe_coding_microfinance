@@ -11,6 +11,10 @@ import {
 } from "@credit-union/shared";
 
 import { requireRole } from "../lib/auth";
+import {
+  registerCurrentWorkstation,
+  syncWorkstationIdentityFromFormData,
+} from "../lib/staff-device";
 import { hasSupabaseEnv, hasSupabaseServiceEnv } from "../lib/supabase/env";
 import { createServiceClient } from "../lib/supabase/service";
 import { createClient } from "../lib/supabase/server";
@@ -350,6 +354,91 @@ export async function signOutAction() {
   const supabase = await createClient();
   await supabase.auth.signOut();
   redirect("/login");
+}
+
+export async function completeBranchManagerSetupAction(formData: FormData) {
+  if (!hasSupabaseEnv()) {
+    redirect(buildRedirect("/setup", "error", "Supabase credentials are missing."));
+  }
+
+  try {
+    const { supabase, profile } = await requireRole(["branch_manager"], {
+      allowIncompleteSetup: true,
+      allowUntrustedDevice: true,
+    });
+
+    const currentPassword = String(formData.get("currentPassword") ?? "").trim();
+    const newPassword = String(formData.get("newPassword") ?? "").trim();
+    const confirmNewPassword = String(formData.get("confirmNewPassword") ?? "").trim();
+    const transactionPin = String(formData.get("transactionPin") ?? "").trim();
+    const confirmTransactionPin = String(formData.get("confirmTransactionPin") ?? "").trim();
+
+    if (profile.must_change_password) {
+      if (!currentPassword) {
+        throw new Error("Current temporary password is required.");
+      }
+
+      if (newPassword.length < 8) {
+        throw new Error("New password must be at least 8 characters.");
+      }
+
+      if (newPassword !== confirmNewPassword) {
+        throw new Error("Your new password and confirmation must match.");
+      }
+    }
+
+    if (profile.requires_pin_setup) {
+      if (!/^\d{4}$/.test(transactionPin)) {
+        throw new Error("Transaction PIN must be exactly 4 digits.");
+      }
+
+      if (transactionPin !== confirmTransactionPin) {
+        throw new Error("Your transaction PIN and confirmation must match.");
+      }
+    }
+
+    await syncWorkstationIdentityFromFormData(formData);
+
+    if (profile.must_change_password) {
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      const { error: completeError } = await supabase.rpc("complete_password_change");
+
+      if (completeError) {
+        throw new Error(completeError.message);
+      }
+    }
+
+    if (profile.requires_pin_setup) {
+      const { error: pinError } = await supabase.rpc("set_my_transaction_pin", {
+        p_pin: transactionPin,
+      });
+
+      if (pinError) {
+        throw new Error(pinError.message);
+      }
+    }
+
+    await registerCurrentWorkstation(supabase);
+  } catch (error) {
+    redirect(
+      buildRedirect(
+        "/setup",
+        "error",
+        error instanceof Error ? error.message : "Unable to complete setup.",
+      ),
+    );
+  }
+
+  revalidatePath("/branch");
+  revalidatePath("/settings");
+  redirect(buildRedirect("/branch", "success", "Security setup complete."));
 }
 
 export async function approveTransactionRequestAction(formData: FormData) {
@@ -986,6 +1075,39 @@ export async function createMemberAction(formData: FormData) {
 
   revalidateMemberPaths();
   redirect(buildRedirect("/members/new", "success", successDetail));
+}
+
+export async function resetStaffDeviceAction(formData: FormData) {
+  if (!hasSupabaseEnv()) {
+    redirect(buildRedirect("/staff-devices", "error", "Supabase credentials are missing."));
+  }
+
+  try {
+    const { supabase } = await requireRole(["admin", "branch_manager"]);
+    const profileId = requiredValue(formData, "profileId", "Staff account");
+    const reason = optionalValue(formData, "reason");
+    const { error } = await supabase.rpc("reset_staff_device", {
+      p_profile_id: profileId,
+      p_reason: reason,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  } catch (error) {
+    redirect(
+      buildRedirect(
+        "/staff-devices",
+        "error",
+        error instanceof Error ? error.message : "Unable to reset trusted device access.",
+      ),
+    );
+  }
+
+  revalidatePath("/staff-devices");
+  revalidatePath("/settings");
+  revalidatePath("/audit");
+  redirect(buildRedirect("/staff-devices", "success", "Trusted device reset."));
 }
 
 export async function requestReportAction(formData: FormData) {

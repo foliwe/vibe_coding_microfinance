@@ -1,6 +1,6 @@
 import { Text } from "react-native";
 
-import { Screen, StatusPill, SurfaceCard } from "@/components/ui";
+import { Screen, SecondaryButton, StatusPill, SurfaceCard } from "@/components/ui";
 
 export function SessionLoadingScreen({
   title,
@@ -25,16 +25,26 @@ export function AccessNoticeScreen({
   title,
   subtitle,
   message,
+  actionLabel,
+  onAction,
 }: {
   title: string;
   subtitle: string;
   message: string;
+  actionLabel?: string;
+  onAction?: () => void;
 }) {
   return (
     <Screen title={title} subtitle={subtitle}>
       <SurfaceCard accent="#F7EEE0">
         <StatusPill label="REJECTED" />
         <Text style={{ marginTop: 12, color: "#56666E" }}>{message}</Text>
+        {actionLabel && onAction ? (
+          <SecondaryButton
+            label={actionLabel}
+            onPress={onAction}
+          />
+        ) : null}
       </SurfaceCard>
     </Screen>
   );
