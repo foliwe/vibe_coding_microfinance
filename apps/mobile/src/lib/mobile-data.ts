@@ -1424,17 +1424,13 @@ export const mobileData = {
     }
 
     const reconciliation = (reconciliationData as CashReconciliationRow | null) ?? null;
-    const expectedCash = reconciliation
-      ? toNumber(reconciliation.expected_cash)
-      : toNumber(drawer.expected_cash);
+    const expectedCash = toNumber(drawer.expected_cash);
     const actualCash = reconciliation
       ? toNumber(reconciliation.counted_cash)
       : drawer.counted_cash == null
         ? expectedCash
         : toNumber(drawer.counted_cash);
-    const difference = reconciliation
-      ? toNumber(reconciliation.variance)
-      : roundCurrency(actualCash - expectedCash);
+    const difference = roundCurrency(actualCash - expectedCash);
 
     return {
       actualCash,

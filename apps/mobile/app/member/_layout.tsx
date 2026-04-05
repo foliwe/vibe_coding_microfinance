@@ -6,6 +6,7 @@ import {
   SessionLoadingScreen,
 } from "@/features/session-status-screen";
 import { useAppSession } from "@/lib/app-session";
+import { MobileShell } from "@/components/mobile-shell";
 
 export default function MemberLayout() {
   const { profile, ready, session } = useAppSession();
@@ -32,37 +33,45 @@ export default function MemberLayout() {
 
   if (!ready) {
     return (
-      <SessionLoadingScreen
-        title="Member Shell"
-        subtitle="Restoring your member session."
-      />
+      <MobileShell role="member">
+        <SessionLoadingScreen
+          title="Member Shell"
+          subtitle="Restoring your member session."
+        />
+      </MobileShell>
     );
   }
 
   if (accessDenied) {
     return (
-      <AccessNoticeScreen
-        title="Member Shell"
-        subtitle="This route is limited to signed-in members."
-        message="Use a member account for self-service screens, or sign in with the matching role to continue."
-      />
+      <MobileShell role="member">
+        <AccessNoticeScreen
+          title="Member Shell"
+          subtitle="This route is limited to signed-in members."
+          message="Use a member account for self-service screens, or sign in with the matching role to continue."
+        />
+      </MobileShell>
     );
   }
 
   if (redirectHref) {
     return (
-      <SessionLoadingScreen
-        title="Member Shell"
-        subtitle="Routing to the correct member screen."
-      />
+      <MobileShell role="member">
+        <SessionLoadingScreen
+          title="Member Shell"
+          subtitle="Routing to the correct member screen."
+        />
+      </MobileShell>
     );
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="more/profile" />
-      <Stack.Screen name="change-password" />
-    </Stack>
+    <MobileShell role="member">
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="more/profile" />
+        <Stack.Screen name="change-password" />
+      </Stack>
+    </MobileShell>
   );
 }
