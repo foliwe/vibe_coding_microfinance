@@ -27,6 +27,8 @@ export default async function LoginPage({
   const params = await searchParams;
   const showUnauthorized = params?.reason === "unauthorized";
   const showProfileMissing = params?.reason === "profile-missing";
+  const showWorkstationConfigMissing = params?.reason === "workstation-config-missing";
+  const showWorkstationRebind = params?.reason === "workstation-rebind";
 
   return (
     <main className="login-page">
@@ -48,6 +50,26 @@ export default async function LoginPage({
             <p className="muted">
               Make sure the user has a row in `public.profiles` with the same Auth user ID and
               a role of `admin` or `branch_manager`.
+            </p>
+          </section>
+        ) : null}
+        {showWorkstationConfigMissing ? (
+          <section className="login-card">
+            <p className="eyebrow">Security configuration required</p>
+            <h1>Workstation token signing is not configured</h1>
+            <p className="muted">
+              Add `STAFF_DEVICE_TOKEN_SECRET` to the admin app environment, then restart the app
+              before branch managers sign in again.
+            </p>
+          </section>
+        ) : null}
+        {showWorkstationRebind ? (
+          <section className="login-card">
+            <p className="eyebrow">Workstation check failed</p>
+            <h1>Refresh and sign in again to rebind this workstation token</h1>
+            <p className="muted">
+              The secure workstation token could not be validated. Retry sign-in to create a new
+              trusted workstation binding.
             </p>
           </section>
         ) : null}

@@ -1,12 +1,14 @@
 import { cookies, headers } from "next/headers";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import type { UserRole } from "@credit-union/shared";
 import { toStaffDeviceRpcError } from "@credit-union/shared";
 
 import {
   buildWorkstationDeviceName,
+  createWorkstationDeviceId,
   normalizeText,
-  STAFF_DEVICE_COOKIE,
   STAFF_DEVICE_NAME_COOKIE,
+  STAFF_DEVICE_TOKEN_COOKIE,
   toStaffDeviceAssertion,
   type StaffDeviceAccess,
   type StaffDeviceAssertion,
@@ -31,14 +33,105 @@ type WorkstationIdentity = {
   name: string;
 };
 
-function cookieOptions() {
+type StaffDeviceTokenPayload = {
+  deviceId: string;
+  deviceKind: "workstation";
+  exp: number;
+  v: 1;
+};
+
+const STAFF_DEVICE_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 365;
+export const WORKSTATION_TOKEN_CONFIG_ERROR_MESSAGE =
+  "Workstation security configuration is missing. Ask an administrator to set STAFF_DEVICE_TOKEN_SECRET.";
+
+function strictCookieOptions() {
   return {
-    httpOnly: false,
-    maxAge: 60 * 60 * 24 * 365,
+    httpOnly: true,
+    maxAge: STAFF_DEVICE_TOKEN_TTL_SECONDS,
     path: "/",
     sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
   };
+}
+
+function getSigningSecrets() {
+  const primary = normalizeText(process.env.STAFF_DEVICE_TOKEN_SECRET);
+  const previous = normalizeText(process.env.STAFF_DEVICE_TOKEN_SECRET_PREVIOUS);
+
+  if (!primary) {
+    return null;
+  }
+
+  return {
+    primary,
+    verification: [primary, previous].filter((value): value is string => Boolean(value)),
+  };
+}
+
+export function isWorkstationTokenConfigurationError(error: unknown) {
+  return error instanceof Error && error.message === WORKSTATION_TOKEN_CONFIG_ERROR_MESSAGE;
+}
+
+function signPayload(encodedPayload: string, secret: string) {
+  return createHmac("sha256", secret).update(encodedPayload).digest("base64url");
+}
+
+function encodeToken(payload: StaffDeviceTokenPayload) {
+  const signingSecrets = getSigningSecrets();
+
+  if (!signingSecrets) {
+    throw new Error(WORKSTATION_TOKEN_CONFIG_ERROR_MESSAGE);
+  }
+
+  const encodedPayload = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = signPayload(encodedPayload, signingSecrets.primary);
+  return `${encodedPayload}.${signature}`;
+}
+
+function decodeAndVerifyToken(token: string): StaffDeviceTokenPayload | null {
+  const signingSecrets = getSigningSecrets();
+  const [encodedPayload, signature] = token.split(".");
+
+  if (!signingSecrets || !encodedPayload || !signature) {
+    return null;
+  }
+
+  const verified = signingSecrets.verification.some((secret) => {
+    const expected = signPayload(encodedPayload, secret);
+    const signatureBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expected);
+
+    if (signatureBuffer.length !== expectedBuffer.length) {
+      return false;
+    }
+
+    return timingSafeEqual(signatureBuffer, expectedBuffer);
+  });
+
+  if (!verified) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(
+      Buffer.from(encodedPayload, "base64url").toString("utf8"),
+    ) as StaffDeviceTokenPayload;
+    const now = Math.floor(Date.now() / 1000);
+
+    if (
+      payload?.v !== 1 ||
+      payload?.deviceKind !== "workstation" ||
+      !normalizeText(payload?.deviceId) ||
+      !Number.isFinite(payload?.exp) ||
+      payload.exp <= now
+    ) {
+      return null;
+    }
+
+    return payload;
+  } catch {
+    return null;
+  }
 }
 
 export function isBranchManagerSetupComplete(profile: StaffProfile) {
@@ -46,7 +139,7 @@ export function isBranchManagerSetupComplete(profile: StaffProfile) {
 }
 
 export async function setWorkstationIdentityCookies(input: {
-  id?: string | null;
+  id: string;
   name?: string | null;
 }) {
   const cookieStore = await cookies();
@@ -54,17 +147,26 @@ export async function setWorkstationIdentityCookies(input: {
   const deviceName = normalizeText(input.name);
 
   if (deviceId) {
-    cookieStore.set(STAFF_DEVICE_COOKIE, deviceId, cookieOptions());
+    const token = encodeToken({
+      deviceId,
+      deviceKind: "workstation",
+      exp: Math.floor(Date.now() / 1000) + STAFF_DEVICE_TOKEN_TTL_SECONDS,
+      v: 1,
+    });
+    cookieStore.set(STAFF_DEVICE_TOKEN_COOKIE, token, strictCookieOptions());
   }
 
   if (deviceName) {
-    cookieStore.set(STAFF_DEVICE_NAME_COOKIE, deviceName, cookieOptions());
+    cookieStore.set(STAFF_DEVICE_NAME_COOKIE, deviceName, strictCookieOptions());
   }
 }
 
 export async function syncWorkstationIdentityFromFormData(formData: FormData) {
-  const deviceId = normalizeText(formData.get("staffDeviceId"));
+  const cookieStore = await cookies();
+  const tokenFromCookie = normalizeText(cookieStore.get(STAFF_DEVICE_TOKEN_COOKIE)?.value);
+  const currentPayload = tokenFromCookie ? decodeAndVerifyToken(tokenFromCookie) : null;
   const deviceName = normalizeText(formData.get("staffDeviceName"));
+  const deviceId = currentPayload?.deviceId ?? createWorkstationDeviceId();
 
   await setWorkstationIdentityCookies({
     id: deviceId,
@@ -79,11 +181,12 @@ export async function syncWorkstationIdentityFromFormData(formData: FormData) {
 
 export async function getCurrentWorkstationIdentity(): Promise<WorkstationIdentity> {
   const [cookieStore, headerStore] = await Promise.all([cookies(), headers()]);
-  const deviceId = normalizeText(cookieStore.get(STAFF_DEVICE_COOKIE)?.value);
+  const token = normalizeText(cookieStore.get(STAFF_DEVICE_TOKEN_COOKIE)?.value);
+  const tokenPayload = token ? decodeAndVerifyToken(token) : null;
   const deviceNameCookie = normalizeText(cookieStore.get(STAFF_DEVICE_NAME_COOKIE)?.value);
 
   return {
-    id: deviceId,
+    id: tokenPayload?.deviceId ?? null,
     kind: "workstation",
     name:
       deviceNameCookie ??
@@ -96,16 +199,6 @@ export async function getCurrentWorkstationIdentity(): Promise<WorkstationIdenti
 
 export async function assertCurrentWorkstationAccess(supabase: RpcCapableClient) {
   const identity = await getCurrentWorkstationIdentity();
-
-  if (!identity.id) {
-    return {
-      access: "needs_binding",
-      activeDeviceId: null,
-      activeDeviceKind: null,
-      activeDeviceName: null,
-    } satisfies StaffDeviceAssertion;
-  }
-
   const { data, error } = await supabase.rpc("assert_staff_device_access", {
     p_device_id: identity.id,
     p_device_kind: identity.kind,
@@ -142,16 +235,6 @@ export async function ensureCurrentWorkstationAccess(
   supabase: RpcCapableClient,
 ): Promise<StaffDeviceAssertion> {
   const identity = await getCurrentWorkstationIdentity();
-
-  if (!identity.id) {
-    return {
-      access: "blocked",
-      activeDeviceId: null,
-      activeDeviceKind: null,
-      activeDeviceName: null,
-    };
-  }
-
   const { data, error } = await supabase.rpc("assert_staff_device_access", {
     p_device_id: identity.id,
     p_device_kind: identity.kind,
@@ -163,7 +246,7 @@ export async function ensureCurrentWorkstationAccess(
 
   const assertion = toStaffDeviceAssertion(data);
 
-  if (assertion.access !== "needs_binding") {
+  if (assertion.access !== "needs_binding" || !identity.id) {
     return assertion;
   }
 

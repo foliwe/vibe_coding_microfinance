@@ -76,7 +76,7 @@ export async function requireRole(
 
     const assertion = await ensureCurrentWorkstationAccess(supabase);
 
-    if (assertion.access === "blocked") {
+    if (assertion.access !== "allowed") {
       redirect("/workstation-blocked");
     }
   }
@@ -95,7 +95,7 @@ export async function redirectIfSignedIn() {
 
       const assertion = await ensureCurrentWorkstationAccess(supabase);
 
-      if (assertion.access === "blocked") {
+      if (assertion.access !== "allowed") {
         redirect("/workstation-blocked");
       }
     }

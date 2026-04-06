@@ -1,4 +1,4 @@
-export const STAFF_DEVICE_COOKIE = "staff_device_id";
+export const STAFF_DEVICE_TOKEN_COOKIE = "staff_device_token";
 export const STAFF_DEVICE_NAME_COOKIE = "staff_device_name";
 export const WORKSTATION_DEVICE_ID_STORAGE_KEY = "credit-union/workstation-device-id/v1";
 

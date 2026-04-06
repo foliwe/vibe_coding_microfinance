@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import {
+  isWorkstationTokenConfigurationError,
   isBranchManagerSetupComplete,
   syncWorkstationIdentityFromFormData,
 } from "../lib/staff-device";
@@ -21,7 +22,16 @@ async function signInAction(formData: FormData) {
     redirect("/login?reason=invalid-credentials");
   }
 
-  await syncWorkstationIdentityFromFormData(formData);
+  try {
+    await syncWorkstationIdentityFromFormData(formData);
+  } catch (error) {
+    if (isWorkstationTokenConfigurationError(error)) {
+      redirect("/login?reason=workstation-config-missing");
+    }
+
+    throw error;
+  }
+
   const supabase = await createClient();
   const result = await supabase.auth.signInWithPassword({ email, password });
 
