@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import {
-  getCurrentWorkstationIdentity,
+  isWorkstationTokenConfigurationError,
   isBranchManagerSetupComplete,
   syncWorkstationIdentityFromFormData,
 } from "../lib/staff-device";
@@ -22,11 +22,14 @@ async function signInAction(formData: FormData) {
     redirect("/login?reason=invalid-credentials");
   }
 
-  await syncWorkstationIdentityFromFormData(formData);
-  const identity = await getCurrentWorkstationIdentity();
+  try {
+    await syncWorkstationIdentityFromFormData(formData);
+  } catch (error) {
+    if (isWorkstationTokenConfigurationError(error)) {
+      redirect("/login?reason=workstation-config-missing");
+    }
 
-  if (!identity.id) {
-    redirect("/login?reason=workstation-rebind");
+    throw error;
   }
 
   const supabase = await createClient();

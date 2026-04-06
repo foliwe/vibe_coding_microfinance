@@ -31,7 +31,7 @@ export default async function BranchManagerSetupPage({
   if (isBranchManagerSetupComplete(profile)) {
     const assertion = await ensureCurrentWorkstationAccess(supabase);
 
-    redirect(assertion.access === "blocked" ? "/workstation-blocked" : "/branch");
+    redirect(assertion.access === "allowed" ? "/branch" : "/workstation-blocked");
   }
 
   const showError = params?.result === "error" && params.detail;

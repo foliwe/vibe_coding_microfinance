@@ -13,7 +13,6 @@ import {
 
 import { requireRole } from "../lib/auth";
 import {
-  getCurrentWorkstationIdentity,
   registerCurrentWorkstation,
   syncWorkstationIdentityFromFormData,
 } from "../lib/staff-device";
@@ -424,11 +423,6 @@ export async function completeBranchManagerSetupAction(formData: FormData) {
     }
 
     await syncWorkstationIdentityFromFormData(formData);
-    const workstation = await getCurrentWorkstationIdentity();
-
-    if (!workstation.id) {
-      throw new Error("Workstation token could not be validated. Rebind this workstation.");
-    }
 
     if (profile.must_change_password) {
       const { error: updateError } = await supabase.auth.updateUser({
@@ -483,11 +477,6 @@ export async function rebindCurrentWorkstationAction(formData: FormData) {
     });
 
     await syncWorkstationIdentityFromFormData(formData);
-    const workstation = await getCurrentWorkstationIdentity();
-
-    if (!workstation.id) {
-      throw new Error("Workstation token could not be validated. Refresh and try again.");
-    }
     await registerCurrentWorkstation(supabase);
   } catch (error) {
     redirect(

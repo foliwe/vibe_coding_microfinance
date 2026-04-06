@@ -41,6 +41,8 @@ type StaffDeviceTokenPayload = {
 };
 
 const STAFF_DEVICE_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 365;
+export const WORKSTATION_TOKEN_CONFIG_ERROR_MESSAGE =
+  "Workstation security configuration is missing. Ask an administrator to set STAFF_DEVICE_TOKEN_SECRET.";
 
 function strictCookieOptions() {
   return {
@@ -53,14 +55,21 @@ function strictCookieOptions() {
 }
 
 function getSigningSecrets() {
-  const primary =
-    normalizeText(process.env.STAFF_DEVICE_TOKEN_SECRET) ??
-    normalizeText(process.env.NEXTAUTH_SECRET) ??
-    normalizeText(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) ??
-    "dev-staff-device-secret";
+  const primary = normalizeText(process.env.STAFF_DEVICE_TOKEN_SECRET);
   const previous = normalizeText(process.env.STAFF_DEVICE_TOKEN_SECRET_PREVIOUS);
 
-  return [primary, previous].filter((value): value is string => Boolean(value));
+  if (!primary) {
+    return null;
+  }
+
+  return {
+    primary,
+    verification: [primary, previous].filter((value): value is string => Boolean(value)),
+  };
+}
+
+export function isWorkstationTokenConfigurationError(error: unknown) {
+  return error instanceof Error && error.message === WORKSTATION_TOKEN_CONFIG_ERROR_MESSAGE;
 }
 
 function signPayload(encodedPayload: string, secret: string) {
@@ -68,19 +77,26 @@ function signPayload(encodedPayload: string, secret: string) {
 }
 
 function encodeToken(payload: StaffDeviceTokenPayload) {
+  const signingSecrets = getSigningSecrets();
+
+  if (!signingSecrets) {
+    throw new Error(WORKSTATION_TOKEN_CONFIG_ERROR_MESSAGE);
+  }
+
   const encodedPayload = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
-  const signature = signPayload(encodedPayload, getSigningSecrets()[0]);
+  const signature = signPayload(encodedPayload, signingSecrets.primary);
   return `${encodedPayload}.${signature}`;
 }
 
 function decodeAndVerifyToken(token: string): StaffDeviceTokenPayload | null {
+  const signingSecrets = getSigningSecrets();
   const [encodedPayload, signature] = token.split(".");
 
-  if (!encodedPayload || !signature) {
+  if (!signingSecrets || !encodedPayload || !signature) {
     return null;
   }
 
-  const verified = getSigningSecrets().some((secret) => {
+  const verified = signingSecrets.verification.some((secret) => {
     const expected = signPayload(encodedPayload, secret);
     const signatureBuffer = Buffer.from(signature);
     const expectedBuffer = Buffer.from(expected);
@@ -116,14 +132,6 @@ function decodeAndVerifyToken(token: string): StaffDeviceTokenPayload | null {
   } catch {
     return null;
   }
-}
-
-async function clearInvalidWorkstationIdentityCookie() {
-  const cookieStore = await cookies();
-  cookieStore.set(STAFF_DEVICE_TOKEN_COOKIE, "", {
-    ...strictCookieOptions(),
-    maxAge: 0,
-  });
 }
 
 export function isBranchManagerSetupComplete(profile: StaffProfile) {
@@ -177,10 +185,6 @@ export async function getCurrentWorkstationIdentity(): Promise<WorkstationIdenti
   const tokenPayload = token ? decodeAndVerifyToken(token) : null;
   const deviceNameCookie = normalizeText(cookieStore.get(STAFF_DEVICE_NAME_COOKIE)?.value);
 
-  if (token && !tokenPayload) {
-    await clearInvalidWorkstationIdentityCookie();
-  }
-
   return {
     id: tokenPayload?.deviceId ?? null,
     kind: "workstation",
@@ -195,16 +199,6 @@ export async function getCurrentWorkstationIdentity(): Promise<WorkstationIdenti
 
 export async function assertCurrentWorkstationAccess(supabase: RpcCapableClient) {
   const identity = await getCurrentWorkstationIdentity();
-
-  if (!identity.id) {
-    return {
-      access: "blocked",
-      activeDeviceId: null,
-      activeDeviceKind: null,
-      activeDeviceName: null,
-    } satisfies StaffDeviceAssertion;
-  }
-
   const { data, error } = await supabase.rpc("assert_staff_device_access", {
     p_device_id: identity.id,
     p_device_kind: identity.kind,
@@ -241,16 +235,6 @@ export async function ensureCurrentWorkstationAccess(
   supabase: RpcCapableClient,
 ): Promise<StaffDeviceAssertion> {
   const identity = await getCurrentWorkstationIdentity();
-
-  if (!identity.id) {
-    return {
-      access: "blocked",
-      activeDeviceId: null,
-      activeDeviceKind: null,
-      activeDeviceName: null,
-    };
-  }
-
   const { data, error } = await supabase.rpc("assert_staff_device_access", {
     p_device_id: identity.id,
     p_device_kind: identity.kind,
@@ -262,7 +246,7 @@ export async function ensureCurrentWorkstationAccess(
 
   const assertion = toStaffDeviceAssertion(data);
 
-  if (assertion.access !== "needs_binding") {
+  if (assertion.access !== "needs_binding" || !identity.id) {
     return assertion;
   }
 
