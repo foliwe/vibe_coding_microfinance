@@ -1,5 +1,6 @@
 import {
   calculateMonthlyInterest,
+  PASSWORD_POLICY,
   type LoanStatus,
   type TransactionType,
   type TransactionRequest,
@@ -1235,8 +1236,10 @@ export const mobileData = {
         throw new Error("Enter your current temporary password.");
       }
 
-      if (newPassword.length < 8) {
-        throw new Error("New password must be at least 8 characters.");
+      if (newPassword.length < PASSWORD_POLICY.minimumLength) {
+        throw new Error(
+          `New password must be at least ${PASSWORD_POLICY.minimumLength} characters.`,
+        );
       }
 
       if (newPassword !== confirmNewPassword) {
@@ -1365,8 +1368,10 @@ export const mobileData = {
       throw new Error("Enter your current temporary password.");
     }
 
-    if (input.newPassword.trim().length < 8) {
-      throw new Error("New password must be at least 8 characters.");
+    if (input.newPassword.trim().length < PASSWORD_POLICY.minimumLength) {
+      throw new Error(
+        `New password must be at least ${PASSWORD_POLICY.minimumLength} characters.`,
+      );
     }
 
     const { error: updateError } = await supabase.auth.updateUser({
@@ -1424,17 +1429,13 @@ export const mobileData = {
     }
 
     const reconciliation = (reconciliationData as CashReconciliationRow | null) ?? null;
-    const expectedCash = reconciliation
-      ? toNumber(reconciliation.expected_cash)
-      : toNumber(drawer.expected_cash);
+    const expectedCash = toNumber(drawer.expected_cash);
     const actualCash = reconciliation
       ? toNumber(reconciliation.counted_cash)
       : drawer.counted_cash == null
         ? expectedCash
         : toNumber(drawer.counted_cash);
-    const difference = reconciliation
-      ? toNumber(reconciliation.variance)
-      : roundCurrency(actualCash - expectedCash);
+    const difference = roundCurrency(actualCash - expectedCash);
 
     return {
       actualCash,

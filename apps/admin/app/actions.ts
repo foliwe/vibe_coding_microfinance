@@ -8,6 +8,7 @@ import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import type { RepaymentMode, TransactionType } from "@credit-union/shared";
 import {
+  PASSWORD_POLICY,
   assertValidBranchCode,
   provisionMember,
 } from "@credit-union/shared";
@@ -540,8 +541,15 @@ export async function completeBranchManagerSetupAction(formData: FormData) {
 
       await verifyCurrentPassword(profile.email, currentPassword);
 
+
       if (newPassword.length < 8) {
         throw toUserFacingError("New password must be at least 8 characters.");
+
+      if (newPassword.length < PASSWORD_POLICY.minimumLength) {
+        throw new Error(
+          `New password must be at least ${PASSWORD_POLICY.minimumLength} characters.`,
+        );
+
       }
 
       if (newPassword !== confirmNewPassword) {
@@ -1109,8 +1117,15 @@ export async function createManagerAction(formData: FormData) {
     const password = requiredValue(formData, "password", "Temporary password");
     const branchId = requiredValue(formData, "branchId", "Branch");
 
+
     if (password.length < 8) {
       throw toUserFacingError("Temporary password must be at least 8 characters.");
+
+    if (password.length < PASSWORD_POLICY.minimumLength) {
+      throw new Error(
+        `Temporary password must be at least ${PASSWORD_POLICY.minimumLength} characters.`,
+      );
+
     }
 
     const user = await createAuthUser(email, password, fullName);
@@ -1203,8 +1218,15 @@ export async function createAgentAction(formData: FormData) {
       optionalValue(formData, "branchId"),
     );
 
+
     if (password.length < 8) {
       throw toUserFacingError("Temporary password must be at least 8 characters.");
+
+    if (password.length < PASSWORD_POLICY.minimumLength) {
+      throw new Error(
+        `Temporary password must be at least ${PASSWORD_POLICY.minimumLength} characters.`,
+      );
+
     }
 
     const branch = await getBranchRecord(branchId);

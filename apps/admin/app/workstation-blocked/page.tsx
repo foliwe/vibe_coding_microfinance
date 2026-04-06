@@ -29,11 +29,11 @@ export default async function WorkstationBlockedPage() {
 
   const assertion = await assertCurrentWorkstationAccess(supabase);
 
-  if (assertion.access !== "blocked") {
+  if (assertion.access === "allowed") {
     redirect("/branch");
   }
 
-  const resetNeedsRebind = !assertion.activeDeviceId;
+  const resetNeedsRebind = assertion.access === "needs_binding";
 
   return (
     <main className="login-page">
@@ -47,7 +47,7 @@ export default async function WorkstationBlockedPage() {
           </h1>
           <p className="muted">
             {resetNeedsRebind
-              ? "A reset cleared the previous workstation binding. Trust this browser profile again to continue."
+              ? "No active trusted workstation is registered for this account. Trust this browser profile again to continue."
               : "Ask an admin or permitted branch manager to reset the trusted workstation binding for this staff account, then sign in again to rebind."}
           </p>
         </section>

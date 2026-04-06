@@ -518,7 +518,7 @@ export function AgentAddMemberScreen() {
           <InfoRow label="Sign-in Code" value={createdAccess.signInIdentifier} />
           <InfoRow label="Temporary Password" value={createdAccess.temporaryPassword} />
           <View style={{ marginTop: spacing.sm }}>
-            <SecondaryButton label="Back To Members" onPress={() => router.replace("/agent/(tabs)/members")} />
+            <SecondaryButton label="Back To Members" onPress={() => router.replace("/agent/members")} />
           </View>
         </SurfaceCard>
       ) : null}
@@ -648,7 +648,7 @@ export function AgentDepositScreen() {
                       return;
                     }
 
-                    router.replace("/agent/(tabs)/transactions");
+                    router.replace("/agent/transactions");
                   })
                   .catch((nextError) => {
                     setSubmissionError(getErrorMessage(nextError, "We could not submit the deposit."));
@@ -714,7 +714,7 @@ export function AgentWithdrawalScreen() {
 
                 void submitTransaction(target, "withdrawal", amount, reason, transactionPin)
                   .then(() => {
-                    router.replace("/agent/(tabs)/transactions");
+                    router.replace("/agent/transactions");
                   })
                   .catch((nextError) => {
                     setSubmissionError(getErrorMessage(nextError, "We could not submit the withdrawal."));
