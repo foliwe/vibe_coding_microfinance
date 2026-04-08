@@ -11,7 +11,7 @@ import {
   type LoanCard,
   type MemberDashboard,
   type TrendDatum,
-} from "@/mocks/mobile-data";
+} from "./mobile-models";
 
 import {
   getOfflineSyncQueue,

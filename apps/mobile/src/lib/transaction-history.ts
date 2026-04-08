@@ -59,7 +59,7 @@ export function getCurrentTransactionMonthKey() {
 }
 
 export function buildTransactionMonthTabs(
-  transactions: Array<{ createdAt: string }>,
+  transactions: { createdAt: string }[],
   currentMonthKey = getCurrentTransactionMonthKey(),
 ): TransactionMonthTab[] {
   const monthKeys = new Set<string>([currentMonthKey]);

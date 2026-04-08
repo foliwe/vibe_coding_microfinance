@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { OfflineSyncEnvelope } from "@credit-union/shared";
 
-import type { SyncQueueItem } from "@/mocks/mobile-data";
+import type { SyncQueueItem } from "./mobile-models";
 
 import {
   createQueuedTransactionEntry,
