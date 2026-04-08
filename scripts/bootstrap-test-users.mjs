@@ -13,6 +13,10 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const TEST_BRANCH_CODE = process.env.TEST_BRANCH_CODE ?? "BAM";
+const TEST_BRANCH_NAME = process.env.TEST_BRANCH_NAME ?? "Bamenda Central";
+const TEST_BRANCH_CITY = process.env.TEST_BRANCH_CITY ?? "Bamenda";
+const TEST_BRANCH_REGION = process.env.TEST_BRANCH_REGION ?? "Northwest";
+const TEST_BRANCH_PHONE = process.env.TEST_BRANCH_PHONE ?? "+237670000001";
 
 const TEST_MANAGER_EMAIL = process.env.TEST_MANAGER_EMAIL ?? "manager@example.com";
 const TEST_MANAGER_PASSWORD = process.env.TEST_MANAGER_PASSWORD ?? "Manager123456!";
@@ -100,20 +104,111 @@ async function ensureAuthUser({ email, password, fullName }) {
 }
 
 async function getBranchByCode(code) {
-  const response = await supabase
+  const existingResponse = await supabase
     .from("branches")
     .select("id, name, code")
-    .eq("code", code)
-    .single();
+    .eq("code", code);
 
-  if (response.error || !response.data) {
-    fail(`Unable to find branch with code ${code}: ${response.error?.message ?? "Missing row"}`);
+  if (existingResponse.error) {
+    fail(`Unable to find branch with code ${code}: ${existingResponse.error.message}`);
   }
 
-  return response.data;
+  const rows = existingResponse.data ?? [];
+
+  if (rows.length > 1) {
+    fail(`Found multiple branches with code ${code}. Clean up duplicates before bootstrapping test users.`);
+  }
+
+  if (rows.length === 1) {
+    return rows[0];
+  }
+
+  const createdResponse = await supabase
+    .from("branches")
+    .insert({
+      code,
+      city: TEST_BRANCH_CITY,
+      name: TEST_BRANCH_NAME,
+      phone: TEST_BRANCH_PHONE,
+      region: TEST_BRANCH_REGION,
+      status: "active",
+    })
+    .select("id, name, code")
+    .single();
+
+  if (createdResponse.error || !createdResponse.data) {
+    fail(
+      `Unable to create branch with code ${code}: ${createdResponse.error?.message ?? "Unknown error"}`,
+    );
+  }
+
+  return createdResponse.data;
+}
+
+function buildScopedPhone(code, role, userId) {
+  const branchDigits = code
+    .toUpperCase()
+    .slice(0, 3)
+    .padEnd(3, "X")
+    .split("")
+    .map((character) => {
+      const codePoint = character.charCodeAt(0);
+      return String(Number.isFinite(codePoint) ? codePoint % 10 : 0);
+    })
+    .join("");
+  const roleDigits =
+    role === "branch_manager"
+      ? "101"
+      : role === "agent"
+        ? "102"
+        : "103";
+  const userDigits = userId.replace(/\D/g, "").slice(0, 4).padEnd(4, "0");
+
+  return `+2378${branchDigits}${roleDigits}${userDigits}`;
+}
+
+async function resolveUniquePhone({
+  branchCode,
+  desiredPhone,
+  role,
+  userId,
+}) {
+  const existingResponse = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("phone", desiredPhone)
+    .maybeSingle();
+
+  if (existingResponse.error) {
+    fail(`Unable to verify phone ${desiredPhone}: ${existingResponse.error.message}`);
+  }
+
+  if (!existingResponse.data || existingResponse.data.id === userId) {
+    return desiredPhone;
+  }
+
+  const scopedPhone = buildScopedPhone(branchCode, role, userId);
+  const scopedResponse = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("phone", scopedPhone)
+    .maybeSingle();
+
+  if (scopedResponse.error) {
+    fail(`Unable to verify fallback phone ${scopedPhone}: ${scopedResponse.error.message}`);
+  }
+
+  if (scopedResponse.data && scopedResponse.data.id !== userId) {
+    fail(
+      `Fallback phone ${scopedPhone} is already assigned to another profile. Set TEST_${role.toUpperCase()}_PHONE to a unique value and retry.`,
+    );
+  }
+
+  return scopedPhone;
 }
 
 async function upsertProfile({
+  branchCode,
   userId,
   role,
   fullName,
@@ -121,6 +216,12 @@ async function upsertProfile({
   email,
   branchId,
 }) {
+  const resolvedPhone = await resolveUniquePhone({
+    branchCode,
+    desiredPhone: phone,
+    role,
+    userId,
+  });
   const response = await supabase
     .from("profiles")
     .upsert(
@@ -128,7 +229,7 @@ async function upsertProfile({
         id: userId,
         role,
         full_name: fullName,
-        phone,
+        phone: resolvedPhone,
         email,
         branch_id: branchId,
         must_change_password: false,
@@ -169,7 +270,51 @@ async function upsertStaffUser(profileId, branchId) {
   return response.data;
 }
 
+async function resolveUniqueMemberIdNumber({
+  desiredIdNumber,
+  profileId,
+  signInCode,
+}) {
+  const existingResponse = await supabase
+    .from("member_profiles")
+    .select("profile_id")
+    .eq("id_number", desiredIdNumber)
+    .maybeSingle();
+
+  if (existingResponse.error) {
+    fail(`Unable to verify member ID number ${desiredIdNumber}: ${existingResponse.error.message}`);
+  }
+
+  if (!existingResponse.data || existingResponse.data.profile_id === profileId) {
+    return desiredIdNumber;
+  }
+
+  const scopedIdNumber = `${desiredIdNumber}-${signInCode}`;
+  const scopedResponse = await supabase
+    .from("member_profiles")
+    .select("profile_id")
+    .eq("id_number", scopedIdNumber)
+    .maybeSingle();
+
+  if (scopedResponse.error) {
+    fail(`Unable to verify fallback member ID number ${scopedIdNumber}: ${scopedResponse.error.message}`);
+  }
+
+  if (scopedResponse.data && scopedResponse.data.profile_id !== profileId) {
+    fail(
+      `Fallback member ID number ${scopedIdNumber} is already assigned to another profile. Set TEST_MEMBER_ID_NUMBER to a unique value and retry.`,
+    );
+  }
+
+  return scopedIdNumber;
+}
+
 async function upsertMemberProfile(profileId, branchId, assignedAgentId, createdBy) {
+  const resolvedIdNumber = await resolveUniqueMemberIdNumber({
+    desiredIdNumber: TEST_MEMBER_ID_NUMBER,
+    profileId,
+    signInCode: TEST_MEMBER_SIGN_IN_CODE,
+  });
   const response = await supabase
     .from("member_profiles")
     .upsert(
@@ -177,7 +322,7 @@ async function upsertMemberProfile(profileId, branchId, assignedAgentId, created
         profile_id: profileId,
         branch_id: branchId,
         assigned_agent_id: assignedAgentId,
-        id_number: TEST_MEMBER_ID_NUMBER,
+        id_number: resolvedIdNumber,
         id_type: "ID Card",
         sign_in_code: TEST_MEMBER_SIGN_IN_CODE,
         status: "active",
@@ -323,6 +468,7 @@ async function main() {
   });
 
   const managerProfile = await upsertProfile({
+    branchCode: branch.code,
     userId: managerUser.id,
     role: "branch_manager",
     fullName: TEST_MANAGER_NAME,
@@ -331,6 +477,7 @@ async function main() {
     branchId: branch.id,
   });
   const agentProfile = await upsertProfile({
+    branchCode: branch.code,
     userId: agentUser.id,
     role: "agent",
     fullName: TEST_AGENT_NAME,
@@ -339,6 +486,7 @@ async function main() {
     branchId: branch.id,
   });
   const memberProfile = await upsertProfile({
+    branchCode: branch.code,
     userId: memberUser.id,
     role: "member",
     fullName: TEST_MEMBER_NAME,

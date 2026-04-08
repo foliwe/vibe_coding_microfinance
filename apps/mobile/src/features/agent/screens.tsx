@@ -33,7 +33,7 @@ import {
   getCurrentTransactionMonthKey,
 } from "@/lib/transaction-history";
 import { useResource } from "@/lib/use-resource";
-import type { SyncQueueItem } from "@/mocks/mobile-data";
+import type { SyncQueueItem } from "@/lib/mobile-models";
 import type { TransactionRequest } from "@credit-union/shared";
 import { colors, spacing, typography } from "@/theme/tokens";
 

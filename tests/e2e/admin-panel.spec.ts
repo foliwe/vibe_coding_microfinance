@@ -1,6 +1,12 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import {
+  STAFF_DEVICE_COOKIE,
+  STAFF_DEVICE_NAME_COOKIE,
+  WORKSTATION_DEVICE_ID_STORAGE_KEY,
+} from "../../apps/admin/lib/staff-device-shared";
 
 import {
+  createPendingCashReconciliation,
   createPendingTransactionRequest,
   getMemberAccountsByProfileId,
   getProfileByEmail,
@@ -11,11 +17,51 @@ import {
   seededUsers,
 } from "./support/admin-panel-fixtures";
 
+const PLAYWRIGHT_WORKSTATION_ID = "workstation-playwright-e2e";
+const PLAYWRIGHT_WORKSTATION_NAME = "Playwright-Chromium";
+
+async function primeWorkstationIdentity(page: Page) {
+  await page.addInitScript(
+    ({ storageKey, workstationId }) => {
+      window.localStorage.setItem(storageKey, workstationId);
+    },
+    {
+      storageKey: WORKSTATION_DEVICE_ID_STORAGE_KEY,
+      workstationId: PLAYWRIGHT_WORKSTATION_ID,
+    },
+  );
+
+  await page.context().addCookies([
+    {
+      name: STAFF_DEVICE_COOKIE,
+      url: "http://127.0.0.1:3000",
+      value: PLAYWRIGHT_WORKSTATION_ID,
+    },
+    {
+      name: STAFF_DEVICE_NAME_COOKIE,
+      url: "http://127.0.0.1:3000",
+      value: PLAYWRIGHT_WORKSTATION_NAME,
+    },
+  ]);
+}
+
 async function signIn(page: Page, credentials: { email: string; password: string }) {
+  await primeWorkstationIdentity(page);
   await page.goto("/login");
   await page.getByLabel("Email").fill(credentials.email);
   await page.getByLabel("Password").fill(credentials.password);
   await page.getByRole("button", { name: "Sign in" }).click();
+
+  await page.waitForLoadState("networkidle");
+
+  if (page.url().includes("/workstation-blocked")) {
+    const trustButton = page.getByRole("button", { name: "Trust This Workstation" });
+
+    if (await trustButton.isVisible()) {
+      await trustButton.click();
+      await page.waitForLoadState("networkidle");
+    }
+  }
 }
 
 async function signOut(page: Page) {
@@ -33,10 +79,10 @@ async function completeBranchManagerSetup(
 ) {
   await expect(page).toHaveURL(/\/setup$/);
   await page.getByLabel("Current Temporary Password").fill(input.currentPassword);
-  await page.getByLabel("New Password").fill(input.newPassword);
-  await page.getByLabel("Confirm New Password").fill(input.newPassword);
-  await page.getByLabel("Transaction PIN").fill(input.transactionPin);
-  await page.getByLabel("Confirm Transaction PIN").fill(input.transactionPin);
+  await page.getByLabel("New Password", { exact: true }).fill(input.newPassword);
+  await page.getByLabel("Confirm New Password", { exact: true }).fill(input.newPassword);
+  await page.getByLabel("Transaction PIN", { exact: true }).fill(input.transactionPin);
+  await page.getByLabel("Confirm Transaction PIN", { exact: true }).fill(input.transactionPin);
   await page.getByRole("button", { name: "Complete Security Setup" }).click();
   await expect(page).toHaveURL(/\/branch\?result=success/);
 }
@@ -103,7 +149,7 @@ test.describe("admin panel end-to-end flows", () => {
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByLabel("breadcrumb")).toContainText("Admin Dashboard");
     await expect(page.getByRole("heading", { level: 1, name: "Admin Dashboard" })).toBeVisible();
-    await expect(page.getByText("All branches")).toBeVisible();
+    await expect(page.getByRole("main")).toContainText("All branches");
     await expect(page.getByRole("link", { name: "Branches" })).toBeVisible();
 
     await page.getByRole("link", { name: "Branches" }).click();
@@ -117,8 +163,6 @@ test.describe("admin panel end-to-end flows", () => {
 
     await page.goto("/transactions/deposit");
     await expect(page.getByRole("heading", { level: 1, name: "Create Deposit" })).toBeVisible();
-    await branchSelect(page).selectOption(context.branch.id);
-    await memberSelect(page).selectOption(context.member.id);
     await memberAccountSelect(page).selectOption(context.savingsAccount.id);
     await cashDrawerAgentSelect(page).selectOption(context.agent.id);
     await page.getByLabel("Amount").fill("150");
@@ -131,8 +175,6 @@ test.describe("admin panel end-to-end flows", () => {
     await expect(
       page.getByRole("heading", { level: 1, name: "Create Withdrawal" }),
     ).toBeVisible();
-    await branchSelect(page).selectOption(context.branch.id);
-    await memberSelect(page).selectOption(context.member.id);
     await memberAccountSelect(page).selectOption(context.savingsAccount.id);
     await cashDrawerAgentSelect(page).selectOption(context.agent.id);
     await page.getByLabel("Amount").fill("25");
@@ -168,7 +210,10 @@ test.describe("admin panel end-to-end flows", () => {
 
     await expect(page).toHaveURL(/\/transactions\?result=success/);
     await expect(page.getByText("Transaction approved.")).toBeVisible();
-    await expect(transactionRow(page, request.reference)).toHaveCount(0);
+    await expect(transactionRow(page, request.reference)).toContainText("approved");
+    await expect(
+      transactionRow(page, request.reference).getByRole("button", { name: "Approve" }),
+    ).toHaveCount(0);
 
     await signOut(page);
   });
@@ -191,7 +236,58 @@ test.describe("admin panel end-to-end flows", () => {
 
     await expect(page).toHaveURL(/\/transactions\?result=success/);
     await expect(page.getByText("Transaction rejected.")).toBeVisible();
-    await expect(transactionRow(page, request.reference)).toHaveCount(0);
+    await expect(transactionRow(page, request.reference)).toContainText("rejected");
+    await expect(
+      transactionRow(page, request.reference).getByRole("button", { name: "Reject" }),
+    ).toHaveCount(0);
+
+    await signOut(page);
+  });
+
+  test("branch manager can approve a pending cash reconciliation", async ({
+    page,
+  }) => {
+    const reconciliation = await createPendingCashReconciliation({
+      countedCash: 128,
+      expectedCash: 100,
+    });
+
+    await signIn(page, seededUsers.manager);
+    await expect(page).toHaveURL(/\/branch$/);
+
+    await page.goto("/reconciliation");
+    const row = transactionRow(page, reconciliation.reference);
+    await expect(row).toBeVisible();
+    await expect(row).toContainText(reconciliation.varianceReason);
+    await row.getByRole("button", { name: "Approve" }).click();
+
+    await expect(page).toHaveURL(/\/reconciliation\?result=success/);
+    await expect(page.getByText("Cash reconciliation approved.")).toBeVisible();
+    await expect(transactionRow(page, reconciliation.reference)).toContainText("approved");
+
+    await signOut(page);
+  });
+
+  test("branch manager can reject a pending cash reconciliation", async ({
+    page,
+  }) => {
+    const reconciliation = await createPendingCashReconciliation({
+      countedCash: 92,
+      expectedCash: 100,
+    });
+
+    await signIn(page, seededUsers.manager);
+    await expect(page).toHaveURL(/\/branch$/);
+
+    await page.goto("/reconciliation");
+    const row = transactionRow(page, reconciliation.reference);
+    await expect(row).toBeVisible();
+    await expect(row).toContainText(reconciliation.varianceReason);
+    await row.getByRole("button", { name: "Reject" }).click();
+
+    await expect(page).toHaveURL(/\/reconciliation\?result=success/);
+    await expect(page.getByText("Cash reconciliation rejected.")).toBeVisible();
+    await expect(transactionRow(page, reconciliation.reference)).toContainText("rejected");
 
     await signOut(page);
   });
@@ -280,7 +376,7 @@ test.describe("admin panel end-to-end flows", () => {
     await expect(page).toHaveURL(new RegExp(`/agents/${createdAgent.id}$`));
     await expect(page.getByRole("heading", { level: 1, name: agent.fullName })).toBeVisible();
     await expect(page.getByLabel("breadcrumb")).toContainText("Agents");
-    await expect(page.getByText("Assigned Members")).toBeVisible();
+    await expect(page.getByRole("main")).toContainText("Assigned Members");
 
     await page.goto("/members/new");
     await expect(page.getByRole("heading", { level: 1, name: "Create Member" })).toBeVisible();
