@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import type { Route } from "next";
 import { redirect } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
@@ -57,6 +57,13 @@ type SafeUserErrorInput = {
   errorCode: string;
 };
 
+type ClosedDrawerApprovalState = {
+  businessDate: string;
+  drawerStatus: "closed" | "pending_review";
+  nextApprovalAt: string;
+  transactionType: "deposit" | "withdrawal";
+};
+
 type ErrorDiagnostics = {
   rawCode?: string;
   rawDetails?: string;
@@ -90,6 +97,53 @@ function buildRedirect(path: string, result: RedirectResult, detail?: string): R
   }
 
   return `${path}?${params.toString()}` as Route;
+}
+
+function buildRedirectWithParams(
+  path: string,
+  params: Record<string, string | null | undefined>,
+): Route {
+  const searchParams = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value) {
+      searchParams.set(key, value);
+    }
+  }
+
+  const query = searchParams.toString();
+  return `${path}${query ? `?${query}` : ""}` as Route;
+}
+
+async function getCurrentTransactionRedirectParams() {
+  const headerStore = await headers();
+  const referer = normalizeText(headerStore.get("referer"));
+
+  if (!referer) {
+    return new URLSearchParams();
+  }
+
+  try {
+    const refererUrl = new URL(referer);
+
+    if (refererUrl.pathname !== "/transactions") {
+      return new URLSearchParams();
+    }
+
+    const params = new URLSearchParams();
+
+    for (const key of ["accountType", "agentId", "branchId", "type"]) {
+      const value = refererUrl.searchParams.get(key);
+
+      if (value) {
+        params.set(key, value);
+      }
+    }
+
+    return params;
+  } catch {
+    return new URLSearchParams();
+  }
 }
 
 function normalizeText(value: unknown) {
@@ -181,6 +235,28 @@ function toRedirectErrorMessage(input: SafeUserErrorInput) {
   }
 
   return toSafeUserError(input);
+}
+
+function parseClosedDrawerApprovalError(error: unknown): ClosedDrawerApprovalState | null {
+  const diagnostics = getErrorDiagnostics(error);
+  const match = diagnostics.rawMessage.match(
+    /^cash drawer is (closed|pending_review) and cannot accept (deposit|withdrawal) for (\d{4}-\d{2}-\d{2})$/i,
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const [, drawerStatus, transactionType, businessDate] = match;
+  const nextApprovalAt = new Date(`${businessDate}T00:00:00.000Z`);
+  nextApprovalAt.setUTCDate(nextApprovalAt.getUTCDate() + 1);
+
+  return {
+    businessDate,
+    drawerStatus: drawerStatus.toLowerCase() as "closed" | "pending_review",
+    nextApprovalAt: nextApprovalAt.toISOString(),
+    transactionType: transactionType.toLowerCase() as "deposit" | "withdrawal",
+  };
 }
 
 async function clearMemberCreationFlash() {
@@ -477,29 +553,60 @@ async function mutateTransactionRequest(
       throw error;
     }
   } catch (error) {
+    const transactionRedirectParams = await getCurrentTransactionRedirectParams();
+    const closedDrawerState =
+      action === "approve_transaction_request"
+        ? parseClosedDrawerApprovalError(error)
+        : null;
+
+    if (closedDrawerState) {
+      redirect(
+        buildRedirectWithParams("/transactions", {
+          accountType: transactionRedirectParams.get("accountType"),
+          agentId: transactionRedirectParams.get("agentId"),
+          businessDate: closedDrawerState.businessDate,
+          branchId: transactionRedirectParams.get("branchId"),
+          drawerStatus: closedDrawerState.drawerStatus,
+          modal: "drawer-closed",
+          nextApprovalAt: closedDrawerState.nextApprovalAt,
+          result: "error",
+          transactionType: closedDrawerState.transactionType,
+          type: transactionRedirectParams.get("type"),
+        }),
+      );
+    }
+
     redirect(
-      buildRedirect(
-        "/transactions",
-        "error",
-        toRedirectErrorMessage({
+      buildRedirectWithParams("/transactions", {
+        accountType: transactionRedirectParams.get("accountType"),
+        agentId: transactionRedirectParams.get("agentId"),
+        branchId: transactionRedirectParams.get("branchId"),
+        detail: toRedirectErrorMessage({
           action,
           error,
           userMessage: "Unable to update this transaction request.",
           errorCode: "TXN_REQUEST_FAILED",
         }),
-      ),
+        result: "error",
+        type: transactionRedirectParams.get("type"),
+      }),
     );
   }
 
   revalidatePath("/transactions");
   revalidatePath("/");
   revalidatePath("/branch");
+  const transactionRedirectParams = await getCurrentTransactionRedirectParams();
   redirect(
-    buildRedirect(
-      "/transactions",
-      "success",
-      action === "approve_transaction_request" ? "Transaction approved." : "Transaction rejected.",
-    ),
+    buildRedirectWithParams("/transactions", {
+      accountType: transactionRedirectParams.get("accountType"),
+      agentId: transactionRedirectParams.get("agentId"),
+      branchId: transactionRedirectParams.get("branchId"),
+      detail:
+        action === "approve_transaction_request" ? "Transaction approved." : "Transaction rejected.",
+      result: "success",
+      type: transactionRedirectParams.get("type"),
+    }),
   );
 }
 

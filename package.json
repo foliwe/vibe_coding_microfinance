@@ -11,6 +11,7 @@
     "dev:mobile": "npm run dev --workspace @credit-union/mobile --",
     "create:test-admin": "node scripts/create-test-admin.mjs",
     "create:test-users": "node scripts/bootstrap-test-users.mjs",
+    "seed:branch-managers": "node scripts/seed-branch-managers.mjs",
     "smoke:schema": "node scripts/verify-loan-workflow-schema.mjs",
     "smoke:admin": "node scripts/smoke-admin-workflow.mjs",
     "smoke": "npm run smoke:schema && npm run smoke:admin",

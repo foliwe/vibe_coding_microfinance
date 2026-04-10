@@ -18,9 +18,18 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "../../components/ui/native-select";
+import { ClosedDrawerApprovalModal } from "../../components/closed-drawer-approval-modal";
 
 function firstParam(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function isDrawerStatus(value?: string): value is "closed" | "pending_review" {
+  return value === "closed" || value === "pending_review";
+}
+
+function isTransactionType(value?: string): value is "deposit" | "withdrawal" {
+  return value === "deposit" || value === "withdrawal";
 }
 
 function toFilters(
@@ -241,8 +250,13 @@ export default async function TransactionsPage({
     accountType?: string | string[];
     agentId?: string | string[];
     branchId?: string | string[];
+    businessDate?: string | string[];
     detail?: string | string[];
+    drawerStatus?: string | string[];
+    modal?: string | string[];
+    nextApprovalAt?: string | string[];
     result?: string | string[];
+    transactionType?: string | string[];
     type?: string | string[];
   }>;
 }) {
@@ -260,7 +274,18 @@ export default async function TransactionsPage({
   } = await getTransactionQueuePageData(filterValues);
   const result = firstParam(params?.result);
   const detail = firstParam(params?.detail);
+  const modal = firstParam(params?.modal);
+  const businessDate = firstParam(params?.businessDate);
+  const drawerStatus = firstParam(params?.drawerStatus);
+  const nextApprovalAt = firstParam(params?.nextApprovalAt);
+  const transactionType = firstParam(params?.transactionType);
   const role = profile.role === "admin" ? "admin" : "branch_manager";
+  const showClosedDrawerModal =
+    modal === "drawer-closed" &&
+    Boolean(businessDate) &&
+    Boolean(nextApprovalAt) &&
+    isDrawerStatus(drawerStatus) &&
+    isTransactionType(transactionType);
 
   return (
     <AdminShell
@@ -272,7 +297,15 @@ export default async function TransactionsPage({
       title="Transactions"
       subtitle="Pending approvals stay pinned at the top while full transaction history remains searchable below."
     >
-      <TransactionResultNotice detail={detail} result={result} />
+      {showClosedDrawerModal && businessDate && nextApprovalAt ? (
+        <ClosedDrawerApprovalModal
+          businessDate={businessDate}
+          drawerStatus={drawerStatus}
+          nextApprovalAt={nextApprovalAt}
+          transactionType={transactionType}
+        />
+      ) : null}
+      {!showClosedDrawerModal ? <TransactionResultNotice detail={detail} result={result} /> : null}
       <div className="actions">
         <Link className="button" href="/transactions/deposit">
           New Deposit
