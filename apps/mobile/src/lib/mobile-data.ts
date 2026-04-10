@@ -21,7 +21,6 @@ import {
   queueTransactionRequest,
   syncOfflineQueue,
 } from "./offline-sync";
-import { getMobileDeviceId } from "./device-id";
 import { queueEntryToTransactionRequest } from "./offline-sync-core";
 import { requireCurrentMobileProfile } from "./mobile-auth";
 import {
@@ -1170,12 +1169,11 @@ export const mobileData = {
     }
 
     const idempotencyKey = buildIdempotencyKey(profile.id, transactionType);
-    const deviceId = await getMobileDeviceId();
 
     const { data, error } = await supabase.rpc("create_transaction_request", {
       p_actor_id: profile.id,
       p_amount: Number(amount.toFixed(2)),
-      p_device_id: "expo-mobile",
+      p_device_id: device.id,
       p_idempotency_key: idempotencyKey,
       p_member_account_id: memberAccountId,
       p_note: note?.trim() || null,
@@ -1191,7 +1189,7 @@ export const mobileData = {
           accountType,
           actorId: profile.id,
           amount,
-          deviceId,
+          deviceId: device.id,
           memberAccountId,
           memberId,
           memberName,

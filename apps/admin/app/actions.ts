@@ -94,11 +94,11 @@ function buildRedirect(path: string, result: RedirectResult, detail?: string): R
 
 function normalizeText(value: unknown) {
   if (typeof value !== "string") {
-    return null;
+    return undefined;
   }
 
   const trimmed = value.trim();
-  return trimmed ? trimmed : null;
+  return trimmed ? trimmed : undefined;
 }
 
 function toUserFacingError(message: string) {
@@ -542,14 +542,10 @@ export async function completeBranchManagerSetupAction(formData: FormData) {
       await verifyCurrentPassword(profile.email, currentPassword);
 
 
-      if (newPassword.length < 8) {
-        throw toUserFacingError("New password must be at least 8 characters.");
-
       if (newPassword.length < PASSWORD_POLICY.minimumLength) {
-        throw new Error(
+        throw toUserFacingError(
           `New password must be at least ${PASSWORD_POLICY.minimumLength} characters.`,
         );
-
       }
 
       if (newPassword !== confirmNewPassword) {
@@ -1117,15 +1113,10 @@ export async function createManagerAction(formData: FormData) {
     const password = requiredValue(formData, "password", "Temporary password");
     const branchId = requiredValue(formData, "branchId", "Branch");
 
-
-    if (password.length < 8) {
-      throw toUserFacingError("Temporary password must be at least 8 characters.");
-
     if (password.length < PASSWORD_POLICY.minimumLength) {
-      throw new Error(
+      throw toUserFacingError(
         `Temporary password must be at least ${PASSWORD_POLICY.minimumLength} characters.`,
       );
-
     }
 
     const user = await createAuthUser(email, password, fullName);
@@ -1218,15 +1209,10 @@ export async function createAgentAction(formData: FormData) {
       optionalValue(formData, "branchId"),
     );
 
-
-    if (password.length < 8) {
-      throw toUserFacingError("Temporary password must be at least 8 characters.");
-
     if (password.length < PASSWORD_POLICY.minimumLength) {
-      throw new Error(
+      throw toUserFacingError(
         `Temporary password must be at least ${PASSWORD_POLICY.minimumLength} characters.`,
       );
-
     }
 
     const branch = await getBranchRecord(branchId);

@@ -4,6 +4,7 @@ import type { OfflineSyncEnvelope } from "@credit-union/shared";
 import type { SyncQueueItem } from "./mobile-models";
 
 import {
+  OFFLINE_SYNC_DEVICE_ID,
   createQueuedTransactionEntry,
   type OfflineSyncQueueEntry,
   type QueuedTransactionPayload,
@@ -13,7 +14,6 @@ import {
   toQueueTypeLabel,
   withRetryMetadata,
 } from "./offline-sync-core";
-import { getMobileDeviceId } from "./device-id";
 import { getErrorMessage } from "./errors";
 import { getMobileStaffDeviceIdentity } from "./staff-device";
 import { getSupabaseClient } from "./supabase/client";
@@ -83,7 +83,29 @@ async function readQueue() {
       return [];
     }
 
-    return sortByCreatedAtDesc(parsed.filter(isQueueEntry));
+    const entries = parsed.filter(isQueueEntry);
+    let didMigrateLegacyDeviceIds = false;
+
+    try {
+      const identity = await getMobileStaffDeviceIdentity();
+
+      for (const entry of entries) {
+        if (entry.deviceId === OFFLINE_SYNC_DEVICE_ID) {
+          entry.deviceId = identity.id;
+          didMigrateLegacyDeviceIds = true;
+        }
+      }
+    } catch {
+      // Leave queued entries untouched if device identity is temporarily unavailable.
+    }
+
+    const sortedEntries = sortByCreatedAtDesc(entries);
+
+    if (didMigrateLegacyDeviceIds) {
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(sortedEntries));
+    }
+
+    return sortedEntries;
   } catch {
     return [];
   }
@@ -155,7 +177,7 @@ export async function queueTransactionRequest(input: {
 }) {
   const entry = createQueuedTransactionEntry({
     ...input,
-    deviceId: OFFLINE_SYNC_DEVICE_ID,
+    deviceId: input.deviceId,
   });
 
   const queue = await readQueue();
