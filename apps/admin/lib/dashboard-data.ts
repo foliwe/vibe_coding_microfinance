@@ -10,6 +10,7 @@ import {
 } from "@credit-union/shared";
 
 import { requireRole, type AdminProfile } from "./auth";
+import { summarizeMemberDetailCards } from "./member-detail-summary";
 import { hasSupabaseEnv } from "./supabase/env";
 
 export type BranchPerformanceChartPoint = {
@@ -1564,9 +1565,13 @@ export async function getMemberDetailPageData(memberId: string): Promise<MemberD
   const accounts = (accountRowsData as MemberAccountRow[] | null) ?? [];
   const accountDetails = await Promise.all(
     accounts.map(async (account) => {
-      const { data } = await supabase.rpc("get_member_account_balance", {
+      const { data, error } = await supabase.rpc("get_member_account_balance", {
         p_member_account_id: account.id,
       });
+
+      if (error) {
+        throw error;
+      }
 
       return {
         id: account.id,
@@ -1583,8 +1588,12 @@ export async function getMemberDetailPageData(memberId: string): Promise<MemberD
     (transactionRowsData as TransactionRow[] | null) ?? [],
   );
   const loans = (loanRowsData as LoanRow[] | null) ?? [];
-  const savingsBalance = accountDetails.find((account) => account.accountType === "savings")?.balance ?? 0;
-  const depositBalance = accountDetails.find((account) => account.accountType === "deposit")?.balance ?? 0;
+  const memberCards = summarizeMemberDetailCards(
+    accountDetails,
+    loans.map((loan) => ({
+      remainingPrincipal: toNumber(loan.remaining_principal),
+    })),
+  );
 
   return {
     currentBranchLabel,
@@ -1599,14 +1608,11 @@ export async function getMemberDetailPageData(memberId: string): Promise<MemberD
       status: memberProfile.status,
       occupation: memberProfile.occupation,
       address: memberProfile.residential_address,
-      activeLoanCount: loans.filter((loan) => toNumber(loan.remaining_principal) > 0).length,
-      outstandingLoanBalance: loans.reduce(
-        (sum, loan) => sum + toNumber(loan.remaining_principal),
-        0,
-      ),
+      activeLoanCount: memberCards.activeLoanCount,
+      outstandingLoanBalance: memberCards.outstandingLoanBalance,
       pendingTransactions: pendingTransactionsResult.count ?? 0,
-      savingsBalance,
-      depositBalance,
+      savingsBalance: memberCards.savingsBalance,
+      depositBalance: memberCards.depositBalance,
     },
     accounts: accountDetails,
     recentTransactions,

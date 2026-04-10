@@ -46,7 +46,7 @@ export default async function MemberDetailPage({
             <StatCard label="Savings Balance" value={prettyCurrency(member.savingsBalance)} tone="success" />
             <StatCard label="Deposit Balance" value={prettyCurrency(member.depositBalance)} />
             <StatCard label="Pending Transactions" value={String(member.pendingTransactions)} tone="warning" />
-            <StatCard label="Active Loans" value={String(member.activeLoanCount)} />
+            <StatCard label="Outstanding Loan Balance" value={prettyCurrency(member.outstandingLoanBalance)} />
           </div>
 
           <div className="grid grid-2">
@@ -104,6 +104,10 @@ export default async function MemberDetailPage({
                 {accounts.length === 0 ? (
                   <p className="muted">No live accounts were found for this member yet.</p>
                 ) : null}
+                <div className="list-item">
+                  <strong>Active Loans</strong>
+                  <span>{member.activeLoanCount}</span>
+                </div>
                 <div className="list-item">
                   <strong>Outstanding Loan Balance</strong>
                   <span>{prettyCurrency(member.outstandingLoanBalance)}</span>

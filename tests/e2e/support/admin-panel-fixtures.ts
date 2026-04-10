@@ -51,6 +51,14 @@ type MemberAccountLookup = {
   account_type: "savings" | "deposit";
 };
 
+type DashboardSummaryLookup = {
+  branch_count?: number;
+  total_savings: number | string | null;
+  total_deposits: number | string | null;
+  outstanding_principal?: number | string | null;
+  pending_approvals?: number | string | null;
+};
+
 let envLoaded = false;
 let cachedContext: Promise<SeededPanelContext> | null = null;
 
@@ -134,6 +142,31 @@ function createServiceClient() {
       },
     },
   );
+}
+
+function createPublishableClient() {
+  return createClient(
+    requiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    requiredEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"),
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    },
+  );
+}
+
+function toNumber(value: number | string | null | undefined) {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    return Number(value);
+  }
+
+  return 0;
 }
 
 export function newTestId(prefix: string) {
@@ -327,6 +360,164 @@ export async function getMemberAccountsByProfileId(profileId: string) {
   return ((data as MemberAccountLookup[] | null) ?? []).filter(
     (account) => account.account_type === "savings" || account.account_type === "deposit",
   );
+}
+
+export async function getMemberAccountBalance(memberAccountId: string) {
+  const service = createServiceClient();
+  const { data, error } = await service.rpc("get_member_account_balance", {
+    p_member_account_id: memberAccountId,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return toNumber(data as number | string | null);
+}
+
+export async function getAuthenticatedMemberAccountBalance({
+  actor = seededUsers.admin,
+  memberAccountId,
+}: {
+  actor?: { email: string; password: string };
+  memberAccountId: string;
+}) {
+  const client = createPublishableClient();
+
+  try {
+    const signInResult = await client.auth.signInWithPassword({
+      email: actor.email,
+      password: actor.password,
+    });
+
+    if (signInResult.error || !signInResult.data.user) {
+      throw new Error(signInResult.error?.message ?? `Unable to sign in ${actor.email}.`);
+    }
+
+    const { data, error } = await client.rpc("get_member_account_balance", {
+      p_member_account_id: memberAccountId,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return toNumber(data as number | string | null);
+  } finally {
+    await client.auth.signOut();
+  }
+}
+
+export async function getBranchDashboardSummary(branchId: string) {
+  const service = createServiceClient();
+  const { data, error } = await service
+    .from("branch_dashboard_summary")
+    .select("branch_id, branch_name, total_savings, total_deposits, outstanding_principal, pending_approvals")
+    .eq("branch_id", branchId)
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? `Unable to load branch dashboard summary for ${branchId}.`);
+  }
+
+  const row = data as {
+    branch_id: string;
+    branch_name: string;
+  } & DashboardSummaryLookup;
+
+  return {
+    branchId: row.branch_id,
+    branchName: row.branch_name,
+    totalSavings: toNumber(row.total_savings),
+    totalDeposits: toNumber(row.total_deposits),
+    outstandingPrincipal: toNumber(row.outstanding_principal),
+    pendingApprovals: toNumber(row.pending_approvals),
+  };
+}
+
+export async function getAdminDashboardSummary() {
+  const service = createServiceClient();
+  const { data, error } = await service
+    .from("admin_dashboard_summary")
+    .select("branch_count, total_savings, total_deposits, outstanding_principal, pending_approvals")
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "Unable to load admin dashboard summary.");
+  }
+
+  const row = data as DashboardSummaryLookup;
+
+  return {
+    branchCount: toNumber(row.branch_count),
+    totalSavings: toNumber(row.total_savings),
+    totalDeposits: toNumber(row.total_deposits),
+    outstandingPrincipal: toNumber(row.outstanding_principal),
+    pendingApprovals: toNumber(row.pending_approvals),
+  };
+}
+
+export async function createApprovedAdminTransaction({
+  accountType = "deposit",
+  actor = seededUsers.admin,
+  amount,
+  transactionType = "deposit",
+}: {
+  accountType?: "savings" | "deposit";
+  actor?: { email: string; password: string };
+  amount: number;
+  transactionType?: "deposit" | "withdrawal";
+}) {
+  const service = createServiceClient();
+  const client = createPublishableClient();
+  const context = await getSeededPanelContext();
+  const memberAccountId =
+    accountType === "deposit" ? context.depositAccount.id : context.savingsAccount.id;
+
+  try {
+    const signInResult = await client.auth.signInWithPassword({
+      email: actor.email,
+      password: actor.password,
+    });
+
+    if (signInResult.error || !signInResult.data.user) {
+      throw new Error(signInResult.error?.message ?? `Unable to sign in ${actor.email}.`);
+    }
+
+    const { data, error } = await client.rpc("create_admin_transaction", {
+      p_actor_id: signInResult.data.user.id,
+      p_member_account_id: memberAccountId,
+      p_cash_agent_profile_id: context.agent.id,
+      p_transaction_type: transactionType,
+      p_amount: amount,
+      p_note: `Test ${transactionType} ${accountType} ${Date.now()}`,
+    });
+
+    if (error || !data) {
+      throw new Error(error?.message ?? "Unable to create admin transaction.");
+    }
+
+    const request = await fetchSingle(
+      service
+        .from("transaction_requests")
+        .select("id, member_account_id, transaction_type, status, amount, approved_at")
+        .eq("id", (data as { id: string }).id)
+        .single(),
+      `transaction request ${(data as { id: string }).id}`,
+    );
+
+    return {
+      accountType,
+      amount: toNumber(request.amount),
+      approvedAt: request.approved_at,
+      id: request.id,
+      memberAccountId: request.member_account_id,
+      status: request.status,
+      transactionType: request.transaction_type,
+    };
+  } finally {
+    await client.auth.signOut();
+  }
 }
 
 export async function createLoanForMemberEmail({

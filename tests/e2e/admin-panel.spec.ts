@@ -1,6 +1,9 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
+  getAdminDashboardSummary,
+  getBranchDashboardSummary,
+  getMemberAccountBalance,
   createPendingTransactionRequest,
   getMemberAccountsByProfileId,
   getProfileByEmail,
@@ -74,18 +77,32 @@ async function waitForMemberAccounts(profileId: string) {
   return getMemberAccountsByProfileId(profileId);
 }
 
+function prettyCurrency(amount: number) {
+  return new Intl.NumberFormat("en-CM", {
+    style: "currency",
+    currency: "XAF",
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
 test.describe("admin panel end-to-end flows", () => {
   test("admin can review institution screens and create branch-office transactions", async ({
     page,
   }) => {
     const context = await getSeededPanelContext();
+    const depositAmount = 150;
+    const [adminSummaryBefore, branchSummaryBefore, depositBalanceBefore] = await Promise.all([
+      getAdminDashboardSummary(),
+      getBranchDashboardSummary(context.branch.id),
+      getMemberAccountBalance(context.depositAccount.id),
+    ]);
 
     await signIn(page, seededUsers.admin);
 
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByLabel("breadcrumb")).toContainText("Admin Dashboard");
     await expect(page.getByRole("heading", { level: 1, name: "Admin Dashboard" })).toBeVisible();
-    await expect(page.getByText("All branches")).toBeVisible();
+    await expect(page.getByRole("main").getByText("All branches", { exact: true }).first()).toBeVisible();
     await expect(page.getByRole("link", { name: "Branches" })).toBeVisible();
 
     await page.getByRole("link", { name: "Branches" }).click();
@@ -97,24 +114,41 @@ test.describe("admin panel end-to-end flows", () => {
     await expect(page.getByRole("heading", { level: 1, name: seededBranch.name })).toBeVisible();
     await expect(page.getByText(seededUsers.manager.fullName)).toBeVisible();
 
+    await page.goto("/loans");
+    await expect(page.getByRole("heading", { level: 1, name: "Loans" })).toBeVisible();
+
     await page.goto("/transactions/deposit");
     await expect(page.getByRole("heading", { level: 1, name: "Create Deposit" })).toBeVisible();
-    await branchSelect(page).selectOption(context.branch.id);
-    await memberSelect(page).selectOption(context.member.id);
-    await memberAccountSelect(page).selectOption(context.savingsAccount.id);
+    await memberAccountSelect(page).selectOption(context.depositAccount.id);
     await cashDrawerAgentSelect(page).selectOption(context.agent.id);
-    await page.getByLabel("Amount").fill("150");
+    await page.getByLabel("Amount").fill(String(depositAmount));
     await page.getByLabel("Note").fill("Playwright admin deposit");
     await page.getByRole("button", { name: "Create Deposit" }).click();
     await expect(page).toHaveURL(/\/transactions\/deposit\?result=success/);
     await expect(page.getByText("Deposit created and auto-approved.")).toBeVisible();
 
+    const expectedAdminDeposits = adminSummaryBefore.totalDeposits + depositAmount;
+    const expectedBranchDeposits = branchSummaryBefore.totalDeposits + depositAmount;
+
+    await expect
+      .poll(async () => (await getAdminDashboardSummary()).totalDeposits)
+      .toBe(expectedAdminDeposits);
+    await expect
+      .poll(async () => (await getBranchDashboardSummary(context.branch.id)).totalDeposits)
+      .toBe(expectedBranchDeposits);
+    await expect
+      .poll(async () => (await getMemberAccountBalance(context.depositAccount.id)) - depositBalanceBefore)
+      .toBe(depositAmount);
+
+    await page.goto("/");
+    await expect(page.getByRole("heading", { level: 1, name: "Admin Dashboard" })).toBeVisible();
+    await expect(page.getByText("Total Deposits")).toBeVisible();
+    await expect(page.getByText(prettyCurrency(expectedAdminDeposits))).toBeVisible();
+
     await page.goto("/transactions/withdrawal");
     await expect(
       page.getByRole("heading", { level: 1, name: "Create Withdrawal" }),
     ).toBeVisible();
-    await branchSelect(page).selectOption(context.branch.id);
-    await memberSelect(page).selectOption(context.member.id);
     await memberAccountSelect(page).selectOption(context.savingsAccount.id);
     await cashDrawerAgentSelect(page).selectOption(context.agent.id);
     await page.getByLabel("Amount").fill("25");
@@ -122,6 +156,23 @@ test.describe("admin panel end-to-end flows", () => {
     await page.getByRole("button", { name: "Create Withdrawal" }).click();
     await expect(page).toHaveURL(/\/transactions\/withdrawal\?result=success/);
     await expect(page.getByText("Withdrawal created and auto-approved.")).toBeVisible();
+
+    await signOut(page);
+
+    await signIn(page, seededUsers.manager);
+    await expect(page).toHaveURL(/\/branch$/);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Branch Dashboard" }),
+    ).toBeVisible();
+    await expect(page.getByText("Branch Deposits")).toBeVisible();
+    await expect(page.getByText(prettyCurrency(expectedBranchDeposits))).toBeVisible();
+
+    await page.goto("/transactions");
+    await expect(page).toHaveURL(/\/transactions$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Transactions" })).toBeVisible();
+
+    await page.goto("/loans");
+    await expect(page.getByRole("heading", { level: 1, name: "Loans" })).toBeVisible();
 
     await signOut(page);
   });
@@ -150,7 +201,8 @@ test.describe("admin panel end-to-end flows", () => {
 
     await expect(page).toHaveURL(/\/transactions\?result=success/);
     await expect(page.getByText("Transaction approved.")).toBeVisible();
-    await expect(transactionRow(page, request.reference)).toHaveCount(0);
+    await expect(transactionRow(page, request.reference).getByRole("button", { name: "Approve" })).toHaveCount(0);
+    await expect(transactionRow(page, request.reference).getByText("approved")).toBeVisible();
 
     await signOut(page);
   });
@@ -173,7 +225,8 @@ test.describe("admin panel end-to-end flows", () => {
 
     await expect(page).toHaveURL(/\/transactions\?result=success/);
     await expect(page.getByText("Transaction rejected.")).toBeVisible();
-    await expect(transactionRow(page, request.reference)).toHaveCount(0);
+    await expect(transactionRow(page, request.reference).getByRole("button", { name: "Reject" })).toHaveCount(0);
+    await expect(transactionRow(page, request.reference).getByText("rejected")).toBeVisible();
 
     await signOut(page);
   });
@@ -256,7 +309,7 @@ test.describe("admin panel end-to-end flows", () => {
     await expect(page).toHaveURL(new RegExp(`/agents/${createdAgent.id}$`));
     await expect(page.getByRole("heading", { level: 1, name: agent.fullName })).toBeVisible();
     await expect(page.getByLabel("breadcrumb")).toContainText("Agents");
-    await expect(page.getByText("Assigned Members")).toBeVisible();
+    await expect(page.getByText("Assigned Members").first()).toBeVisible();
 
     await page.goto("/members/new");
     await expect(page.getByRole("heading", { level: 1, name: "Create Member" })).toBeVisible();
@@ -281,6 +334,9 @@ test.describe("admin panel end-to-end flows", () => {
     await page.getByRole("link", { name: member.fullName }).click();
     await expect(page.getByRole("heading", { level: 1, name: member.fullName })).toBeVisible();
     await expect(page.getByLabel("breadcrumb")).toContainText("Members");
+    await expect(page.getByText("Savings Balance").first()).toBeVisible();
+    await expect(page.getByText("Deposit Balance").first()).toBeVisible();
+    await expect(page.getByText("Outstanding Loan Balance").first()).toBeVisible();
     await expect(page.getByText("Account Summary")).toBeVisible();
 
     await page.goto("/loans");
@@ -337,6 +393,12 @@ test.describe("admin panel end-to-end flows", () => {
     await repaymentRow.getByRole("button", { name: "Record Repayment" }).click();
     await expect(page.getByText("Loan repayment recorded.")).toBeVisible();
     await expect(page.locator("tr").filter({ hasText: member.fullName }).filter({ hasText: "active" })).toBeVisible();
+
+    await page.goto(`/members/${createdMember.id}`);
+    await expect(page.getByRole("heading", { level: 1, name: member.fullName })).toBeVisible();
+    await expect(page.getByText("Savings Balance").first()).toBeVisible();
+    await expect(page.getByText("Deposit Balance").first()).toBeVisible();
+    await expect(page.getByText("Outstanding Loan Balance").first()).toBeVisible();
 
     await signOut(page);
   });

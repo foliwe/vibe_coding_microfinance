@@ -5,7 +5,6 @@ import type { SyncQueueItem } from "@/mocks/mobile-data";
 
 import {
   createQueuedTransactionEntry,
-  OFFLINE_SYNC_DEVICE_ID,
   type OfflineSyncQueueEntry,
   type QueuedTransactionPayload,
   sortByCreatedAtDesc,
@@ -14,6 +13,7 @@ import {
   toQueueTypeLabel,
   withRetryMetadata,
 } from "./offline-sync-core";
+import { getMobileDeviceId } from "./device-id";
 import { getErrorMessage } from "./errors";
 import { getSupabaseClient } from "./supabase/client";
 
@@ -145,15 +145,17 @@ export async function queueTransactionRequest(input: {
   accountType: QueuedTransactionPayload["accountType"];
   actorId: string;
   amount: number;
+  deviceId?: string;
   memberAccountId: string;
   memberId: string;
   memberName: string;
   note?: string;
   transactionType: QueuedTransactionPayload["transactionType"];
 }) {
+  const deviceId = input.deviceId ?? (await getMobileDeviceId());
   const entry = createQueuedTransactionEntry({
     ...input,
-    deviceId: OFFLINE_SYNC_DEVICE_ID,
+    deviceId,
   });
 
   const queue = await readQueue();

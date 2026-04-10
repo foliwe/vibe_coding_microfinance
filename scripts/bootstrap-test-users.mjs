@@ -121,6 +121,59 @@ async function upsertProfile({
   email,
   branchId,
 }) {
+  const emailConflicts = email
+    ? await supabase
+        .from("profiles")
+        .select("id, email, phone")
+        .eq("email", email)
+        .neq("id", userId)
+    : { data: [], error: null };
+  const phoneConflicts = await supabase
+    .from("profiles")
+    .select("id, email, phone")
+    .eq("phone", phone)
+    .neq("id", userId);
+
+  if (emailConflicts.error) {
+    fail(`Unable to inspect profile email conflicts for ${email}: ${emailConflicts.error.message}`);
+  }
+
+  if (phoneConflicts.error) {
+    fail(`Unable to inspect profile phone conflicts for ${phone}: ${phoneConflicts.error.message}`);
+  }
+
+  const conflicts = new Map();
+  for (const row of [...(emailConflicts.data ?? []), ...(phoneConflicts.data ?? [])]) {
+    conflicts.set(row.id, row);
+  }
+
+  let conflictIndex = 0;
+  for (const conflict of conflicts.values()) {
+    conflictIndex += 1;
+    const conflictSuffix = `${Date.now()}-${conflictIndex}`;
+    const response = await supabase
+      .from("profiles")
+      .update({
+        email:
+          conflict.email && email && conflict.email.toLowerCase() === email.toLowerCase()
+            ? `stale+${conflictSuffix}-${email}`
+            : conflict.email,
+        phone:
+          conflict.phone === phone
+            ? `${phone}-stale-${conflictSuffix}`
+            : conflict.phone,
+      })
+      .eq("id", conflict.id)
+      .select("id")
+      .single();
+
+    if (response.error || !response.data) {
+      fail(
+        `Unable to release conflicting profile identifiers for ${email}: ${response.error?.message ?? "Unknown error"}`,
+      );
+    }
+  }
+
   const response = await supabase
     .from("profiles")
     .upsert(
@@ -170,6 +223,61 @@ async function upsertStaffUser(profileId, branchId) {
 }
 
 async function upsertMemberProfile(profileId, branchId, assignedAgentId, createdBy) {
+  const idNumberConflicts = await supabase
+    .from("member_profiles")
+    .select("profile_id, id_number, sign_in_code")
+    .eq("id_number", TEST_MEMBER_ID_NUMBER)
+    .neq("profile_id", profileId);
+  const signInCodeConflicts = await supabase
+    .from("member_profiles")
+    .select("profile_id, id_number, sign_in_code")
+    .eq("sign_in_code", TEST_MEMBER_SIGN_IN_CODE)
+    .neq("profile_id", profileId);
+
+  if (idNumberConflicts.error) {
+    fail(
+      `Unable to inspect member profile ID conflicts for ${TEST_MEMBER_ID_NUMBER}: ${idNumberConflicts.error.message}`,
+    );
+  }
+
+  if (signInCodeConflicts.error) {
+    fail(
+      `Unable to inspect member profile sign-in conflicts for ${TEST_MEMBER_SIGN_IN_CODE}: ${signInCodeConflicts.error.message}`,
+    );
+  }
+
+  const conflicts = new Map();
+  for (const row of [...(idNumberConflicts.data ?? []), ...(signInCodeConflicts.data ?? [])]) {
+    conflicts.set(row.profile_id, row);
+  }
+
+  let conflictIndex = 0;
+  for (const conflict of conflicts.values()) {
+    conflictIndex += 1;
+    const conflictSuffix = `${Date.now()}-${conflictIndex}`;
+    const response = await supabase
+      .from("member_profiles")
+      .update({
+        id_number:
+          conflict.id_number === TEST_MEMBER_ID_NUMBER
+            ? `${TEST_MEMBER_ID_NUMBER}-stale-${conflictSuffix}`
+            : conflict.id_number,
+        sign_in_code:
+          conflict.sign_in_code === TEST_MEMBER_SIGN_IN_CODE
+            ? `${TEST_MEMBER_SIGN_IN_CODE}X${conflictIndex}`
+            : conflict.sign_in_code,
+      })
+      .eq("profile_id", conflict.profile_id)
+      .select("profile_id")
+      .single();
+
+    if (response.error || !response.data) {
+      fail(
+        `Unable to release conflicting member profile identifiers for ${TEST_MEMBER_SIGN_IN_CODE}: ${response.error?.message ?? "Unknown error"}`,
+      );
+    }
+  }
+
   const response = await supabase
     .from("member_profiles")
     .upsert(
