@@ -1,5 +1,6 @@
 import {
   calculateMonthlyInterest,
+  PASSWORD_POLICY,
   type LoanStatus,
   type TransactionType,
   type TransactionRequest,
@@ -11,7 +12,7 @@ import {
   type LoanCard,
   type MemberDashboard,
   type TrendDatum,
-} from "@/mocks/mobile-data";
+} from "./mobile-models";
 
 import {
   getOfflineSyncQueue,
@@ -23,6 +24,10 @@ import {
 import { getMobileDeviceId } from "./device-id";
 import { queueEntryToTransactionRequest } from "./offline-sync-core";
 import { requireCurrentMobileProfile } from "./mobile-auth";
+import {
+  registerMobileStaffDevice,
+  requireAllowedMobileStaffDevice,
+} from "./staff-device";
 import {
   getWithdrawalConnectivityMessage,
   shouldQueueOfflineTransaction,
@@ -1146,6 +1151,9 @@ export const mobileData = {
   }) {
     const supabase = getSupabaseClient();
     const profile = await requireCurrentMobileProfile(["agent"]);
+    const { device } = await requireAllowedMobileStaffDevice({
+      autoRegisterIfNeeded: true,
+    });
 
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new Error("Amount must be greater than zero.");
@@ -1167,7 +1175,7 @@ export const mobileData = {
     const { data, error } = await supabase.rpc("create_transaction_request", {
       p_actor_id: profile.id,
       p_amount: Number(amount.toFixed(2)),
-      p_device_id: deviceId,
+      p_device_id: "expo-mobile",
       p_idempotency_key: idempotencyKey,
       p_member_account_id: memberAccountId,
       p_note: note?.trim() || null,
@@ -1231,8 +1239,10 @@ export const mobileData = {
         throw new Error("Enter your current temporary password.");
       }
 
-      if (newPassword.length < 8) {
-        throw new Error("New password must be at least 8 characters.");
+      if (newPassword.length < PASSWORD_POLICY.minimumLength) {
+        throw new Error(
+          `New password must be at least ${PASSWORD_POLICY.minimumLength} characters.`,
+        );
       }
 
       if (newPassword !== confirmNewPassword) {
@@ -1278,6 +1288,7 @@ export const mobileData = {
       }
     }
 
+    await registerMobileStaffDevice();
     await supabase.auth.refreshSession();
     return requireCurrentMobileProfile(["agent"]);
   },
@@ -1288,6 +1299,9 @@ export const mobileData = {
     phone: string;
   }): Promise<CreateMemberResponse> {
     const supabase = getSupabaseClient();
+    const { device } = await requireAllowedMobileStaffDevice({
+      autoRegisterIfNeeded: true,
+    });
     const { data: sessionResponse } = await supabase.auth.getSession();
     const accessToken = sessionResponse.session?.access_token;
 
@@ -1297,6 +1311,8 @@ export const mobileData = {
 
     const { data, error } = await supabase.functions.invoke("create-member", {
       body: {
+        deviceId: device.id,
+        deviceName: device.name,
         fullName: input.fullName.trim(),
         idCardNumber: input.idCardNumber.trim(),
         phone: input.phone.trim(),
@@ -1355,8 +1371,10 @@ export const mobileData = {
       throw new Error("Enter your current temporary password.");
     }
 
-    if (input.newPassword.trim().length < 8) {
-      throw new Error("New password must be at least 8 characters.");
+    if (input.newPassword.trim().length < PASSWORD_POLICY.minimumLength) {
+      throw new Error(
+        `New password must be at least ${PASSWORD_POLICY.minimumLength} characters.`,
+      );
     }
 
     const { error: updateError } = await supabase.auth.updateUser({
@@ -1414,17 +1432,13 @@ export const mobileData = {
     }
 
     const reconciliation = (reconciliationData as CashReconciliationRow | null) ?? null;
-    const expectedCash = reconciliation
-      ? toNumber(reconciliation.expected_cash)
-      : toNumber(drawer.expected_cash);
+    const expectedCash = toNumber(drawer.expected_cash);
     const actualCash = reconciliation
       ? toNumber(reconciliation.counted_cash)
       : drawer.counted_cash == null
         ? expectedCash
         : toNumber(drawer.counted_cash);
-    const difference = reconciliation
-      ? toNumber(reconciliation.variance)
-      : roundCurrency(actualCash - expectedCash);
+    const difference = roundCurrency(actualCash - expectedCash);
 
     return {
       actualCash,
@@ -1452,6 +1466,9 @@ export const mobileData = {
   }) {
     const supabase = getSupabaseClient();
     await requireCurrentMobileProfile(["agent"]);
+    const { device } = await requireAllowedMobileStaffDevice({
+      autoRegisterIfNeeded: true,
+    });
 
     const countedCash = Number(input.actualCash.trim());
 
@@ -1461,6 +1478,7 @@ export const mobileData = {
 
     const { error } = await supabase.rpc("submit_cash_reconciliation", {
       p_counted_cash: Number(countedCash.toFixed(2)),
+      p_device_id: device.id,
       p_variance_reason: input.varianceReason.trim() || null,
     });
 

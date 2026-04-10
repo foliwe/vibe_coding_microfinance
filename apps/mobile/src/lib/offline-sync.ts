@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { OfflineSyncEnvelope } from "@credit-union/shared";
 
-import type { SyncQueueItem } from "@/mocks/mobile-data";
+import type { SyncQueueItem } from "./mobile-models";
 
 import {
   createQueuedTransactionEntry,
@@ -15,6 +15,7 @@ import {
 } from "./offline-sync-core";
 import { getMobileDeviceId } from "./device-id";
 import { getErrorMessage } from "./errors";
+import { getMobileStaffDeviceIdentity } from "./staff-device";
 import { getSupabaseClient } from "./supabase/client";
 
 const STORAGE_KEY = "credit-union/offline-sync-queue/v1";
@@ -152,10 +153,9 @@ export async function queueTransactionRequest(input: {
   note?: string;
   transactionType: QueuedTransactionPayload["transactionType"];
 }) {
-  const deviceId = input.deviceId ?? (await getMobileDeviceId());
   const entry = createQueuedTransactionEntry({
     ...input,
-    deviceId,
+    deviceId: OFFLINE_SYNC_DEVICE_ID,
   });
 
   const queue = await readQueue();

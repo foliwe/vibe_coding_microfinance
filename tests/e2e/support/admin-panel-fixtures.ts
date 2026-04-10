@@ -51,14 +51,6 @@ type MemberAccountLookup = {
   account_type: "savings" | "deposit";
 };
 
-type DashboardSummaryLookup = {
-  branch_count?: number;
-  total_savings: number | string | null;
-  total_deposits: number | string | null;
-  outstanding_principal?: number | string | null;
-  pending_approvals?: number | string | null;
-};
-
 let envLoaded = false;
 let cachedContext: Promise<SeededPanelContext> | null = null;
 
@@ -301,6 +293,78 @@ export async function createPendingTransactionRequest({
   return {
     id: response.data.id,
     reference: response.data.id.toUpperCase(),
+  };
+}
+
+export async function createPendingCashReconciliation({
+  countedCash = 125,
+  expectedCash = 100,
+  varianceReason,
+}: {
+  countedCash?: number;
+  expectedCash?: number;
+  varianceReason?: string;
+} = {}): Promise<PendingCashReconciliation> {
+  const service = createServiceClient();
+  const context = await getSeededPanelContext();
+  const businessDate = new Date().toISOString().slice(0, 10);
+  const reason =
+    varianceReason ?? `Playwright reconciliation ${Date.now()}`;
+
+  const drawerResponse = await service
+    .from("cash_drawers")
+    .upsert(
+      {
+        agent_profile_id: context.agent.id,
+        branch_id: context.branch.id,
+        business_date: businessDate,
+        counted_cash: countedCash,
+        expected_cash: expectedCash,
+        opening_float: 0,
+        status: "open",
+        variance: Number((countedCash - expectedCash).toFixed(2)),
+      },
+      { onConflict: "agent_profile_id,business_date" },
+    )
+    .select("id")
+    .single();
+
+  if (drawerResponse.error || !drawerResponse.data) {
+    throw new Error(
+      drawerResponse.error?.message ?? "Unable to create cash drawer.",
+    );
+  }
+
+  const reconciliationResponse = await service
+    .from("cash_reconciliations")
+    .insert({
+      branch_id: context.branch.id,
+      cash_drawer_id: drawerResponse.data.id,
+      counted_cash: countedCash,
+      expected_cash: expectedCash,
+      review_note: null,
+      reviewed_at: null,
+      reviewed_by: null,
+      status: "pending_review",
+      submitted_at: new Date().toISOString(),
+      submitted_by: context.agent.id,
+      variance: Number((countedCash - expectedCash).toFixed(2)),
+      variance_reason: reason,
+    })
+    .select("id")
+    .single();
+
+  if (reconciliationResponse.error || !reconciliationResponse.data) {
+    throw new Error(
+      reconciliationResponse.error?.message ??
+        "Unable to create pending cash reconciliation.",
+    );
+  }
+
+  return {
+    id: reconciliationResponse.data.id,
+    reference: reconciliationResponse.data.id.toUpperCase(),
+    varianceReason: reason,
   };
 }
 

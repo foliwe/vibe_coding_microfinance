@@ -1,3 +1,5 @@
+import { PASSWORD_POLICY } from "./security";
+
 type AuthAdminUser = {
   id: string;
 };
@@ -98,7 +100,13 @@ export function buildMemberLoginEmail(signInCode: string) {
   return `member-${normalized}@members.local`;
 }
 
-export function buildTemporaryPassword(length = 7) {
+export function buildTemporaryPassword(length = PASSWORD_POLICY.minimumLength) {
+  if (length < PASSWORD_POLICY.minimumLength) {
+    throw new Error(
+      `Temporary password must be at least ${PASSWORD_POLICY.minimumLength} characters.`,
+    );
+  }
+
   return randomString(length, MEMBER_PASSWORD_ALPHABET);
 }
 
@@ -216,7 +224,13 @@ export async function provisionMember(
     idNumber: normalizedIdNumber,
   });
   const loginEmail = buildMemberLoginEmail(signInCode);
-  const temporaryPassword = input.password?.trim() || buildTemporaryPassword(7);
+  const temporaryPassword = input.password?.trim() || buildTemporaryPassword();
+
+  if (temporaryPassword.length < PASSWORD_POLICY.minimumLength) {
+    throw new Error(
+      `Temporary password must be at least ${PASSWORD_POLICY.minimumLength} characters.`,
+    );
+  }
 
   let createdUserId: string | null = null;
 

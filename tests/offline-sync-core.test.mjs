@@ -66,6 +66,33 @@ test("queueEntryToTransactionRequest maps queued items into transaction cards", 
   });
 });
 
+test("queued offline deposits stay marked as pending sync with a local storage note", () => {
+  const entry = createQueuedTransactionEntry({
+    accountType: "savings",
+    actorId: "agent-1",
+    amount: 55,
+    createdAt: "2026-04-01T10:00:00.000Z",
+    deviceId: "device-a12",
+    memberAccountId: "account-4",
+    memberId: "member-4",
+    memberName: "Katherine Johnson",
+    transactionType: "deposit",
+  });
+
+  assert.equal(toQueueSyncLabel(entry.status), "PENDING SYNC");
+  assert.equal(toQueueNote(entry), "Stored locally on device-a12");
+
+  const card = queueEntryToTransactionRequest(entry, {
+    agentId: "agent-1",
+    agentName: "Agent Name",
+    branchId: "branch-1",
+    branchName: "Rome Branch",
+  });
+
+  assert.equal(card?.type, "deposit");
+  assert.equal(card?.status, "unsynced");
+});
+
 test("withRetryMetadata marks queue entries as conflicts and preserves prior reason when needed", async () => {
   const entry = createQueuedTransactionEntry({
     accountType: "savings",

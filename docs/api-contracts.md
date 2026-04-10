@@ -35,8 +35,14 @@ Use RPCs or Edge Functions for:
 - `approve_transaction_request(request_id, actor_id, note)`
 - `reject_transaction_request(request_id, actor_id, note)`
 - `set_my_transaction_pin(pin)`
-- `submit_cash_reconciliation(counted_cash, variance_reason)`
+- `submit_cash_reconciliation(counted_cash, variance_reason, device_id)`
 - `review_cash_reconciliation(reconciliation_id, action, review_note)`
+
+## Staff Device RPCs
+
+- `register_my_device(device_id, device_name, device_kind)`
+- `assert_staff_device_access(device_id, device_kind)`
+- `reset_staff_device(staff_profile_id, note)`
 
 ## Loan RPCs
 
@@ -67,7 +73,7 @@ Behavior:
 - approvals are limited to authenticated `branch_manager` or `admin`
 - approvals enforce maker-checker, post immutable ledger journals and entries, update the agent cash drawer, and write audit logs
 - rejections preserve the request, skip ledger posting, and still write approval + audit records
-- cash reconciliation submission is limited to the authenticated agent for the current drawer
+- cash reconciliation submission is limited to the authenticated agent for the current drawer and trusted mobile device
 - reconciliation review is limited to authenticated `branch_manager` or `admin`
 
 ## Offline sync

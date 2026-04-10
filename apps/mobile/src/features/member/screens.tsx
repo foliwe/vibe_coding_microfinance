@@ -29,7 +29,7 @@ import {
   getCurrentTransactionMonthKey,
 } from "@/lib/transaction-history";
 import { useResource } from "@/lib/use-resource";
-import type { LoanCard } from "@/mocks/mobile-data";
+import type { LoanCard } from "@/lib/mobile-models";
 import type { TransactionRequest } from "@credit-union/shared";
 import { colors, spacing, typography } from "@/theme/tokens";
 

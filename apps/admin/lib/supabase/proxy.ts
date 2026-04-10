@@ -4,6 +4,8 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getSupabaseEnv, hasSupabaseEnv } from "./env";
 
 const publicPaths = new Set(["/login"]);
+const branchManagerSetupPath = "/setup";
+const branchManagerBlockedPath = "/workstation-blocked";
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({
@@ -45,6 +47,29 @@ export async function updateSession(request: NextRequest) {
     const { data: profileRows } = await supabase.rpc("get_my_profile");
     const profile = Array.isArray(profileRows) ? profileRows[0] : null;
     role = typeof profile?.role === "string" ? profile.role : null;
+
+    if (role === "branch_manager") {
+      const setupIncomplete =
+        profile?.must_change_password === true || profile?.requires_pin_setup === true;
+
+      if (pathname === "/login") {
+        return NextResponse.redirect(
+          new URL(setupIncomplete ? branchManagerSetupPath : "/branch", request.url),
+        );
+      }
+
+      if (setupIncomplete && pathname !== branchManagerSetupPath) {
+        return NextResponse.redirect(new URL(branchManagerSetupPath, request.url));
+      }
+
+      if (!setupIncomplete && pathname === branchManagerSetupPath) {
+        return NextResponse.redirect(new URL("/branch", request.url));
+      }
+
+      if (setupIncomplete && pathname === branchManagerBlockedPath) {
+        return NextResponse.redirect(new URL(branchManagerSetupPath, request.url));
+      }
+    }
   }
 
   const isWebRole = role === "admin" || role === "branch_manager";

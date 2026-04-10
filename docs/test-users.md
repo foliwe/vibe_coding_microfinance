@@ -50,7 +50,7 @@ You can also override any of the default names, phones, passwords, member ID num
 
 - the schema in [`supabase/migrations/0001_initial_schema.sql`](/Users/foliwefossung/Vibe_code/supabase/migrations/0001_initial_schema.sql) and later migrations must already be applied
 - the service role key must be available in your shell environment
-- the branch referenced by `TEST_BRANCH_CODE` must already exist in `public.branches`
+- if the branch referenced by `TEST_BRANCH_CODE` does not exist yet, the script now creates it with the matching `TEST_BRANCH_*` values
 
 ## End-to-end path
 

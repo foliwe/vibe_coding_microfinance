@@ -10,6 +10,10 @@ import {
   type MobileProfile,
 } from "./mobile-auth";
 import { getErrorMessage } from "./errors";
+import {
+  ensureMobileStaffDeviceAccess,
+  type StaffDeviceAssertion,
+} from "./staff-device";
 import { getSupabaseClient } from "./supabase/client";
 import { hasSupabaseEnv } from "./supabase/env";
 
@@ -38,6 +42,7 @@ interface AppSessionValue {
   session: Session | null;
   signIn: (credentials: Credentials) => Promise<void>;
   signOut: () => Promise<void>;
+  staffDeviceAccess: StaffDeviceAssertion | null;
 }
 
 const AppSessionContext = createContext<AppSessionValue | null>(null);
@@ -49,6 +54,7 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<MobileProfile | null>(null);
   const [ready, setReady] = useState(!envReady);
   const [session, setSession] = useState<Session | null>(null);
+  const [staffDeviceAccess, setStaffDeviceAccess] = useState<StaffDeviceAssertion | null>(null);
   const hydrateRequestIdRef = useRef(0);
   const isMountedRef = useRef(true);
 
@@ -72,6 +78,7 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
         setSession(null);
         setAuthError(null);
         setProfile(null);
+        setStaffDeviceAccess(null);
         setReady(true);
         return null;
       }
@@ -92,6 +99,7 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
       if (!sessionToUse) {
         setAuthError(null);
         setProfile(null);
+        setStaffDeviceAccess(null);
         setReady(true);
         return null;
       }
@@ -103,7 +111,21 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
           return null;
         }
 
+        let nextStaffDeviceAccess: StaffDeviceAssertion | null = null;
+
+        if (nextProfile?.role === "agent") {
+          nextStaffDeviceAccess = await ensureMobileStaffDeviceAccess({
+            autoRegisterIfNeeded:
+              !nextProfile.mustChangePassword && !nextProfile.requiresPinSetup,
+          });
+
+          if (!isMountedRef.current || hydrateRequestIdRef.current !== requestId) {
+            return null;
+          }
+        }
+
         setProfile(nextProfile);
+        setStaffDeviceAccess(nextStaffDeviceAccess);
         setAuthError(
           nextProfile && isMobileRole(nextProfile.role)
             ? null
@@ -116,6 +138,7 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
         }
 
         setProfile(null);
+        setStaffDeviceAccess(null);
         setAuthError(getErrorMessage(error, "We could not load your profile."));
         return null;
       } finally {
@@ -201,6 +224,7 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
           setAuthError(null);
           setSession(null);
           setProfile(null);
+          setStaffDeviceAccess(null);
           return;
         }
 
@@ -214,9 +238,20 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
         setSession(null);
         setAuthError(null);
         setProfile(null);
+        setStaffDeviceAccess(null);
       },
+      staffDeviceAccess,
     }),
-    [authError, envReady, hydrateSession, isSigningIn, profile, ready, session],
+    [
+      authError,
+      envReady,
+      hydrateSession,
+      isSigningIn,
+      profile,
+      ready,
+      session,
+      staffDeviceAccess,
+    ],
   );
 
   return (

@@ -21,7 +21,7 @@ export default async function SettingsPage() {
       role={role}
       statusBadge={isLive ? "Live Supabase" : "Supabase setup needed"}
       title="Settings"
-      subtitle="Operational defaults and setup status for the currently signed-in role."
+      subtitle="Operational defaults, security setup posture, and trust controls for the signed-in role."
     >
       <SectionCard title="Current Controls" description="These rows now reflect the real app posture instead of hardcoded fake switches.">
         <div className="list">
@@ -34,8 +34,12 @@ export default async function SettingsPage() {
             <span className="chip">enforced for live mobile withdrawals</span>
           </div>
           <div className="list-item">
-            <strong>Device binding</strong>
-            <span className="chip">enabled for newly created staff users</span>
+            <strong>Agent phone trust</strong>
+            <span className="chip">one active trusted phone per agent account</span>
+          </div>
+          <div className="list-item">
+            <strong>Branch-manager workstation trust</strong>
+            <span className="chip">browser-profile trust enabled after password and PIN setup</span>
           </div>
           <div className="list-item">
             <strong>Service-role backed onboarding</strong>
@@ -53,6 +57,9 @@ export default async function SettingsPage() {
         description="Quick links to the creation flows that are now wired live."
       >
         <div className="actions">
+          <Link className="button-secondary" href="/staff-devices">
+            Review Staff Trust
+          </Link>
           {role === "admin" ? (
             <>
               <Link className="button" href="/branches/new">

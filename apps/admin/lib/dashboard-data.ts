@@ -400,6 +400,9 @@ function emptyProfile(role: UserRole = "admin"): AdminProfile {
     full_name: "Supabase not configured",
     email: null,
     branch_id: null,
+    must_change_password: false,
+    requires_pin_setup: false,
+    is_active: true,
   };
 }
 

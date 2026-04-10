@@ -1,6 +1,12 @@
 import { redirect } from "next/navigation";
 
+import {
+  isWorkstationTokenConfigurationError,
+  isBranchManagerSetupComplete,
+  syncWorkstationIdentityFromFormData,
+} from "../lib/staff-device";
 import { createClient } from "../lib/supabase/server";
+import { WorkstationIdentityFields } from "./workstation-identity-bootstrap";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
@@ -16,6 +22,16 @@ async function signInAction(formData: FormData) {
     redirect("/login?reason=invalid-credentials");
   }
 
+  try {
+    await syncWorkstationIdentityFromFormData(formData);
+  } catch (error) {
+    if (isWorkstationTokenConfigurationError(error)) {
+      redirect("/login?reason=workstation-config-missing");
+    }
+
+    throw error;
+  }
+
   const supabase = await createClient();
   const result = await supabase.auth.signInWithPassword({ email, password });
 
@@ -26,6 +42,10 @@ async function signInAction(formData: FormData) {
   const { data: profileRows } = await supabase.rpc("get_my_profile");
   const profile = Array.isArray(profileRows) ? profileRows[0] : null;
   const role = profile?.role;
+
+  if (role === "branch_manager" && profile && !isBranchManagerSetupComplete(profile)) {
+    redirect("/setup");
+  }
 
   redirect(role === "branch_manager" ? "/branch" : "/");
 }
@@ -41,6 +61,7 @@ export function LoginForm() {
       </CardHeader>
       <CardContent>
         <form action={signInAction} className="space-y-4">
+          <WorkstationIdentityFields />
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input autoComplete="email" id="email" name="email" placeholder="admin@example.com" required type="email" />

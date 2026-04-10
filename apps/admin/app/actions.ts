@@ -4,14 +4,21 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import type { Route } from "next";
 import { redirect } from "next/navigation";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import type { RepaymentMode, TransactionType } from "@credit-union/shared";
 import {
+  PASSWORD_POLICY,
   assertValidBranchCode,
   provisionMember,
 } from "@credit-union/shared";
 
 import { requireRole } from "../lib/auth";
-import { hasSupabaseEnv, hasSupabaseServiceEnv } from "../lib/supabase/env";
+import {
+  registerCurrentWorkstation,
+  syncWorkstationIdentityFromFormData,
+} from "../lib/staff-device";
+import { getSupabaseEnv, hasSupabaseEnv, hasSupabaseServiceEnv } from "../lib/supabase/env";
 import { createServiceClient } from "../lib/supabase/service";
 import { createClient } from "../lib/supabase/server";
 
@@ -43,6 +50,37 @@ type MemberProvisionInput = {
   savingsAccountNumber?: string;
 };
 
+type SafeUserErrorInput = {
+  action: string;
+  error: unknown;
+  userMessage: string;
+  errorCode: string;
+};
+
+type ErrorDiagnostics = {
+  rawCode?: string;
+  rawDetails?: string;
+  rawHint?: string;
+  rawMessage: string;
+  stack?: string;
+};
+
+type ErrorLikeObject = {
+  code?: unknown;
+  details?: unknown;
+  error_description?: unknown;
+  hint?: unknown;
+  message?: unknown;
+  stack?: unknown;
+};
+
+class UserFacingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UserFacingError";
+  }
+}
+
 function buildRedirect(path: string, result: RedirectResult, detail?: string): Route {
   const params = new URLSearchParams();
   params.set("result", result);
@@ -52,6 +90,97 @@ function buildRedirect(path: string, result: RedirectResult, detail?: string): R
   }
 
   return `${path}?${params.toString()}` as Route;
+}
+
+function normalizeText(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function toUserFacingError(message: string) {
+  return new UserFacingError(message);
+}
+
+function getErrorDiagnostics(error: unknown): ErrorDiagnostics {
+  if (typeof error === "string") {
+    return {
+      rawMessage: normalizeText(error) ?? "Unknown error",
+    };
+  }
+
+  if (error instanceof Error) {
+    const errorWithFields = error as ErrorLikeObject;
+    return {
+      rawCode: normalizeText(errorWithFields.code),
+      rawDetails: normalizeText(errorWithFields.details),
+      rawHint: normalizeText(errorWithFields.hint),
+      rawMessage:
+        normalizeText(error.message) ??
+        normalizeText(errorWithFields.error_description) ??
+        normalizeText(errorWithFields.details) ??
+        normalizeText(errorWithFields.hint) ??
+        "Unknown error",
+      stack: normalizeText(error.stack) ?? normalizeText(errorWithFields.stack) ?? undefined,
+    };
+  }
+
+  if (error && typeof error === "object") {
+    const errorLike = error as ErrorLikeObject;
+    return {
+      rawCode: normalizeText(errorLike.code),
+      rawDetails: normalizeText(errorLike.details),
+      rawHint: normalizeText(errorLike.hint),
+      rawMessage:
+        normalizeText(errorLike.message) ??
+        normalizeText(errorLike.error_description) ??
+        normalizeText(errorLike.details) ??
+        normalizeText(errorLike.hint) ??
+        "Unknown error",
+      stack: normalizeText(errorLike.stack) ?? undefined,
+    };
+  }
+
+  return {
+    rawMessage: "Unknown error",
+  };
+}
+
+function toSafeUserError(input: SafeUserErrorInput) {
+  const correlationId = crypto.randomUUID();
+  const diagnostics = getErrorDiagnostics(input.error);
+
+  console.error(
+    JSON.stringify({
+      level: "error",
+      event: "admin_action_failed",
+      action: input.action,
+      errorCode: input.errorCode,
+      correlationId,
+      rawCode: diagnostics.rawCode,
+      rawDetails: diagnostics.rawDetails,
+      rawHint: diagnostics.rawHint,
+      rawMessage: diagnostics.rawMessage,
+      stack: diagnostics.stack,
+    }),
+  );
+
+  return `${input.userMessage} (Code: ${input.errorCode}; Ref: ${correlationId})`;
+}
+
+function toRedirectErrorMessage(input: SafeUserErrorInput) {
+  if (isRedirectError(input.error)) {
+    throw input.error;
+  }
+
+  if (input.error instanceof UserFacingError) {
+    return input.error.message;
+  }
+
+  return toSafeUserError(input);
 }
 
 async function clearMemberCreationFlash() {
@@ -87,7 +216,7 @@ function requiredValue(formData: FormData, key: string, label: string) {
   const value = String(formData.get(key) ?? "").trim();
 
   if (!value) {
-    throw new Error(`${label} is required.`);
+    throw toUserFacingError(`${label} is required.`);
   }
 
   return value;
@@ -107,7 +236,7 @@ function requiredNumberValue(formData: FormData, key: string, label: string) {
   const value = Number(requiredValue(formData, key, label));
 
   if (!Number.isFinite(value)) {
-    throw new Error(`${label} must be a valid number.`);
+    throw toUserFacingError(`${label} must be a valid number.`);
   }
 
   return value;
@@ -131,7 +260,7 @@ async function createAuthUser(email: string, password: string, fullName: string)
   });
 
   if (response.error || !response.data.user) {
-    throw new Error(response.error?.message ?? `Unable to create auth user for ${email}.`);
+    throw response.error ?? new Error(`Unable to create auth user for ${email}.`);
   }
 
   return response.data.user;
@@ -155,7 +284,7 @@ async function getBranchRecord(branchId: string) {
     .single();
 
   if (response.error || !response.data) {
-    throw new Error(response.error?.message ?? "Selected branch was not found.");
+    throw response.error ?? new Error("Selected branch was not found.");
   }
 
   return response.data as {
@@ -178,11 +307,11 @@ async function assertAssignedAgent(
     .single();
 
   if (response.error || !response.data) {
-    throw new Error(response.error?.message ?? "Assigned agent was not found.");
+    throw response.error ?? new Error("Assigned agent was not found.");
   }
 
   if (response.data.role !== "agent" || response.data.branch_id !== branchId) {
-    throw new Error("Assigned agent must belong to the selected branch.");
+    throw toUserFacingError("Assigned agent must belong to the selected branch.");
   }
 
   return response.data;
@@ -209,7 +338,7 @@ async function writeAuditLogEntry(
   });
 
   if (response.error) {
-    throw new Error(response.error.message);
+    throw response.error;
   }
 }
 
@@ -295,17 +424,35 @@ function assertBranchForRole(
 ) {
   if (role === "branch_manager") {
     if (!profileBranchId) {
-      throw new Error("This branch manager is not assigned to a branch.");
+      throw toUserFacingError("This branch manager is not assigned to a branch.");
     }
 
     return profileBranchId;
   }
 
   if (!requestedBranchId) {
-    throw new Error("Branch is required.");
+    throw toUserFacingError("Branch is required.");
   }
 
   return requestedBranchId;
+}
+
+async function verifyCurrentPassword(email: string, password: string) {
+  const { url, publishableKey } = getSupabaseEnv();
+  const supabase = createSupabaseClient(url, publishableKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) {
+    throw toUserFacingError("Current temporary password is incorrect.");
+  }
 }
 
 async function mutateTransactionRequest(
@@ -316,18 +463,32 @@ async function mutateTransactionRequest(
     redirect(buildRedirect("/transactions", "error", "Supabase credentials are missing."));
   }
 
-  const requestId = requiredValue(formData, "requestId", "Transaction request");
-  const note = optionalValue(formData, "note");
+  try {
+    const requestId = requiredValue(formData, "requestId", "Transaction request");
+    const note = optionalValue(formData, "note");
+    const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
+    const { error } = await supabase.rpc(action, {
+      p_request_id: requestId,
+      p_actor_id: profile.id,
+      p_note: note,
+    });
 
-  const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
-  const { error } = await supabase.rpc(action, {
-    p_request_id: requestId,
-    p_actor_id: profile.id,
-    p_note: note,
-  });
-
-  if (error) {
-    redirect(buildRedirect("/transactions", "error", error.message));
+    if (error) {
+      throw error;
+    }
+  } catch (error) {
+    redirect(
+      buildRedirect(
+        "/transactions",
+        "error",
+        toRedirectErrorMessage({
+          action,
+          error,
+          userMessage: "Unable to update this transaction request.",
+          errorCode: "TXN_REQUEST_FAILED",
+        }),
+      ),
+    );
   }
 
   revalidatePath("/transactions");
@@ -350,6 +511,143 @@ export async function signOutAction() {
   const supabase = await createClient();
   await supabase.auth.signOut();
   redirect("/login");
+}
+
+export async function completeBranchManagerSetupAction(formData: FormData) {
+  if (!hasSupabaseEnv()) {
+    redirect(buildRedirect("/setup", "error", "Supabase credentials are missing."));
+  }
+
+  try {
+    const { supabase, profile } = await requireRole(["branch_manager"], {
+      allowIncompleteSetup: true,
+      allowUntrustedDevice: true,
+    });
+
+    const currentPassword = String(formData.get("currentPassword") ?? "").trim();
+    const newPassword = String(formData.get("newPassword") ?? "").trim();
+    const confirmNewPassword = String(formData.get("confirmNewPassword") ?? "").trim();
+    const transactionPin = String(formData.get("transactionPin") ?? "").trim();
+    const confirmTransactionPin = String(formData.get("confirmTransactionPin") ?? "").trim();
+
+    if (profile.must_change_password) {
+      if (!currentPassword) {
+        throw toUserFacingError("Current temporary password is required.");
+      }
+
+      if (!profile.email) {
+        throw toUserFacingError("This branch-manager account is missing an email address.");
+      }
+
+      await verifyCurrentPassword(profile.email, currentPassword);
+
+
+      if (newPassword.length < 8) {
+        throw toUserFacingError("New password must be at least 8 characters.");
+
+      if (newPassword.length < PASSWORD_POLICY.minimumLength) {
+        throw new Error(
+          `New password must be at least ${PASSWORD_POLICY.minimumLength} characters.`,
+        );
+
+      }
+
+      if (newPassword !== confirmNewPassword) {
+        throw toUserFacingError("Your new password and confirmation must match.");
+      }
+    }
+
+    if (profile.requires_pin_setup) {
+      if (!/^\d{4}$/.test(transactionPin)) {
+        throw toUserFacingError("Transaction PIN must be exactly 4 digits.");
+      }
+
+      if (transactionPin !== confirmTransactionPin) {
+        throw toUserFacingError("Your transaction PIN and confirmation must match.");
+      }
+    }
+
+    await syncWorkstationIdentityFromFormData(formData);
+
+    if (profile.must_change_password) {
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      const { error: completeError } = await supabase.rpc("complete_password_change");
+
+      if (completeError) {
+        throw completeError;
+      }
+    }
+
+    if (profile.requires_pin_setup) {
+      const { error: pinError } = await supabase.rpc("set_my_transaction_pin", {
+        p_pin: transactionPin,
+      });
+
+      if (pinError) {
+        throw pinError;
+      }
+    }
+
+    await registerCurrentWorkstation(supabase);
+  } catch (error) {
+    const safeMessage = toRedirectErrorMessage({
+      action: "completeBranchManagerSetupAction",
+      error,
+      userMessage: "Unable to complete setup.",
+      errorCode: "SETUP_FAILED",
+    });
+    redirect(
+      buildRedirect(
+        "/setup",
+        "error",
+        safeMessage,
+      ),
+    );
+  }
+
+  revalidatePath("/branch");
+  revalidatePath("/settings");
+  redirect(buildRedirect("/branch", "success", "Security setup complete."));
+}
+
+export async function rebindCurrentWorkstationAction(formData: FormData) {
+  if (!hasSupabaseEnv()) {
+    redirect(buildRedirect("/workstation-blocked", "error", "Supabase credentials are missing."));
+  }
+
+  try {
+    const { supabase } = await requireRole(["branch_manager"], {
+      allowUntrustedDevice: true,
+    });
+
+    await syncWorkstationIdentityFromFormData(formData);
+    await registerCurrentWorkstation(supabase);
+  } catch (error) {
+    const safeMessage = toRedirectErrorMessage({
+      action: "rebindCurrentWorkstationAction",
+      error,
+      userMessage: "Unable to trust this workstation.",
+      errorCode: "WORKSTATION_REBIND_FAILED",
+    });
+    redirect(
+      buildRedirect(
+        "/workstation-blocked",
+        "error",
+        safeMessage,
+      ),
+    );
+  }
+
+  revalidatePath("/branch");
+  revalidatePath("/staff-devices");
+  redirect(buildRedirect("/branch", "success", "This workstation is trusted again."));
 }
 
 export async function approveTransactionRequestAction(formData: FormData) {
@@ -375,7 +673,7 @@ export async function reviewCashReconciliationAction(formData: FormData) {
     const reviewNote = optionalValue(formData, "reviewNote");
 
     if (reviewAction !== "approve" && reviewAction !== "reject") {
-      throw new Error("Review action must be approve or reject.");
+      throw toUserFacingError("Review action must be approve or reject.");
     }
 
     const { supabase } = await requireRole(["admin", "branch_manager"]);
@@ -386,14 +684,20 @@ export async function reviewCashReconciliationAction(formData: FormData) {
     });
 
     if (error) {
-      throw new Error(error.message);
+      throw error;
     }
   } catch (error) {
+    const safeMessage = toRedirectErrorMessage({
+      action: "reviewCashReconciliationAction",
+      error,
+      userMessage: "Unable to review the cash reconciliation.",
+      errorCode: "RECON_REVIEW_FAILED",
+    });
     redirect(
       buildRedirect(
         "/reconciliation",
         "error",
-        error instanceof Error ? error.message : "Unable to review the cash reconciliation.",
+        safeMessage,
       ),
     );
   }
@@ -430,7 +734,7 @@ async function createAdminTransactionAction(
     const amount = Number(amountValue);
 
     if (!Number.isFinite(amount) || amount <= 0) {
-      throw new Error("Amount must be greater than zero.");
+      throw toUserFacingError("Amount must be greater than zero.");
     }
 
     const { error } = await supabase.rpc("create_admin_transaction", {
@@ -443,14 +747,20 @@ async function createAdminTransactionAction(
     });
 
     if (error) {
-      throw new Error(error.message);
+      throw error;
     }
   } catch (error) {
+    const safeMessage = toRedirectErrorMessage({
+      action: `createAdminTransactionAction:${transactionType}`,
+      error,
+      userMessage: "Unable to create transaction.",
+      errorCode: "TXN_CREATE_FAILED",
+    });
     redirect(
       buildRedirect(
         path,
         "error",
-        error instanceof Error ? error.message : "Unable to create transaction.",
+        safeMessage,
       ),
     );
   }
@@ -507,14 +817,20 @@ export async function createLoanApplicationAction(formData: FormData) {
     });
 
     if (error) {
-      throw new Error(error.message);
+      throw error;
     }
   } catch (error) {
+    const safeMessage = toRedirectErrorMessage({
+      action: "createLoanApplicationAction",
+      error,
+      userMessage: "Unable to create loan application.",
+      errorCode: "LOAN_CREATE_FAILED",
+    });
     redirect(
       buildRedirect(
         "/loans",
         "error",
-        error instanceof Error ? error.message : "Unable to create loan application.",
+        safeMessage,
       ),
     );
   }
@@ -553,7 +869,7 @@ async function mutateLoanApplicationAction(
       });
 
       if (error) {
-        throw new Error(error.message);
+        throw error;
       }
     } else {
       const { error } = await supabase.rpc(action, {
@@ -563,15 +879,21 @@ async function mutateLoanApplicationAction(
       });
 
       if (error) {
-        throw new Error(error.message);
+        throw error;
       }
     }
   } catch (error) {
+    const safeMessage = toRedirectErrorMessage({
+      action,
+      error,
+      userMessage: "Unable to update loan application.",
+      errorCode: "LOAN_UPDATE_FAILED",
+    });
     redirect(
       buildRedirect(
         "/loans",
         "error",
-        error instanceof Error ? error.message : "Unable to update loan application.",
+        safeMessage,
       ),
     );
   }
@@ -619,14 +941,20 @@ export async function disburseLoanAction(formData: FormData) {
     });
 
     if (error) {
-      throw new Error(error.message);
+      throw error;
     }
   } catch (error) {
+    const safeMessage = toRedirectErrorMessage({
+      action: "disburseLoanAction",
+      error,
+      userMessage: "Unable to disburse loan.",
+      errorCode: "LOAN_DISBURSE_FAILED",
+    });
     redirect(
       buildRedirect(
         "/loans",
         "error",
-        error instanceof Error ? error.message : "Unable to disburse loan.",
+        safeMessage,
       ),
     );
   }
@@ -656,7 +984,7 @@ export async function recordLoanRepaymentAction(formData: FormData) {
       repaymentMode !== "interest_only" &&
       repaymentMode !== "interest_plus_principal"
     ) {
-      throw new Error("Repayment mode is invalid.");
+      throw toUserFacingError("Repayment mode is invalid.");
     }
 
     const { error } = await supabase.rpc("record_loan_repayment", {
@@ -669,14 +997,20 @@ export async function recordLoanRepaymentAction(formData: FormData) {
     });
 
     if (error) {
-      throw new Error(error.message);
+      throw error;
     }
   } catch (error) {
+    const safeMessage = toRedirectErrorMessage({
+      action: "recordLoanRepaymentAction",
+      error,
+      userMessage: "Unable to record loan repayment.",
+      errorCode: "LOAN_REPAYMENT_FAILED",
+    });
     redirect(
       buildRedirect(
         "/loans",
         "error",
-        error instanceof Error ? error.message : "Unable to record loan repayment.",
+        safeMessage,
       ),
     );
   }
@@ -715,7 +1049,7 @@ export async function createBranchAction(formData: FormData) {
       .single();
 
     if (branchResponse.error || !branchResponse.data) {
-      throw new Error(branchResponse.error?.message ?? "Unable to create branch.");
+      throw branchResponse.error ?? new Error("Unable to create branch.");
     }
 
     if (managerProfileId) {
@@ -725,7 +1059,7 @@ export async function createBranchAction(formData: FormData) {
         .eq("id", managerProfileId);
 
       if (profileError) {
-        throw new Error(profileError.message);
+        throw profileError;
       }
 
       const { error: staffError } = await service
@@ -738,19 +1072,25 @@ export async function createBranchAction(formData: FormData) {
             status: "active",
           },
           { onConflict: "profile_id" },
-        );
+      );
 
       if (staffError) {
-        throw new Error(staffError.message);
+        throw staffError;
       }
     }
     successDetail = `Created branch ${name}.`;
   } catch (error) {
+    const safeMessage = toRedirectErrorMessage({
+      action: "createBranchAction",
+      error,
+      userMessage: "Unable to create branch.",
+      errorCode: "BRANCH_CREATE_FAILED",
+    });
     redirect(
       buildRedirect(
         "/branches/new",
         "error",
-        error instanceof Error ? error.message : "Unable to create branch.",
+        safeMessage,
       ),
     );
   }
@@ -777,8 +1117,15 @@ export async function createManagerAction(formData: FormData) {
     const password = requiredValue(formData, "password", "Temporary password");
     const branchId = requiredValue(formData, "branchId", "Branch");
 
+
     if (password.length < 8) {
-      throw new Error("Temporary password must be at least 8 characters.");
+      throw toUserFacingError("Temporary password must be at least 8 characters.");
+
+    if (password.length < PASSWORD_POLICY.minimumLength) {
+      throw new Error(
+        `Temporary password must be at least ${PASSWORD_POLICY.minimumLength} characters.`,
+      );
+
     }
 
     const user = await createAuthUser(email, password, fullName);
@@ -802,7 +1149,7 @@ export async function createManagerAction(formData: FormData) {
       .single();
 
     if (profileResponse.error || !profileResponse.data) {
-      throw new Error(profileResponse.error?.message ?? "Unable to create manager profile.");
+      throw profileResponse.error ?? new Error("Unable to create manager profile.");
     }
 
     const { error: staffError } = await service.from("staff_users").upsert(
@@ -816,7 +1163,7 @@ export async function createManagerAction(formData: FormData) {
     );
 
     if (staffError) {
-      throw new Error(staffError.message);
+      throw staffError;
     }
 
     const { error: branchError } = await service
@@ -825,16 +1172,22 @@ export async function createManagerAction(formData: FormData) {
       .eq("id", branch.id);
 
     if (branchError) {
-      throw new Error(branchError.message);
+      throw branchError;
     }
     successDetail = `Created branch manager ${fullName}.`;
   } catch (error) {
     await deleteAuthUserIfPresent(createdUserId);
+    const safeMessage = toRedirectErrorMessage({
+      action: "createManagerAction",
+      error,
+      userMessage: "Unable to create branch manager.",
+      errorCode: "MANAGER_CREATE_FAILED",
+    });
     redirect(
       buildRedirect(
         "/managers/new",
         "error",
-        error instanceof Error ? error.message : "Unable to create branch manager.",
+        safeMessage,
       ),
     );
   }
@@ -865,8 +1218,15 @@ export async function createAgentAction(formData: FormData) {
       optionalValue(formData, "branchId"),
     );
 
+
     if (password.length < 8) {
-      throw new Error("Temporary password must be at least 8 characters.");
+      throw toUserFacingError("Temporary password must be at least 8 characters.");
+
+    if (password.length < PASSWORD_POLICY.minimumLength) {
+      throw new Error(
+        `Temporary password must be at least ${PASSWORD_POLICY.minimumLength} characters.`,
+      );
+
     }
 
     const branch = await getBranchRecord(branchId);
@@ -890,7 +1250,7 @@ export async function createAgentAction(formData: FormData) {
       .single();
 
     if (profileResponse.error || !profileResponse.data) {
-      throw new Error(profileResponse.error?.message ?? "Unable to create agent profile.");
+      throw profileResponse.error ?? new Error("Unable to create agent profile.");
     }
 
     const { error: staffError } = await service.from("staff_users").upsert(
@@ -904,16 +1264,22 @@ export async function createAgentAction(formData: FormData) {
     );
 
     if (staffError) {
-      throw new Error(staffError.message);
+      throw staffError;
     }
     successDetail = `Created agent ${fullName}.`;
   } catch (error) {
     await deleteAuthUserIfPresent(createdUserId);
+    const safeMessage = toRedirectErrorMessage({
+      action: "createAgentAction",
+      error,
+      userMessage: "Unable to create agent.",
+      errorCode: "AGENT_CREATE_FAILED",
+    });
     redirect(
       buildRedirect(
         "/agents/new",
         "error",
-        error instanceof Error ? error.message : "Unable to create agent.",
+        safeMessage,
       ),
     );
   }
@@ -975,17 +1341,62 @@ export async function createMemberAction(formData: FormData) {
     successDetail = `Created member ${fullName}. Credentials are ready below for secure handoff.`;
   } catch (error) {
     await clearMemberCreationFlash();
+    const safeMessage = toRedirectErrorMessage({
+      action: "createMemberAction",
+      error,
+      userMessage: "Unable to create member.",
+      errorCode: "MEMBER_CREATE_FAILED",
+    });
     redirect(
       buildRedirect(
         "/members/new",
         "error",
-        error instanceof Error ? error.message : "Unable to create member.",
+        safeMessage,
       ),
     );
   }
 
   revalidateMemberPaths();
   redirect(buildRedirect("/members/new", "success", successDetail));
+}
+
+export async function resetStaffDeviceAction(formData: FormData) {
+  if (!hasSupabaseEnv()) {
+    redirect(buildRedirect("/staff-devices", "error", "Supabase credentials are missing."));
+  }
+
+  try {
+    const { supabase } = await requireRole(["admin", "branch_manager"]);
+    const profileId = requiredValue(formData, "profileId", "Staff account");
+    const reason = optionalValue(formData, "reason");
+    const { error } = await supabase.rpc("reset_staff_device", {
+      p_profile_id: profileId,
+      p_reason: reason,
+    });
+
+    if (error) {
+      throw error;
+    }
+  } catch (error) {
+    const safeMessage = toRedirectErrorMessage({
+      action: "resetStaffDeviceAction",
+      error,
+      userMessage: "Unable to reset trusted device access.",
+      errorCode: "STAFF_DEVICE_RESET_FAILED",
+    });
+    redirect(
+      buildRedirect(
+        "/staff-devices",
+        "error",
+        safeMessage,
+      ),
+    );
+  }
+
+  revalidatePath("/staff-devices");
+  revalidatePath("/settings");
+  revalidatePath("/audit");
+  redirect(buildRedirect("/staff-devices", "success", "Trusted device reset."));
 }
 
 export async function requestReportAction(formData: FormData) {
@@ -1023,14 +1434,20 @@ export async function requestReportAction(formData: FormData) {
     });
 
     if (error) {
-      throw new Error(error.message);
+      throw error;
     }
   } catch (error) {
+    const safeMessage = toRedirectErrorMessage({
+      action: "requestReportAction",
+      error,
+      userMessage: "Unable to queue report request.",
+      errorCode: "REPORT_QUEUE_FAILED",
+    });
     redirect(
       buildRedirect(
         "/reports",
         "error",
-        error instanceof Error ? error.message : "Unable to queue report request.",
+        safeMessage,
       ),
     );
   }

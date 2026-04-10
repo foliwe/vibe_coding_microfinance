@@ -2,6 +2,8 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { normalizeIdCardNumber, provisionMember } from "../../../packages/shared/src/member-provisioning.ts";
 
 type CreateMemberPayload = {
+  deviceId?: string;
+  deviceName?: string;
   email?: string;
   firstName?: string;
   fullName?: string;
@@ -117,8 +119,34 @@ Deno.serve(async (request) => {
     return errorResponse("Only agents can create members from mobile.", 403);
   }
 
+  const deviceId = body?.deviceId?.trim() ?? "";
+
+  if (!deviceId) {
+    return errorResponse("Trusted device identity is required.", 400);
+  }
+
   if (!actor.branch_id) {
     return errorResponse("The signed-in agent is not assigned to a branch.", 400);
+  }
+
+  const { data: deviceAccessRows, error: deviceAccessError } = await authedClient.rpc(
+    "assert_staff_device_access",
+    {
+      p_device_id: deviceId,
+      p_device_kind: "mobile",
+    },
+  );
+
+  if (deviceAccessError) {
+    return errorResponse(deviceAccessError.message, 400);
+  }
+
+  const deviceAccess = Array.isArray(deviceAccessRows)
+    ? (deviceAccessRows[0] as { access?: string } | undefined)
+    : undefined;
+
+  if (deviceAccess?.access !== "allowed") {
+    return errorResponse("This account is locked to a different phone.", 403);
   }
 
   const { data: branch, error: branchError } = await serviceClient
@@ -153,6 +181,8 @@ Deno.serve(async (request) => {
       entity_type: "member_profile",
       entity_id: provisionedMember.memberId,
       metadata: {
+        deviceId,
+        deviceName: body?.deviceName?.trim() || null,
         source: "mobile_agent",
       },
     });

@@ -1,6 +1,10 @@
 import type { UserRole } from "@credit-union/shared";
 import { redirect } from "next/navigation";
 
+import {
+  ensureCurrentWorkstationAccess,
+  isBranchManagerSetupComplete,
+} from "./staff-device";
 import { createClient } from "./supabase/server";
 
 export interface AdminProfile {
@@ -9,7 +13,15 @@ export interface AdminProfile {
   full_name: string;
   email: string | null;
   branch_id: string | null;
+  must_change_password: boolean;
+  requires_pin_setup: boolean;
+  is_active: boolean;
 }
+
+type RequireRoleOptions = {
+  allowIncompleteSetup?: boolean;
+  allowUntrustedDevice?: boolean;
+};
 
 function dashboardPathForRole(role: UserRole) {
   if (role === "branch_manager") return "/branch";
@@ -35,7 +47,10 @@ export async function getCurrentProfileOrNull() {
   };
 }
 
-export async function requireRole(allowedRoles: UserRole[]) {
+export async function requireRole(
+  allowedRoles: UserRole[],
+  options: RequireRoleOptions = {},
+) {
   const { supabase, profile } = await getCurrentProfileOrNull();
 
   if (!profile) {
@@ -46,13 +61,45 @@ export async function requireRole(allowedRoles: UserRole[]) {
     redirect("/login?reason=unauthorized");
   }
 
+  if (!profile.is_active) {
+    redirect("/login?reason=unauthorized");
+  }
+
+  if (profile.role === "branch_manager") {
+    if (!options.allowIncompleteSetup && !isBranchManagerSetupComplete(profile)) {
+      redirect("/setup");
+    }
+
+    if (options.allowUntrustedDevice || !isBranchManagerSetupComplete(profile)) {
+      return { supabase, profile };
+    }
+
+    const assertion = await ensureCurrentWorkstationAccess(supabase);
+
+    if (assertion.access !== "allowed") {
+      redirect("/workstation-blocked");
+    }
+  }
+
   return { supabase, profile };
 }
 
 export async function redirectIfSignedIn() {
-  const { profile } = await getCurrentProfileOrNull();
+  const { profile, supabase } = await getCurrentProfileOrNull();
 
   if (profile && (profile.role === "admin" || profile.role === "branch_manager")) {
+    if (profile.role === "branch_manager") {
+      if (!isBranchManagerSetupComplete(profile)) {
+        redirect("/setup");
+      }
+
+      const assertion = await ensureCurrentWorkstationAccess(supabase);
+
+      if (assertion.access !== "allowed") {
+        redirect("/workstation-blocked");
+      }
+    }
+
     redirect(dashboardPathForRole(profile.role));
   }
 }
