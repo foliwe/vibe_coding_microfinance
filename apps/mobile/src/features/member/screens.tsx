@@ -63,7 +63,8 @@ export function MemberHomeScreen() {
   }
 
   return (
-    <Screen subtitle={`${data.memberCode} · ${data.branchName}`} title="Home">
+    //<Screen subtitle={`${data.memberCode} · ${data.branchName}`} title="Home"></Screen>
+    <Screen subtitle=""  title="">
       <SurfaceCard accent="#EEF4ED">
         <Text style={styles.heroTitle}>{data.memberName}</Text>
         <Text style={styles.heroCaption}>Clear balances, loan visibility, and pending state tracking.</Text>
