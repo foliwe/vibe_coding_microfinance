@@ -1,7 +1,9 @@
+import { cookies } from "next/headers";
 import Link from "next/link";
 
 import { ActivityTrendChart, ChartBars } from "../../../components/chart-bars";
 import { AdminShell } from "../../../components/admin-shell";
+import { PasswordResetNotice } from "../../../components/password-reset-notice";
 import { SectionCard } from "../../../components/section-card";
 import { StatCard } from "../../../components/stat-card";
 import {
@@ -12,16 +14,51 @@ import {
   TableHeader,
   TableRow,
 } from "../../../components/ui/table";
+import { resetLoginPasswordAction } from "../../actions";
 import { breadcrumb, withDashboardBreadcrumbs } from "../../../lib/breadcrumbs";
+import type { PasswordResetFlash } from "../../../lib/password-reset";
 import { getMemberDetailPageData } from "../../../lib/dashboard-data";
 import { prettyCurrency } from "../../../lib/format";
 
+function Notice({
+  detail,
+  result,
+}: {
+  detail?: string;
+  result?: string;
+}) {
+  if (!result) {
+    return null;
+  }
+
+  return (
+    <p className={`notice ${result === "success" ? "notice-success" : "notice-error"}`}>
+      {detail ?? (result === "success" ? "Saved successfully." : "Something went wrong.")}
+    </p>
+  );
+}
+
 export default async function MemberDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ detail?: string; result?: string }>;
 }) {
   const { id } = await params;
+  const resolvedSearchParams = await searchParams;
+  const cookieStore = await cookies();
+  const flashValue = cookieStore.get("password_reset_flash")?.value;
+  const passwordResetFlash =
+    resolvedSearchParams?.result === "success" && flashValue
+      ? (() => {
+          try {
+            return JSON.parse(flashValue) as PasswordResetFlash;
+          } catch {
+            return null;
+          }
+        })()
+      : null;
   const { accounts, activityTrend, currentBranchLabel, isLive, member, profile, recentTransactions } =
     await getMemberDetailPageData(id);
   const role = profile.role === "admin" ? "admin" : "branch_manager";
@@ -138,6 +175,23 @@ export default async function MemberDetailPage({
               )}
             </SectionCard>
           </div>
+
+          <SectionCard
+            title="Reset Login Password"
+            description="Generate a new temporary password for this member. The password must be changed at next login and any existing transaction PIN setup stays unchanged."
+          >
+            <Notice detail={resolvedSearchParams?.detail} result={resolvedSearchParams?.result} />
+            {passwordResetFlash ? <PasswordResetNotice {...passwordResetFlash} /> : null}
+            <form action={resetLoginPasswordAction}>
+              <input name="targetProfileId" type="hidden" value={member.id} />
+              <input name="targetRole" type="hidden" value="member" />
+              <div className="actions">
+                <button className="button-secondary" type="submit">
+                  Reset Login Password
+                </button>
+              </div>
+            </form>
+          </SectionCard>
 
           <SectionCard title="Recent Transactions" description="Latest transaction requests for this member.">
             {recentTransactions.length ? (
