@@ -1,0 +1,14 @@
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "tailwindcss/utilities.css";
+ 
+@import "nativewind/theme";
+
+@theme {
+  --color-mint-500: oklch(0.72 0.11 178);
+  --color-yellow-500: oklch(90.7% 0.1962 108.5);
+  --color-bar: #00992B;
+  --color-lime: #DBEEDA;
+
+  
+}
