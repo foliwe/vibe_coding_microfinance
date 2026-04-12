@@ -32,6 +32,8 @@ import { useResource } from "@/lib/use-resource";
 import type { LoanCard } from "@/lib/mobile-models";
 import type { TransactionRequest } from "@credit-union/shared";
 import { colors, spacing, typography } from "@/theme/tokens";
+import { SafeAreaFrameContext, SafeAreaView } from "react-native-safe-area-context";
+import "@/global.css";
 
 function ResourceErrorCard({ message }: { message: string }) {
   return (
@@ -63,37 +65,27 @@ export function MemberHomeScreen() {
   }
 
   return (
-    <Screen subtitle={`${data.memberCode} · ${data.branchName}`} title="Home">
-        <SurfaceCard accent="#EEF4ED">
-          <Text style={styles.heroTitle}>{data.memberName}</Text>
-          <Text style={styles.heroCaption}>Clear balances, loan visibility, and pending state tracking.</Text>
-          <View style={styles.inlineWrap}>
-            <StatusPill label={data.syncState} />
-            <StatusPill label="APPROVED" />
-          </View>
-        </SurfaceCard>
 
-        <SectionHeader title="Balances" />
-        <View style={styles.grid}>
-          <StatCard label="Savings" value={formatCurrency(data.savingsBalance)} />
-          <StatCard label="Deposit" value={formatCurrency(data.depositBalance)} />
-          <StatCard label="Available" value={formatCurrency(data.availableBalance)} />
-        </View>
 
-        <SectionHeader title="Loan Snapshot" />
-        <SurfaceCard>
-          <InfoRow label="Outstanding" value={formatCurrency(data.outstandingLoan)} />
-          <InfoRow label="Next due" value={data.nextDueLabel} />
-          <InfoRow label="Branch contact" value={data.branchContact} />
-        </SurfaceCard>
 
-        <SectionHeader title="Trend" />
-        <SurfaceCard>
-          <Text style={styles.heroCaption}>Recent account activity pulled from approved transaction history.</Text>
-          <MiniBarChart data={data.flowTrend} />
-        </SurfaceCard>
-      </Screen>
     
+       <View className="bg-[#004324] ">
+        <SafeAreaView  edges={["top"]}> 
+
+          <View className="flex items-center justify-center">
+            <Text className="text-3xl  text-white ">CFA</Text>
+            <Text className="text-xl  text-white ">All Accounts</Text>
+            <Text className="text-5xl  font-bold text-yellow-500 ">10,088,785</Text>
+            <Text className="text-sm font-light text-white ">Pending Transaction</Text>
+          </View>
+          
+        </SafeAreaView>
+      
+    </View>
+  
+
+
+
   );
 }
 

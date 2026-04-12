@@ -11,6 +11,7 @@ import {
 } from "@expo-google-fonts/space-grotesk";
 
 import { AppSessionProvider } from "@/lib/app-session";
+import "@/global.css";
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 

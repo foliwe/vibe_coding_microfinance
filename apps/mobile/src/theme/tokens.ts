@@ -1,6 +1,6 @@
 export const colors = {
   page: "#ffffff",
-  //page: "#F4F6F1",
+  foliwe: "#89db0e",
   pageShade: "#E7EEE6",
   card: "#FBFCF8",
   cardAlt: "#EEF4ED",
