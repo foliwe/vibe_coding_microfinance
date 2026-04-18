@@ -233,6 +233,7 @@ export function AgentMemberDetailScreen() {
   const member = data?.member ?? null;
   const canTakeSavings = member?.status === "active" && !!data?.savingsTarget;
   const canTakeDeposit = member?.status === "active" && !!data?.depositTarget;
+  const canTakeWithdrawal = member?.status === "active" && !!data?.withdrawalTarget;
 
   if (!memberId) {
     return (
@@ -335,13 +336,33 @@ export function AgentMemberDetailScreen() {
             />
           </View>
         </View>
-        {!canTakeSavings || !canTakeDeposit ? (
+        <View style={styles.buttonRow}>
+          <View style={styles.fullWidthButton}>
+            <SecondaryButton
+              disabled={!canTakeWithdrawal}
+              label="Withdrawal"
+              onPress={() => {
+                if (!canTakeWithdrawal) {
+                  return;
+                }
+
+                router.push({
+                  pathname: "/agent/transactions/withdrawal",
+                  params: { memberId: member.id, returnTo: "member" },
+                });
+              }}
+            />
+          </View>
+        </View>
+        {!canTakeSavings || !canTakeDeposit || !canTakeWithdrawal ? (
           <Text style={styles.inlineNotice}>
             {member.status !== "active"
-              ? "Direct collection is locked until this member becomes active."
+              ? "Direct collection and withdrawal are locked until this member becomes active."
               : !data.savingsTarget
                 ? "Savings collection is unavailable because no active savings account was found."
-                : "Deposit collection is unavailable because no active deposit account was found."}
+                : !data.depositTarget
+                  ? "Deposit collection is unavailable because no active deposit account was found."
+                  : "Withdrawal is unavailable because no eligible account was found for this member."}
           </Text>
         ) : null}
       </SurfaceCard>
@@ -666,21 +687,91 @@ export function AgentDepositScreen() {
 }
 
 export function AgentWithdrawalScreen() {
-  const { data: target, error, loading } = useResource(mobileData.getWithdrawalTarget);
+  const params = useLocalSearchParams<{
+    memberId?: string | string[];
+    returnTo?: string | string[];
+  }>();
+  const memberId = getSingleParam(params.memberId);
+  const returnTo = getSingleParam(params.returnTo);
+  const memberListLoader = useMemo(
+    () =>
+      memberId
+        ? async () => [] as AgentTransactionTarget[]
+        : mobileData.getEligibleWithdrawalMembers,
+    [memberId],
+  );
+  const targetLoader = useMemo(
+    () =>
+      memberId
+        ? () => mobileData.getWithdrawalTargetForMember(memberId)
+        : async () => null,
+    [memberId],
+  );
+  const {
+    data: eligibleMembers,
+    error: memberListError,
+    loading: memberListLoading,
+  } = useResource(memberListLoader);
+  const { data: target, error: targetError, loading: targetLoading } = useResource(targetLoader);
   const [amount, setAmount] = useState("5000");
   const [reason, setReason] = useState("Working capital withdrawal request");
   const [transactionPin, setTransactionPin] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
 
+  if (!memberId) {
+    return (
+      <Screen subtitle="Choose which eligible assigned member needs a withdrawal." title="Withdrawal">
+        {memberListError ? (
+          <ResourceErrorCard message={memberListError} />
+        ) : memberListLoading ? (
+          <>
+            <SkeletonCard />
+            <SkeletonCard />
+          </>
+        ) : !eligibleMembers || eligibleMembers.length === 0 ? (
+          <SubmissionErrorCard message="No eligible assigned member is ready for withdrawal capture yet." />
+        ) : (
+          <>
+            <SurfaceCard accent="#F7EEE0">
+              <Text style={styles.sectionCaption}>
+                Select a member first so the withdrawal form opens with the correct account and available balance.
+              </Text>
+            </SurfaceCard>
+            {eligibleMembers.map((memberTarget) => (
+              <Pressable
+                key={`${memberTarget.memberId}-${memberTarget.accountId}`}
+                onPress={() =>
+                  router.push({
+                    pathname: "/agent/transactions/withdrawal",
+                    params: { memberId: memberTarget.memberId },
+                  })
+                }
+                style={({ pressed }) => [styles.memberListRow, pressed && styles.memberListRowPressed]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.memberListName}>{memberTarget.memberName}</Text>
+                  <Text style={styles.cardCaption}>
+                    {memberTarget.memberCode} · {memberTarget.accountType.toUpperCase()} · {formatCurrency(memberTarget.availableBalance)}
+                  </Text>
+                </View>
+                <Ionicons color={colors.inkMuted} name="chevron-forward" size={18} />
+              </Pressable>
+            ))}
+          </>
+        )}
+      </Screen>
+    );
+  }
+
   return (
     <Screen subtitle="Withdrawals stay explicit about approvals and available cash." title="Withdrawal">
-      {error ? (
-        <ResourceErrorCard message={error} />
-      ) : loading ? (
+      {targetError ? (
+        <ResourceErrorCard message={targetError} />
+      ) : targetLoading ? (
         <SkeletonCard />
       ) : !target ? (
-        <SubmissionErrorCard message="No assigned member with an active account is ready for withdrawal capture yet." />
+        <SubmissionErrorCard message="No eligible withdrawal account is ready for this member yet." />
       ) : (
         <>
           <SurfaceCard accent="#F7EEE0">
@@ -714,6 +805,11 @@ export function AgentWithdrawalScreen() {
 
                 void submitTransaction(target, "withdrawal", amount, reason, transactionPin)
                   .then(() => {
+                    if (returnTo === "member") {
+                      router.replace(`/agent/members/${memberId}`);
+                      return;
+                    }
+
                     router.replace("/agent/transactions");
                   })
                   .catch((nextError) => {
@@ -1202,6 +1298,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.md,
     marginTop: spacing.sm,
+  },
+  fullWidthButton: {
+    flex: 1,
   },
   cardTitle: {
     color: colors.ink,

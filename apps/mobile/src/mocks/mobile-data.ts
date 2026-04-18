@@ -6,6 +6,7 @@ import type {
   AgentDashboard,
   AssignedMember,
   LoanCard,
+  MemberDashboard,
   SyncQueueItem,
 } from "@/lib/mobile-models";
 
