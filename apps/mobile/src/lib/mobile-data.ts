@@ -19,8 +19,6 @@ import {
   resolveAgentTransactionTarget,
   type AgentTransactionTarget,
 } from "./agent-transaction-targets";
-export type { AgentTransactionTarget } from "./agent-transaction-targets";
-
 import {
   getOfflineSyncQueue,
   getOfflineSyncQueueItems,
@@ -39,6 +37,7 @@ import {
   shouldQueueOfflineTransaction,
 } from "./transaction-submission";
 import { getSupabaseClient } from "./supabase/client";
+export type { AgentTransactionTarget } from "./agent-transaction-targets";
 
 type BranchRow = {
   id: string;
@@ -137,8 +136,11 @@ type LoanApplicationRow = {
 };
 
 type LoanRepaymentRow = {
+  id: string;
   created_at: string;
+  interest_component: number | string;
   loan_id: string;
+  principal_component: number | string;
   repayment_mode: "interest_only" | "interest_plus_principal";
 };
 
@@ -1555,7 +1557,7 @@ export const mobileData = {
       activeLoan
         ? supabase
             .from("loan_repayments")
-            .select("loan_id, created_at, repayment_mode")
+            .select("id, loan_id, created_at, repayment_mode, interest_component, principal_component")
             .eq("loan_id", activeLoan.id)
             .order("created_at", { ascending: false })
             .limit(1)
@@ -1669,7 +1671,7 @@ export const mobileData = {
       loanIds.length
         ? supabase
             .from("loan_repayments")
-            .select("loan_id, created_at, repayment_mode")
+            .select("id, loan_id, created_at, repayment_mode, interest_component, principal_component")
             .in("loan_id", loanIds)
             .order("created_at", { ascending: false })
         : Promise.resolve({ data: [] as LoanRepaymentRow[], error: null }),
@@ -1686,17 +1688,18 @@ export const mobileData = {
     const applicationMap = new Map(
       (((applicationResponse.data as LoanApplicationRow[] | null) ?? [])).map((row) => [row.id, row]),
     );
-    const repaymentMap = new Map<string, LoanRepaymentRow>();
+    const repaymentsByLoanId = new Map<string, LoanRepaymentRow[]>();
 
     for (const row of ((repaymentResponse.data as LoanRepaymentRow[] | null) ?? [])) {
-      if (!repaymentMap.has(row.loan_id)) {
-        repaymentMap.set(row.loan_id, row);
-      }
+      const loanRepayments = repaymentsByLoanId.get(row.loan_id) ?? [];
+      loanRepayments.push(row);
+      repaymentsByLoanId.set(row.loan_id, loanRepayments);
     }
 
     return loans.map((loan) => {
       const application = applicationMap.get(loan.application_id);
-      const latestRepayment = repaymentMap.get(loan.id);
+      const loanRepayments = repaymentsByLoanId.get(loan.id) ?? [];
+      const latestRepayment = loanRepayments[0];
       const remainingPrincipal = toNumber(loan.remaining_principal);
       const monthlyInterestRate = toNumber(loan.monthly_interest_rate);
 
@@ -1723,6 +1726,12 @@ export const mobileData = {
           latestRepayment?.repayment_mode === "interest_only"
             ? "Interest only"
             : "Interest plus principal",
+        recentPayments: loanRepayments.slice(0, 5).map((repayment) => ({
+          id: repayment.id,
+          dateLabel: formatDateLabel(repayment.created_at),
+          principalPaid: toNumber(repayment.principal_component),
+          interestPaid: toNumber(repayment.interest_component),
+        })),
         stageTimeline: [
           {
             id: `${loan.id}-submitted`,

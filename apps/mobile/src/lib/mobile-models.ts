@@ -78,6 +78,12 @@ export interface LoanCard extends LoanDetailSummary {
   nextDueLabel: string;
   repaymentModeLabel: string;
   stageTimeline: { id: string; label: string; date: string; state: string }[];
+  recentPayments: {
+    id: string;
+    dateLabel: string;
+    principalPaid: number;
+    interestPaid: number;
+  }[];
 }
 
 export type MobileTransactionCard = TransactionRequest;

@@ -18,7 +18,7 @@ import { resetLoginPasswordAction } from "../../actions";
 import { breadcrumb, withDashboardBreadcrumbs } from "../../../lib/breadcrumbs";
 import type { PasswordResetFlash } from "../../../lib/password-reset";
 import { getMemberDetailPageData } from "../../../lib/dashboard-data";
-import { prettyCurrency } from "../../../lib/format";
+import { formatElapsedTime, prettyCurrency, prettyDate } from "../../../lib/format";
 
 function Notice({
   detail,
@@ -112,6 +112,18 @@ export default async function MemberDetailPage({
                 <div className="list-item">
                   <strong>Status</strong>
                   <span className="chip">{member.status}</span>
+                </div>
+                <div className="list-item">
+                  <strong>Created</strong>
+                  <span>{member.createdAt ? prettyDate(member.createdAt) : "Unknown"}</span>
+                </div>
+                <div className="list-item">
+                  <strong>Member Since</strong>
+                  <span>
+                    {member.createdAt
+                      ? `${prettyDate(member.createdAt)} (${formatElapsedTime(member.createdAt)} ago)`
+                      : "Unknown"}
+                  </span>
                 </div>
                 <div className="list-item">
                   <strong>Occupation</strong>

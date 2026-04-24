@@ -207,6 +207,11 @@ export const demoLoans: LoanCard[] = [
     collateralRequired: false,
     nextDueLabel: "12 May 2026",
     repaymentModeLabel: "Interest plus principal",
+    recentPayments: [
+      { id: "loan-payment-1", dateLabel: "12 May", principalPaid: 6000, interestPaid: 3200 },
+      { id: "loan-payment-2", dateLabel: "12 Apr", principalPaid: 5500, interestPaid: 3400 },
+      { id: "loan-payment-3", dateLabel: "12 Mar", principalPaid: 0, interestPaid: 3600 },
+    ],
     stageTimeline: [
       { id: "loan-stage-1", label: "Application submitted", date: "03 Feb", state: "APPROVED" },
       { id: "loan-stage-2", label: "Under review", date: "05 Feb", state: "APPROVED" },
