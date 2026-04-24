@@ -398,6 +398,23 @@ export async function getProfileByPhone(phone: string) {
   return (data as ProfileLookup | null) ?? null;
 }
 
+export async function getProfileSecurityState(profileId: string) {
+  const service = createServiceClient();
+  const { data, error } = await service
+    .from("profiles")
+    .select("must_change_password, requires_pin_setup")
+    .eq("id", profileId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (
+    (data as { must_change_password: boolean; requires_pin_setup: boolean } | null) ?? null
+  );
+}
+
 export async function getMemberAccountsByEmail(email: string) {
   const profile = await getProfileByEmail(email);
 
@@ -469,6 +486,31 @@ export async function getAuthenticatedMemberAccountBalance({
     return toNumber(data as number | string | null);
   } finally {
     await client.auth.signOut();
+  }
+}
+
+export async function canSignInWithPassword({
+  email,
+  password,
+}: {
+  email: string;
+  password: string;
+}) {
+  const client = createPublishableClient();
+
+  try {
+    const signInResult = await client.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (signInResult.error || !signInResult.data.user) {
+      return false;
+    }
+
+    return true;
+  } finally {
+    await client.auth.signOut().catch(() => undefined);
   }
 }
 

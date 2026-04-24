@@ -60,6 +60,7 @@ export type MemberRegistryRow = {
   agentId: string | null;
   agentName: string;
   branchName: string;
+  createdAt: string | null;
   phone: string;
   status: string;
   occupation: string | null;
@@ -1532,7 +1533,11 @@ export async function getMemberDetailPageData(memberId: string): Promise<MemberD
     pendingTransactionsResult,
     { data: loanRowsData },
   ] = await Promise.all([
-    supabase.from("profiles").select("id, full_name, phone").eq("id", memberId).maybeSingle(),
+    supabase
+      .from("profiles")
+      .select("id, full_name, phone, created_at")
+      .eq("id", memberId)
+      .maybeSingle(),
     memberProfile.assigned_agent_id
       ? supabase
           .from("profiles")
@@ -1607,6 +1612,7 @@ export async function getMemberDetailPageData(memberId: string): Promise<MemberD
       agentId: memberProfile.assigned_agent_id,
       agentName: (agentRow as ProfileRow | null)?.full_name ?? "Unassigned",
       branchName: (branchRow as BranchRow | null)?.name ?? memberProfile.branch_id,
+      createdAt: (memberRow as ProfileRow | null)?.created_at ?? null,
       phone: (memberRow as ProfileRow | null)?.phone ?? "No phone",
       status: memberProfile.status,
       occupation: memberProfile.occupation,

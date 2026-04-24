@@ -10,10 +10,21 @@ import type { RepaymentMode, TransactionType } from "@credit-union/shared";
 import {
   PASSWORD_POLICY,
   assertValidBranchCode,
+  buildTemporaryPassword,
   provisionMember,
 } from "@credit-union/shared";
 
 import { requireRole } from "../lib/auth";
+import {
+  buildPasswordResetAuditAction,
+  buildPasswordResetAuditMetadata,
+  buildPasswordResetDetailPath,
+  canResetLoginPassword,
+  getPasswordResetLoginLabel,
+  isResettableUserRole,
+  type PasswordResetFlash,
+  type ResettableUserRole,
+} from "../lib/password-reset";
 import {
   registerCurrentWorkstation,
   syncWorkstationIdentityFromFormData,
@@ -25,6 +36,7 @@ import { createClient } from "../lib/supabase/server";
 type RedirectResult = "success" | "error";
 
 const MEMBER_CREATION_FLASH_COOKIE = "member_creation_flash";
+const PASSWORD_RESET_FLASH_COOKIE = "password_reset_flash";
 
 type ServiceClient = ReturnType<typeof createServiceClient>;
 
@@ -288,6 +300,27 @@ async function setMemberCreationFlash(input: {
   );
 }
 
+async function clearPasswordResetFlash(path: string) {
+  const cookieStore = await cookies();
+  cookieStore.set(PASSWORD_RESET_FLASH_COOKIE, "", {
+    httpOnly: true,
+    maxAge: 0,
+    path,
+    sameSite: "lax",
+  });
+}
+
+async function setPasswordResetFlash(path: string, input: PasswordResetFlash) {
+  const cookieStore = await cookies();
+  cookieStore.set(PASSWORD_RESET_FLASH_COOKIE, JSON.stringify(input), {
+    httpOnly: true,
+    maxAge: 300,
+    path,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+  });
+}
+
 function requiredValue(formData: FormData, key: string, label: string) {
   const value = String(formData.get(key) ?? "").trim();
 
@@ -397,7 +430,7 @@ async function writeAuditLogEntry(
   service: ServiceClient,
   input: {
     actorId: string;
-    branchId: string;
+    branchId?: string | null;
     action: string;
     entityType: string;
     entityId: string;
@@ -511,6 +544,60 @@ function assertBranchForRole(
   }
 
   return requestedBranchId;
+}
+
+async function getPasswordResetLoginIdentifier(
+  service: ServiceClient,
+  target: {
+    email: string | null;
+    id: string;
+    role: ResettableUserRole;
+  },
+) {
+  if (target.role === "member") {
+    const response = await service
+      .from("member_profiles")
+      .select("sign_in_code")
+      .eq("profile_id", target.id)
+      .maybeSingle();
+
+    if (response.error) {
+      throw response.error;
+    }
+
+    const signInCode = normalizeText(response.data?.sign_in_code);
+
+    if (!signInCode) {
+      throw new Error("Member sign-in code is missing.");
+    }
+
+    return signInCode;
+  }
+
+  const email = normalizeText(target.email);
+
+  if (!email) {
+    throw new Error("Staff email is missing.");
+  }
+
+  return email;
+}
+
+function revalidatePasswordResetPaths(role: ResettableUserRole, profileId: string) {
+  revalidatePath(buildPasswordResetDetailPath(role, profileId));
+  revalidatePath("/audit");
+
+  if (role === "member") {
+    revalidatePath("/members");
+    return;
+  }
+
+  if (role === "agent") {
+    revalidatePath("/agents");
+    return;
+  }
+
+  revalidatePath("/managers");
 }
 
 async function verifyCurrentPassword(email: string, password: string) {
@@ -1451,6 +1538,124 @@ export async function createMemberAction(formData: FormData) {
 
   revalidateMemberPaths();
   redirect(buildRedirect("/members/new", "success", successDetail));
+}
+
+export async function resetLoginPasswordAction(formData: FormData) {
+  const targetProfileId = requiredValue(formData, "targetProfileId", "Target profile");
+  const requestedRole = requiredValue(formData, "targetRole", "Target role");
+  const redirectPath = isResettableUserRole(requestedRole)
+    ? buildPasswordResetDetailPath(requestedRole, targetProfileId)
+    : "/settings";
+
+  if (!hasSupabaseEnv() || !hasSupabaseServiceEnv()) {
+    redirect(buildRedirect(redirectPath, "error", "Supabase service credentials are missing."));
+  }
+
+  if (isResettableUserRole(requestedRole)) {
+    await clearPasswordResetFlash(redirectPath);
+  }
+
+  try {
+    if (!isResettableUserRole(requestedRole)) {
+      throw toUserFacingError("Unable to reset password for this account.");
+    }
+
+    const { profile } = await requireRole(["admin", "branch_manager"]);
+    const service = createServiceClient();
+    const targetResponse = await service
+      .from("profiles")
+      .select("id, role, branch_id, full_name, email, is_active")
+      .eq("id", targetProfileId)
+      .maybeSingle();
+
+    if (targetResponse.error) {
+      throw targetResponse.error;
+    }
+
+    const target = targetResponse.data as
+      | {
+          id: string;
+          role: string;
+          branch_id: string | null;
+          full_name: string;
+          email: string | null;
+          is_active: boolean;
+        }
+      | null;
+
+    if (
+      !target ||
+      !target.is_active ||
+      target.role !== requestedRole ||
+      !canResetLoginPassword({
+        actorBranchId: profile.branch_id,
+        actorRole: profile.role === "admin" ? "admin" : "branch_manager",
+        targetBranchId: target.branch_id,
+        targetRole: requestedRole,
+      })
+    ) {
+      throw toUserFacingError("Unable to reset password for this account.");
+    }
+
+    const temporaryPassword = buildTemporaryPassword();
+    const loginIdentifier = await getPasswordResetLoginIdentifier(service, {
+      email: target.email,
+      id: target.id,
+      role: requestedRole,
+    });
+    const updateResponse = await service.auth.admin.updateUserById(target.id, {
+      password: temporaryPassword,
+    });
+
+    if (updateResponse.error) {
+      throw updateResponse.error;
+    }
+
+    const { error: profileUpdateError } = await service
+      .from("profiles")
+      .update({ must_change_password: true })
+      .eq("id", target.id);
+
+    if (profileUpdateError) {
+      throw profileUpdateError;
+    }
+
+    await writeAuditLogEntry(service, {
+      actorId: profile.id,
+      branchId: target.branch_id ?? profile.branch_id,
+      action: buildPasswordResetAuditAction(requestedRole),
+      entityType: "profile",
+      entityId: target.id,
+      metadata: buildPasswordResetAuditMetadata({
+        loginIdentifier,
+        targetRole: requestedRole,
+      }),
+    });
+
+    await setPasswordResetFlash(redirectPath, {
+      fullName: target.full_name,
+      loginIdentifier,
+      loginLabel: getPasswordResetLoginLabel(requestedRole),
+      temporaryPassword,
+    });
+  } catch (error) {
+    const safeMessage = toRedirectErrorMessage({
+      action: "resetLoginPasswordAction",
+      error,
+      userMessage: "Unable to reset password for this account.",
+      errorCode: "PASSWORD_RESET_FAILED",
+    });
+    redirect(buildRedirect(redirectPath, "error", safeMessage));
+  }
+
+  revalidatePasswordResetPaths(requestedRole, targetProfileId);
+  redirect(
+    buildRedirect(
+      redirectPath,
+      "success",
+      "Temporary password generated. Credentials are ready below for secure handoff.",
+    ),
+  );
 }
 
 export async function resetStaffDeviceAction(formData: FormData) {

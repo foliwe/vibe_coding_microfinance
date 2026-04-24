@@ -432,6 +432,37 @@ function LoanCardView({ loan }: { loan: LoanCard }) {
           <Text style={styles.timelineDate}>{stage.date}</Text>
         </View>
       ))}
+      <SectionHeader title="Recent payments" />
+      {loan.recentPayments.length === 0 ? (
+        <Text style={styles.cardCaption}>No repayments recorded yet.</Text>
+      ) : (
+        <View style={styles.paymentTable}>
+          <View style={styles.paymentHeaderRow}>
+            <View style={styles.paymentDateCell}>
+              <Text style={styles.paymentHeaderText}>Date</Text>
+            </View>
+            <View style={styles.paymentAmountCell}>
+              <Text style={styles.paymentHeaderText}>Principal</Text>
+            </View>
+            <View style={styles.paymentAmountCell}>
+              <Text style={styles.paymentHeaderText}>Interest</Text>
+            </View>
+          </View>
+          {loan.recentPayments.map((payment) => (
+            <View key={payment.id} style={styles.paymentDataRow}>
+              <View style={styles.paymentDateCell}>
+                <Text style={styles.paymentDateText}>{payment.dateLabel}</Text>
+              </View>
+              <View style={styles.paymentAmountCell}>
+                <Text style={styles.paymentAmountText}>{formatCurrency(payment.principalPaid)}</Text>
+              </View>
+              <View style={styles.paymentAmountCell}>
+                <Text style={styles.paymentAmountText}>{formatCurrency(payment.interestPaid)}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
     </SurfaceCard>
   );
 }
@@ -505,6 +536,46 @@ const styles = StyleSheet.create({
   },
   timelineDate: {
     color: colors.inkMuted,
+    fontFamily: typography.medium,
+    fontSize: 13,
+  },
+  paymentTable: {
+    marginTop: spacing.xs,
+  },
+  paymentHeaderRow: {
+    borderBottomColor: colors.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingBottom: spacing.xs,
+  },
+  paymentDataRow: {
+    borderBottomColor: colors.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  paymentDateCell: {
+    flex: 1.1,
+  },
+  paymentAmountCell: {
+    alignItems: "flex-end",
+    flex: 1,
+  },
+  paymentHeaderText: {
+    color: colors.inkMuted,
+    fontFamily: typography.medium,
+    fontSize: 12,
+    textTransform: "uppercase",
+  },
+  paymentDateText: {
+    color: colors.ink,
+    fontFamily: typography.body,
+    fontSize: 14,
+  },
+  paymentAmountText: {
+    color: colors.ink,
     fontFamily: typography.medium,
     fontSize: 13,
   },

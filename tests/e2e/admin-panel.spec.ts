@@ -6,9 +6,11 @@ import {
 } from "../../apps/admin/lib/staff-device-shared";
 
 import {
+  canSignInWithPassword,
   createPendingTransactionRequest,
   getMemberAccountsByProfileId,
   getProfileByEmail,
+  getProfileSecurityState,
   getProfileByPhone,
   getSeededPanelContext,
   newTestId,
@@ -143,6 +145,20 @@ function prettyCurrency(amount: number) {
     currency: "XAF",
     maximumFractionDigits: 0,
   }).format(amount);
+}
+
+async function extractCredentialValue(page: Page, label: "Email" | "Sign-in code" | "Temporary password") {
+  const notice = page.locator("div.notice.notice-success").filter({ hasText: `${label}:` }).last();
+  await expect(notice).toBeVisible();
+  const text = (await notice.textContent()) ?? "";
+  const pattern = new RegExp(`${label}:\\s*([^\\s]+)`);
+  const match = text.match(pattern);
+
+  if (!match) {
+    throw new Error(`Unable to find ${label} in notice text: ${text}`);
+  }
+
+  return match[1];
 }
 
 test.describe("admin panel end-to-end flows", () => {
@@ -467,5 +483,198 @@ test.describe("admin panel end-to-end flows", () => {
     await expect(page.getByText("Outstanding Loan Balance").first()).toBeVisible();
 
     await signOut(page);
+  });
+
+  test("admin and branch manager can reset login passwords from detail pages", async ({
+    page,
+  }) => {
+    const context = await getSeededPanelContext();
+    const runId = newTestId("pw-reset");
+    const digits = runId.replace(/\D/g, "").slice(-8).padStart(8, "0");
+    const manager = {
+      email: `${runId}-manager@example.com`,
+      finalPassword: "Manager654321!",
+      fullName: `Reset Manager ${runId}`,
+      initialPassword: "Manager123456!",
+      phone: `+23771${digits}`,
+      transactionPin: "8642",
+    };
+    const agent = {
+      email: `${runId}-agent@example.com`,
+      fullName: `Reset Agent ${runId}`,
+      initialPassword: "Agent123456!",
+      phone: `+23772${digits}`,
+    };
+    const member = {
+      fullName: `Reset Member ${runId}`,
+      idNumber: `R${digits}`,
+      phone: `+23773${digits}`,
+    };
+
+    await signIn(page, seededUsers.admin);
+    await page.goto("/managers/new");
+    await page.getByLabel("Full Name").fill(manager.fullName);
+    await page.getByLabel("Email").fill(manager.email);
+    await page.getByLabel("Phone").fill(manager.phone);
+    await page.getByLabel("Temporary Password").fill(manager.initialPassword);
+    await page.locator('select[name="branchId"]').selectOption(context.branch.id);
+    await page.getByRole("button", { name: "Create Branch Manager" }).click();
+    await expect(page).toHaveURL(/\/managers\/new\?result=success/);
+
+    const createdManager = await waitForProfile(manager.email);
+    const managerSecurityBeforeReset = await getProfileSecurityState(createdManager.id);
+
+    await page.goto(`/managers/${createdManager.id}`);
+    await page.getByRole("button", { name: "Reset Login Password" }).click();
+    await expect(page).toHaveURL(new RegExp(`/managers/${createdManager.id}\\?result=success`));
+    await expect(page.url().includes("Temporary")).toBe(false);
+    await expect(page.getByText("Temporary login credentials for")).toContainText(manager.fullName);
+    await expect(page.getByText(`Email: ${manager.email}`)).toBeVisible();
+
+    const resetManagerPassword = await extractCredentialValue(page, "Temporary password");
+    expect(resetManagerPassword).toHaveLength(12);
+
+    await expect.poll(async () => canSignInWithPassword({
+      email: manager.email,
+      password: manager.initialPassword,
+    })).toBe(false);
+    await expect.poll(async () => canSignInWithPassword({
+      email: manager.email,
+      password: resetManagerPassword,
+    })).toBe(true);
+    await expect.poll(async () => (await getProfileSecurityState(createdManager.id))?.must_change_password ?? null).toBe(true);
+    await expect((await getProfileSecurityState(createdManager.id))?.requires_pin_setup).toBe(
+      managerSecurityBeforeReset?.requires_pin_setup,
+    );
+
+    await page.goto("/audit");
+    await expect(page.getByText("reset_manager_password")).toBeVisible();
+    await expect(page.getByText(createdManager.id)).toBeVisible();
+
+    await signOut(page);
+
+    await signIn(page, {
+      email: manager.email,
+      password: resetManagerPassword,
+    });
+    await completeBranchManagerSetup(page, {
+      currentPassword: resetManagerPassword,
+      newPassword: manager.finalPassword,
+      transactionPin: manager.transactionPin,
+    });
+
+    await page.goto("/agents/new");
+    await page.getByLabel("Full Name").fill(agent.fullName);
+    await page.getByLabel("Email").fill(agent.email);
+    await page.getByLabel("Phone").fill(agent.phone);
+    await page.getByLabel("Temporary Password").fill(agent.initialPassword);
+    await page.locator('select[name="branchId"]').selectOption(context.branch.id);
+    await page.getByRole("button", { name: "Create Agent" }).click();
+    await expect(page).toHaveURL(/\/agents\/new\?result=success/);
+
+    const createdAgent = await waitForProfile(agent.email);
+
+    await page.goto("/members/new");
+    await page.getByLabel("Full Name").fill(member.fullName);
+    await page.getByLabel("Phone Number").fill(member.phone);
+    await page.getByLabel("ID Card Number").fill(member.idNumber);
+    await page.locator('select[name="branchId"]').selectOption(context.branch.id);
+    await assignedAgentSelect(page).selectOption(createdAgent.id);
+    await page.getByRole("button", { name: "Save Member" }).click();
+    await expect(page).toHaveURL(/\/members\/new\?result=success/);
+
+    const initialMemberSignInCode = await extractCredentialValue(page, "Sign-in code");
+    const initialMemberPassword = await extractCredentialValue(page, "Temporary password");
+    expect(initialMemberPassword).toHaveLength(12);
+    const initialMemberEmail = `member-${initialMemberSignInCode.toLowerCase()}@members.local`;
+    const createdMember = await waitForProfileByPhone(member.phone);
+
+    await signOut(page);
+
+    await signIn(page, seededUsers.admin);
+
+    const agentPinBeforeAdminReset = (await getProfileSecurityState(createdAgent.id))?.requires_pin_setup ?? null;
+    await page.goto(`/agents/${createdAgent.id}`);
+    await page.getByRole("button", { name: "Reset Login Password" }).click();
+    await expect(page).toHaveURL(new RegExp(`/agents/${createdAgent.id}\\?result=success`));
+    await expect(page.getByText(`Email: ${agent.email}`)).toBeVisible();
+    const adminResetAgentPassword = await extractCredentialValue(page, "Temporary password");
+    expect(adminResetAgentPassword).toHaveLength(12);
+    await expect.poll(async () => canSignInWithPassword({
+      email: agent.email,
+      password: agent.initialPassword,
+    })).toBe(false);
+    await expect.poll(async () => canSignInWithPassword({
+      email: agent.email,
+      password: adminResetAgentPassword,
+    })).toBe(true);
+    await expect((await getProfileSecurityState(createdAgent.id))?.requires_pin_setup).toBe(agentPinBeforeAdminReset);
+
+    const memberPinBeforeAdminReset =
+      (await getProfileSecurityState(createdMember.id))?.requires_pin_setup ?? null;
+    await page.goto(`/members/${createdMember.id}`);
+    await page.getByRole("button", { name: "Reset Login Password" }).click();
+    await expect(page).toHaveURL(new RegExp(`/members/${createdMember.id}\\?result=success`));
+    await expect(page.getByText(`Sign-in code: ${initialMemberSignInCode}`)).toBeVisible();
+    const adminResetMemberPassword = await extractCredentialValue(page, "Temporary password");
+    expect(adminResetMemberPassword).toHaveLength(12);
+    await expect.poll(async () => canSignInWithPassword({
+      email: initialMemberEmail,
+      password: initialMemberPassword,
+    })).toBe(false);
+    await expect.poll(async () => canSignInWithPassword({
+      email: initialMemberEmail,
+      password: adminResetMemberPassword,
+    })).toBe(true);
+    await expect((await getProfileSecurityState(createdMember.id))?.requires_pin_setup).toBe(
+      memberPinBeforeAdminReset,
+    );
+
+    await page.goto("/audit");
+    await expect(page.getByText("reset_agent_password")).toBeVisible();
+    await expect(page.getByText("reset_member_password")).toBeVisible();
+
+    await signOut(page);
+
+    await signIn(page, {
+      email: manager.email,
+      password: manager.finalPassword,
+    });
+    await expect(page).toHaveURL(/\/branch$/);
+
+    await page.goto(`/agents/${createdAgent.id}`);
+    await page.getByRole("button", { name: "Reset Login Password" }).click();
+    await expect(page).toHaveURL(new RegExp(`/agents/${createdAgent.id}\\?result=success`));
+    const managerResetAgentPassword = await extractCredentialValue(page, "Temporary password");
+    expect(managerResetAgentPassword).toHaveLength(12);
+    await expect.poll(async () => canSignInWithPassword({
+      email: agent.email,
+      password: adminResetAgentPassword,
+    })).toBe(false);
+    await expect.poll(async () => canSignInWithPassword({
+      email: agent.email,
+      password: managerResetAgentPassword,
+    })).toBe(true);
+
+    await page.goto(`/members/${createdMember.id}`);
+    await page.getByRole("button", { name: "Reset Login Password" }).click();
+    await expect(page).toHaveURL(new RegExp(`/members/${createdMember.id}\\?result=success`));
+    const managerResetMemberPassword = await extractCredentialValue(page, "Temporary password");
+    expect(managerResetMemberPassword).toHaveLength(12);
+    await expect.poll(async () => canSignInWithPassword({
+      email: initialMemberEmail,
+      password: adminResetMemberPassword,
+    })).toBe(false);
+    await expect.poll(async () => canSignInWithPassword({
+      email: initialMemberEmail,
+      password: managerResetMemberPassword,
+    })).toBe(true);
+
+    await page.goto("/audit");
+    await expect(page.getByText("reset_agent_password")).toBeVisible();
+    await expect(page.getByText("reset_member_password")).toBeVisible();
+
+    await page.goto(`/managers/${createdManager.id}`);
+    await expect(page).toHaveURL(/\/login\?reason=unauthorized/);
   });
 });

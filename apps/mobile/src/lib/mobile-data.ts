@@ -13,7 +13,12 @@ import {
   type MemberDashboard,
   type TrendDatum,
 } from "./mobile-models";
-
+import {
+  getAgentTargetMemberCode,
+  listAgentTransactionTargets,
+  resolveAgentTransactionTarget,
+  type AgentTransactionTarget,
+} from "./agent-transaction-targets";
 import {
   getOfflineSyncQueue,
   getOfflineSyncQueueItems,
@@ -32,6 +37,7 @@ import {
   shouldQueueOfflineTransaction,
 } from "./transaction-submission";
 import { getSupabaseClient } from "./supabase/client";
+export type { AgentTransactionTarget } from "./agent-transaction-targets";
 
 type BranchRow = {
   id: string;
@@ -130,8 +136,11 @@ type LoanApplicationRow = {
 };
 
 type LoanRepaymentRow = {
+  id: string;
   created_at: string;
+  interest_component: number | string;
   loan_id: string;
+  principal_component: number | string;
   repayment_mode: "interest_only" | "interest_plus_principal";
 };
 
@@ -140,18 +149,6 @@ type CreateMemberResponse = {
   signInIdentifier: string;
   temporaryPassword: string;
 };
-
-export interface AgentTransactionTarget {
-  accountId: string;
-  accountNumber: string;
-  accountType: "savings" | "deposit";
-  availableBalance: number;
-  depositBalance: number;
-  memberCode: string;
-  memberId: string;
-  memberName: string;
-  savingsBalance: number;
-}
 
 export interface AgentReconciliationSummary {
   actualCash: number;
@@ -172,6 +169,7 @@ export interface AgentMemberDetail {
   member: AssignedMember;
   recentTransactions: TransactionRequest[];
   savingsTarget: AgentTransactionTarget | null;
+  withdrawalTarget: AgentTransactionTarget | null;
 }
 
 const DAYS_IN_MONTH = 30;
@@ -202,7 +200,7 @@ function formatProfileCode(prefix: "AG" | "MB", id: string) {
 }
 
 function getMemberSignInCode(row: Pick<MemberProfileRow, "profile_id" | "sign_in_code">) {
-  return row.sign_in_code ?? formatProfileCode("MB", row.profile_id);
+  return getAgentTargetMemberCode(row);
 }
 
 function buildIdempotencyKey(actorId: string, transactionType: TransactionType) {
@@ -607,38 +605,26 @@ function buildAgentTransactionTargetFromContext({
   memberName,
   memberRow,
   preferredAccountType,
+  strictAccountTypeMatch,
 }: {
   accountRows: MemberAccountRow[];
   balances: { depositBalance: number; savingsBalance: number };
   memberName: string;
   memberRow: Pick<MemberProfileRow, "profile_id" | "sign_in_code">;
   preferredAccountType: "deposit" | "savings";
+  strictAccountTypeMatch?: boolean;
 }) {
-  const selectedAccount = accountRows.find(
-    (row) => row.account_type === preferredAccountType,
-  );
-
-  if (!selectedAccount) {
-    return null;
-  }
-
-  return {
-    accountId: selectedAccount.id,
-    accountNumber: selectedAccount.account_number,
-    accountType: selectedAccount.account_type,
-    availableBalance:
-      selectedAccount.account_type === "deposit"
-        ? balances.depositBalance
-        : balances.savingsBalance,
-    depositBalance: balances.depositBalance,
-    memberCode: getMemberSignInCode(memberRow),
-    memberId: memberRow.profile_id,
+  return resolveAgentTransactionTarget({
+    accountRows,
+    balances,
     memberName,
-    savingsBalance: balances.savingsBalance,
-  } satisfies AgentTransactionTarget;
+    memberRow,
+    preferredAccountType,
+    strictAccountTypeMatch,
+  });
 }
 
-async function getAgentTransactionTarget(
+async function getAgentTransactionTargets(
   transactionType: Extract<TransactionType, "deposit" | "withdrawal">,
   options?: {
     memberId?: string;
@@ -671,7 +657,7 @@ async function getAgentTransactionTarget(
   const memberIds = memberRows.map((row) => row.profile_id);
 
   if (memberIds.length === 0) {
-    return null;
+    return [] as AgentTransactionTarget[];
   }
 
   const [profileMap, accountRows, transactionRows] = await Promise.all([
@@ -682,52 +668,34 @@ async function getAgentTransactionTarget(
 
   const accountMap = new Map(accountRows.map((row) => [row.id, row]));
   const balanceMap = buildBalanceMap(transactionRows, accountMap);
-  const preferredAccountType =
-    options?.preferredAccountType ??
-    (transactionType === "withdrawal" ? "deposit" : "savings");
-
-  for (const memberRow of memberRows) {
-    const memberAccounts = accountRows.filter(
-      (row) => row.member_profile_id === memberRow.profile_id,
-    );
-    const balances = getBalancesForMember(
+  const balancesByMemberId = new Map(
+    memberRows.map((memberRow) => [
       memberRow.profile_id,
-      accountRows,
-      balanceMap,
-    );
-    const memberProfile = profileMap.get(memberRow.profile_id);
-    const target = buildAgentTransactionTargetFromContext({
-      accountRows: memberAccounts,
-      balances,
-      memberName: memberProfile?.full_name ?? "Assigned member",
-      memberRow,
-      preferredAccountType,
-    });
+      getBalancesForMember(memberRow.profile_id, accountRows, balanceMap),
+    ]),
+  );
 
-    if (!target) {
-      if (options?.strictAccountTypeMatch) {
-        continue;
-      }
+  return listAgentTransactionTargets({
+    accountRows,
+    balancesByMemberId,
+    memberRows,
+    preferredAccountType: options?.preferredAccountType,
+    profileMap,
+    strictAccountTypeMatch: options?.strictAccountTypeMatch,
+    transactionType,
+  });
+}
 
-      const fallbackAccountType = memberAccounts[0]?.account_type;
-
-      if (!fallbackAccountType) {
-        continue;
-      }
-
-      return buildAgentTransactionTargetFromContext({
-        accountRows: memberAccounts,
-        balances,
-        memberName: memberProfile?.full_name ?? "Assigned member",
-        memberRow,
-        preferredAccountType: fallbackAccountType,
-      });
-    }
-
-    return target;
-  }
-
-  return null;
+async function getAgentTransactionTarget(
+  transactionType: Extract<TransactionType, "deposit" | "withdrawal">,
+  options?: {
+    memberId?: string;
+    preferredAccountType?: "deposit" | "savings";
+    strictAccountTypeMatch?: boolean;
+  },
+) {
+  const targets = await getAgentTransactionTargets(transactionType, options);
+  return targets[0] ?? null;
 }
 
 export const mobileData = {
@@ -741,7 +709,12 @@ export const mobileData = {
       preferredAccountType: accountType,
       strictAccountTypeMatch: true,
     }),
+  getEligibleWithdrawalMembers: () => getAgentTransactionTargets("withdrawal"),
   getWithdrawalTarget: () => getAgentTransactionTarget("withdrawal"),
+  getWithdrawalTargetForMember: (memberId: string) =>
+    getAgentTransactionTarget("withdrawal", {
+      memberId,
+    }),
 
   async getAgentDashboard(): Promise<AgentDashboard> {
     const supabase = getSupabaseClient();
@@ -1028,9 +1001,21 @@ export const mobileData = {
             memberName: member.fullName,
             memberRow,
             preferredAccountType: "savings",
+            strictAccountTypeMatch: true,
           })
         : null;
     const depositTarget =
+      member.status === "active"
+        ? buildAgentTransactionTargetFromContext({
+            accountRows,
+            balances,
+            memberName: member.fullName,
+            memberRow,
+            preferredAccountType: "deposit",
+            strictAccountTypeMatch: true,
+          })
+        : null;
+    const withdrawalTarget =
       member.status === "active"
         ? buildAgentTransactionTargetFromContext({
             accountRows,
@@ -1059,6 +1044,7 @@ export const mobileData = {
         ),
       ),
       savingsTarget,
+      withdrawalTarget,
     };
   },
 
@@ -1571,7 +1557,7 @@ export const mobileData = {
       activeLoan
         ? supabase
             .from("loan_repayments")
-            .select("loan_id, created_at, repayment_mode")
+            .select("id, loan_id, created_at, repayment_mode, interest_component, principal_component")
             .eq("loan_id", activeLoan.id)
             .order("created_at", { ascending: false })
             .limit(1)
@@ -1685,7 +1671,7 @@ export const mobileData = {
       loanIds.length
         ? supabase
             .from("loan_repayments")
-            .select("loan_id, created_at, repayment_mode")
+            .select("id, loan_id, created_at, repayment_mode, interest_component, principal_component")
             .in("loan_id", loanIds)
             .order("created_at", { ascending: false })
         : Promise.resolve({ data: [] as LoanRepaymentRow[], error: null }),
@@ -1702,17 +1688,18 @@ export const mobileData = {
     const applicationMap = new Map(
       (((applicationResponse.data as LoanApplicationRow[] | null) ?? [])).map((row) => [row.id, row]),
     );
-    const repaymentMap = new Map<string, LoanRepaymentRow>();
+    const repaymentsByLoanId = new Map<string, LoanRepaymentRow[]>();
 
     for (const row of ((repaymentResponse.data as LoanRepaymentRow[] | null) ?? [])) {
-      if (!repaymentMap.has(row.loan_id)) {
-        repaymentMap.set(row.loan_id, row);
-      }
+      const loanRepayments = repaymentsByLoanId.get(row.loan_id) ?? [];
+      loanRepayments.push(row);
+      repaymentsByLoanId.set(row.loan_id, loanRepayments);
     }
 
     return loans.map((loan) => {
       const application = applicationMap.get(loan.application_id);
-      const latestRepayment = repaymentMap.get(loan.id);
+      const loanRepayments = repaymentsByLoanId.get(loan.id) ?? [];
+      const latestRepayment = loanRepayments[0];
       const remainingPrincipal = toNumber(loan.remaining_principal);
       const monthlyInterestRate = toNumber(loan.monthly_interest_rate);
 
@@ -1739,6 +1726,12 @@ export const mobileData = {
           latestRepayment?.repayment_mode === "interest_only"
             ? "Interest only"
             : "Interest plus principal",
+        recentPayments: loanRepayments.slice(0, 5).map((repayment) => ({
+          id: repayment.id,
+          dateLabel: formatDateLabel(repayment.created_at),
+          principalPaid: toNumber(repayment.principal_component),
+          interestPaid: toNumber(repayment.interest_component),
+        })),
         stageTimeline: [
           {
             id: `${loan.id}-submitted`,
