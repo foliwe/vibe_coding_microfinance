@@ -15,7 +15,6 @@ import {
   SecondaryButton,
   SectionHeader,
   SkeletonCard,
-  StatCard,
   StatusPill,
   SurfaceCard,
   TransactionDayHeader,
@@ -115,6 +114,15 @@ export function AgentHomeScreen() {
     );
   }
 
+  const cashVariance = data.cashOnHand - data.expectedCash;
+  const hasVariance = Math.abs(cashVariance) > 0.009;
+  const varianceLabel = hasVariance
+    ? cashVariance > 0
+      ? "Over expected"
+      : "Short on hand"
+    : "Balanced";
+  const varianceValue = `${cashVariance > 0 ? "+" : cashVariance < 0 ? "-" : ""}${formatCurrency(Math.abs(cashVariance))}`;
+
   return (
     <Screen
       right={
@@ -141,38 +149,137 @@ export function AgentHomeScreen() {
       </SurfaceCard>
 
       <SectionHeader title="Quick Actions" />
-      <ActionTile
-        caption="Create a new member directly from the field workflow."
-        icon="person-add-outline"
-        onPress={() => router.push("/agent/members/add")}
-        title="Add Member"
-      />
-      <ActionTile
-        caption="Record deposits and withdrawals from the field shell."
-        icon="swap-horizontal-outline"
-        onPress={() => router.push("/agent/transactions/deposit")}
-        title="Record Transaction"
-      />
-      <ActionTile
-        caption="See what is waiting locally before sync comes back."
-        icon="cloud-upload-outline"
-        onPress={() => router.push("/agent/more/sync-queue")}
-        title="Sync Queue"
-      />
-      <ActionTile
-        caption="Compare expected cash against what is on hand."
-        icon="wallet-outline"
-        onPress={() => router.push("/agent/more/reconciliation")}
-        title="Reconcile Cash"
-      />
+      <View style={styles.quickActionsGrid}>
+        <ActionTile
+          caption="Create a new member directly from the field workflow."
+          icon="person-add-outline"
+          iconBackgroundColor={colors.foliwe}
+          iconColor={colors.ink}
+          layout="grid"
+          onPress={() => router.push("/agent/members/add")}
+          title="Add Member"
+        />
+        <ActionTile
+          caption="Record deposits and withdrawals from the field shell."
+          icon="swap-horizontal-outline"
+          iconBackgroundColor={colors.foliwe}
+          iconColor={colors.ink}
+          layout="grid"
+          onPress={() => router.push("/agent/members")}
+          title="Record Transaction"
+        />
+        <ActionTile
+          caption="See what is waiting locally before sync comes back."
+          icon="cloud-upload-outline"
+          iconBackgroundColor={colors.foliwe}
+          iconColor={colors.ink}
+          layout="grid"
+          onPress={() => router.push("/agent/more/sync-queue")}
+          title="Sync Queue"
+        />
+        <ActionTile
+          caption="Compare expected cash against what is on hand."
+          icon="wallet-outline"
+          iconBackgroundColor={colors.foliwe}
+          iconColor={colors.ink}
+          layout="grid"
+          onPress={() => router.push("/agent/more/reconciliation")}
+          title="Reconcile Cash"
+        />
+      </View>
 
       <SectionHeader title="Today Summary" />
-      <View style={styles.grid}>
-        <StatCard hint="Field collections" label="Collections" value={formatCurrency(data.collectionsToday)} />
-        <StatCard hint="Cash requested" label="Withdrawals" value={formatCurrency(data.withdrawalsToday)} />
-        <StatCard hint="Awaiting manager action" label="Pending approvals" value={String(data.pendingApprovals)} />
-        <StatCard hint={`Expected ${formatCurrency(data.expectedCash)}`} label="Cash on hand" value={formatCurrency(data.cashOnHand)} />
-      </View>
+      <SurfaceCard accent="rgba(255,255,255,0.74)" tone="soft">
+        <View style={styles.summaryHero}>
+          <View style={styles.summaryHeroTop}>
+            <View>
+              <View style={styles.summaryEyebrow}>
+                <Text style={styles.summaryEyebrowText}>Treasury Position</Text>
+              </View>
+              <Text style={styles.summaryHeroLabel}>Cash on hand</Text>
+            </View>
+            <View style={styles.summaryHeroIcon}>
+              <Ionicons color={colors.ink} name="wallet-outline" size={22} />
+            </View>
+          </View>
+          <Text adjustsFontSizeToFit numberOfLines={1} style={styles.summaryHeroValue}>
+            {formatCurrency(data.cashOnHand)}
+          </Text>
+          <View style={styles.summaryHeroFooter}>
+            <Text style={styles.summaryHeroHint}>Expected {formatCurrency(data.expectedCash)}</Text>
+            <View
+              style={[
+                styles.summaryVariancePill,
+                hasVariance
+                  ? cashVariance > 0
+                    ? styles.summaryVarianceWarning
+                    : styles.summaryVarianceDanger
+                  : styles.summaryVarianceBalanced,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.summaryVarianceText,
+                  hasVariance
+                    ? cashVariance > 0
+                      ? styles.summaryVarianceWarningText
+                      : styles.summaryVarianceDangerText
+                    : styles.summaryVarianceBalancedText,
+                ]}
+              >
+                {varianceLabel}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.summaryMetricGrid}>
+          <SummaryMetricCard
+            hint="Field collections"
+            icon="arrow-up-outline"
+            iconBackgroundColor="rgba(0, 184, 63, 0.12)"
+            iconColor={colors.success}
+            label="Collections"
+            value={formatCurrency(data.collectionsToday)}
+          />
+          <SummaryMetricCard
+            hint="Cash requested"
+            icon="arrow-down-outline"
+            iconBackgroundColor="rgba(255, 139, 61, 0.14)"
+            iconColor={colors.warning}
+            label="Withdrawals"
+            value={formatCurrency(data.withdrawalsToday)}
+          />
+          <SummaryMetricCard
+            hint="Awaiting manager action"
+            icon="time-outline"
+            iconBackgroundColor="rgba(255, 84, 92, 0.12)"
+            iconColor={data.pendingApprovals > 0 ? colors.danger : colors.success}
+            label="Pending approvals"
+            value={String(data.pendingApprovals)}
+          />
+          <SummaryMetricCard
+            hint={varianceLabel}
+            icon="pulse-outline"
+            iconBackgroundColor={
+              hasVariance
+                ? cashVariance > 0
+                  ? "rgba(255, 139, 61, 0.14)"
+                  : "rgba(255, 84, 92, 0.12)"
+                : "rgba(0, 184, 63, 0.12)"
+            }
+            iconColor={
+              hasVariance
+                ? cashVariance > 0
+                  ? colors.warning
+                  : colors.danger
+                : colors.success
+            }
+            label="Variance"
+            value={varianceValue}
+          />
+        </View>
+      </SurfaceCard>
 
       <SectionHeader title="Flow Trend" />
       <SurfaceCard>
@@ -196,6 +303,10 @@ export function AgentHomeScreen() {
 
 export function AgentMembersScreen() {
   const { data: members, error, loading } = useResource(mobileData.getAssignedMembers);
+  const memberCount = members?.length ?? 0;
+  const activeCount = members?.filter((member) => member.status === "active").length ?? 0;
+  const totalSavings = members?.reduce((sum, member) => sum + member.savingsBalance, 0) ?? 0;
+  const totalDeposits = members?.reduce((sum, member) => sum + member.depositBalance, 0) ?? 0;
 
   return (
     <Screen
@@ -222,37 +333,112 @@ export function AgentMembersScreen() {
         </SurfaceCard>
       ) : (
         <>
-          <View style={styles.searchBox}>
-            <Text style={styles.searchPlaceholder}>Search member...</Text>
-          </View>
-          <SurfaceCard>
-            <View style={styles.memberSummaryRow}>
-              <View style={styles.memberSummaryIcon}>
-                <Ionicons color={colors.white} name="people-outline" size={28} />
+          <SurfaceCard accent="rgba(255,255,255,0.78)" tone="soft">
+            <View style={styles.memberPortfolioHero}>
+              <View style={styles.memberPortfolioTop}>
+                <View>
+                  <View style={styles.summaryEyebrow}>
+                    <Text style={styles.summaryEyebrowText}>Assigned Portfolio</Text>
+                  </View>
+                  <Text style={styles.memberPortfolioLabel}>Members under your care</Text>
+                </View>
+                <View style={styles.memberPortfolioIcon}>
+                  <Ionicons color={colors.ink} name="people-outline" size={24} />
+                </View>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.memberCount}>{members.length}+</Text>
-                <Text style={styles.cardCaption}>Members</Text>
+              <Text style={styles.memberPortfolioValue}>{memberCount}</Text>
+              <View style={styles.memberPortfolioFooter}>
+                <Text style={styles.memberPortfolioHint}>{activeCount} active profiles</Text>
+                <View style={styles.memberPortfolioPill}>
+                  <Text style={styles.memberPortfolioPillText}>Live field book</Text>
+                </View>
               </View>
-              <Pressable
-                onPress={() => router.push("/agent/members/add")}
-                style={({ pressed }) => [styles.addMemberButton, pressed && styles.memberListRowPressed]}
-              >
-                <Ionicons color={colors.ink} name="add" size={26} />
-              </Pressable>
+            </View>
+
+            <View style={styles.memberPortfolioGrid}>
+              <View style={styles.memberPortfolioMetric}>
+                <View style={[styles.memberPortfolioMetricIcon, { backgroundColor: "rgba(0, 184, 63, 0.12)" }]}>
+                  <Ionicons color={colors.success} name="wallet-outline" size={16} />
+                </View>
+                <Text style={styles.memberPortfolioMetricLabel}>Savings book</Text>
+                <Text adjustsFontSizeToFit numberOfLines={1} style={styles.memberPortfolioMetricValue}>
+                  {formatCurrency(totalSavings)}
+                </Text>
+              </View>
+              <View style={styles.memberPortfolioMetric}>
+                <View style={[styles.memberPortfolioMetricIcon, { backgroundColor: "rgba(255, 139, 61, 0.14)" }]}>
+                  <Ionicons color={colors.warning} name="card-outline" size={16} />
+                </View>
+                <Text style={styles.memberPortfolioMetricLabel}>Deposit book</Text>
+                <Text adjustsFontSizeToFit numberOfLines={1} style={styles.memberPortfolioMetricValue}>
+                  {formatCurrency(totalDeposits)}
+                </Text>
+              </View>
             </View>
           </SurfaceCard>
+
+          <View style={styles.memberSearchRow}>
+            <View style={styles.memberSearchBox}>
+              <Ionicons color={colors.inkMuted} name="search-outline" size={16} />
+              <Text style={styles.memberSearchPlaceholder}>Search member, code, or village</Text>
+            </View>
+            <View style={styles.memberSearchBadge}>
+              <Text style={styles.memberSearchBadgeText}>{memberCount}</Text>
+            </View>
+          </View>
+
           {members.map((member) => (
             <Pressable
               key={member.id}
               onPress={() => router.push(`/agent/members/${member.id}`)}
-              style={({ pressed }) => [styles.memberListRow, pressed && styles.memberListRowPressed]}
+              style={({ pressed }) => [styles.memberCard, pressed && styles.memberListRowPressed]}
             >
-              <View style={styles.memberRowAvatar}>
-                <Ionicons color={colors.white} name="person-outline" size={18} />
+              <View style={styles.memberCardTop}>
+                <View style={styles.memberCardIdentity}>
+                  <View style={styles.memberCardAvatar}>
+                    <Ionicons color={colors.white} name="person-outline" size={18} />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text numberOfLines={1} style={styles.memberCardName}>
+                      {member.fullName}
+                    </Text>
+                    <Text numberOfLines={1} style={styles.memberCardMeta}>
+                      {member.code} · {member.village}
+                    </Text>
+                  </View>
+                </View>
+                <View style={member.status === "active" ? styles.memberCardStatusActive : styles.memberCardStatusPending}>
+                  <Text style={member.status === "active" ? styles.memberCardStatusActiveText : styles.memberCardStatusPendingText}>
+                    {member.status === "active" ? "Active" : "Pending"}
+                  </Text>
+                </View>
               </View>
-              <Text style={styles.memberListName}>{member.fullName}</Text>
-              <Ionicons color={colors.ink} name="chevron-forward" size={18} />
+
+              <View style={styles.memberCardStats}>
+                <View style={styles.memberCardStat}>
+                  <Text style={styles.memberCardStatLabel}>Savings</Text>
+                  <Text numberOfLines={1} style={styles.memberCardStatValue}>
+                    {formatCurrency(member.savingsBalance)}
+                  </Text>
+                </View>
+                <View style={styles.memberCardDivider} />
+                <View style={styles.memberCardStat}>
+                  <Text style={styles.memberCardStatLabel}>Deposit</Text>
+                  <Text numberOfLines={1} style={styles.memberCardStatValue}>
+                    {formatCurrency(member.depositBalance)}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.memberCardFooter}>
+                <View style={styles.memberCardActivity}>
+                  <Ionicons color={colors.inkMuted} name="time-outline" size={14} />
+                  <Text numberOfLines={1} style={styles.memberCardActivityText}>
+                    {member.lastActivity}
+                  </Text>
+                </View>
+                <Ionicons color={colors.ink} name="chevron-forward" size={18} />
+              </View>
             </Pressable>
           ))}
         </>
@@ -310,88 +496,139 @@ export function AgentMemberDetailScreen() {
 
   return (
     <Screen subtitle={`${member.code} · ${member.branchName}`} title={member.fullName}>
-      <SurfaceCard>
-        <Text style={styles.heroTitle}>{member.fullName}</Text>
-        <Text style={styles.heroCaption}>{member.lastActivity}</Text>
-        <View style={styles.inlineWrap}>
-          <StatusPill label={member.status === "active" ? "APPROVED" : "PENDING APPROVAL"} />
+      <SurfaceCard accent="rgba(255,255,255,0.78)" tone="soft">
+        <View style={styles.memberDetailHero}>
+          <View style={styles.memberDetailHeroTop}>
+            <View style={styles.memberDetailAvatar}>
+              <Ionicons color={colors.white} name="person-outline" size={30} />
+            </View>
+            <View style={styles.memberDetailHeroText}>
+              <View style={styles.summaryEyebrow}>
+                <Text style={styles.summaryEyebrowText}>Member Workspace</Text>
+              </View>
+              <Text style={styles.memberDetailName}>{member.fullName}</Text>
+              <Text style={styles.memberDetailMeta}>
+                {member.code} · {member.village}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.memberDetailHeroFooter}>
+            <StatusPill label={member.status === "active" ? "APPROVED" : "PENDING APPROVAL"} />
+            <Text style={styles.memberDetailActivity}>{member.lastActivity}</Text>
+          </View>
+        </View>
+
+        <View style={styles.memberDetailBalanceGrid}>
+          <View style={styles.memberDetailBalanceCard}>
+            <Text style={styles.memberDetailBalanceLabel}>Savings Balance</Text>
+            <Text adjustsFontSizeToFit numberOfLines={1} style={styles.memberDetailBalanceValue}>
+              {formatCurrency(member.savingsBalance)}
+            </Text>
+          </View>
+          <View style={styles.memberDetailBalanceCard}>
+            <Text style={styles.memberDetailBalanceLabel}>Deposit Balance</Text>
+            <Text adjustsFontSizeToFit numberOfLines={1} style={styles.memberDetailBalanceValue}>
+              {formatCurrency(member.depositBalance)}
+            </Text>
+          </View>
         </View>
       </SurfaceCard>
 
-      <SurfaceCard>
-        <InfoRow label="Code" value={member.code} />
-        <InfoRow label="Phone" value={member.phone} />
-        <InfoRow label="Address" value={member.village} />
+      <SurfaceCard accent="rgba(255,255,255,0.78)" tone="soft">
+        <View style={styles.memberDetailInfoHeader}>
+          <Text style={styles.memberDetailSectionTitle}>Profile Snapshot</Text>
+          <View style={styles.memberDetailInfoIcon}>
+            <Ionicons color={colors.ink} name="document-text-outline" size={18} />
+          </View>
+        </View>
+        <View style={styles.memberDetailInfoGrid}>
+          <View style={styles.memberDetailInfoCard}>
+            <Text style={styles.memberDetailInfoLabel}>Phone</Text>
+            <Text style={styles.memberDetailInfoValue}>{member.phone}</Text>
+          </View>
+          <View style={styles.memberDetailInfoCard}>
+            <Text style={styles.memberDetailInfoLabel}>Branch</Text>
+            <Text style={styles.memberDetailInfoValue}>{member.branchName}</Text>
+          </View>
+          <View style={styles.memberDetailInfoCard}>
+            <Text style={styles.memberDetailInfoLabel}>Village</Text>
+            <Text style={styles.memberDetailInfoValue}>{member.village}</Text>
+          </View>
+          <View style={styles.memberDetailInfoCard}>
+            <Text style={styles.memberDetailInfoLabel}>Occupation</Text>
+            <Text style={styles.memberDetailInfoValue}>{member.occupation ?? "Pending profile"}</Text>
+          </View>
+        </View>
       </SurfaceCard>
 
-      <SectionHeader title="Balances" />
-      <View style={styles.grid}>
-        <StatCard label="Savings" value={formatCurrency(member.savingsBalance)} />
-        <StatCard label="Deposit" value={formatCurrency(member.depositBalance)} />
-      </View>
-
       <SectionHeader title="Analytics" />
-      <SurfaceCard>
+      <SurfaceCard accent="rgba(255,255,255,0.78)" tone="soft">
         <Text style={styles.sectionCaption}>Savings and deposit balances for this member.</Text>
         <MiniBarChart data={data.analytics} formatValue />
       </SurfaceCard>
 
       <SectionHeader title="Direct Actions" />
-      <SurfaceCard accent="#EEF4ED">
+      <SurfaceCard accent="rgba(255,255,255,0.78)" tone="soft">
         <Text style={styles.sectionCaption}>
-          Collect savings or deposit directly for this member using the existing approval flow.
+          Capture savings, deposit, or withdrawal activity from this dedicated member workspace.
         </Text>
-        <View style={styles.buttonRow}>
-          <View style={{ flex: 1 }}>
-            <PrimaryButton
-              disabled={!canTakeSavings}
-              label="Take Savings"
-              onPress={() => {
-                if (!canTakeSavings) {
-                  return;
-                }
+        <View style={styles.memberActionGrid}>
+          <MemberActionCard
+            buttonLabel="Take Savings"
+            buttonVariant="primary"
+            caption="Collect savings directly against the member savings account."
+            disabled={!canTakeSavings}
+            icon="wallet-outline"
+            onPress={() => {
+              if (!canTakeSavings) {
+                return;
+              }
 
-                router.push({
-                  pathname: "/agent/transactions/deposit",
-                  params: { accountType: "savings", memberId: member.id },
-                });
-              }}
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <SecondaryButton
-              disabled={!canTakeDeposit}
-              label="Take Deposit"
-              onPress={() => {
-                if (!canTakeDeposit) {
-                  return;
-                }
+              router.push({
+                pathname: "/agent/transactions/deposit",
+                params: { accountType: "savings", memberId: member.id },
+              });
+            }}
+            title="Savings"
+          />
+          <MemberActionCard
+            buttonLabel="Take Deposit"
+            buttonVariant="secondary"
+            caption="Post a deposit to the active deposit account."
+            disabled={!canTakeDeposit}
+            icon="card-outline"
+            onPress={() => {
+              if (!canTakeDeposit) {
+                return;
+              }
 
-                router.push({
-                  pathname: "/agent/transactions/deposit",
-                  params: { accountType: "deposit", memberId: member.id },
-                });
-              }}
-            />
-          </View>
-        </View>
-        <View style={styles.buttonRow}>
-          <View style={styles.fullWidthButton}>
-            <SecondaryButton
-              disabled={!canTakeWithdrawal}
-              label="Withdrawal"
-              onPress={() => {
-                if (!canTakeWithdrawal) {
-                  return;
-                }
+              router.push({
+                pathname: "/agent/transactions/deposit",
+                params: { accountType: "deposit", memberId: member.id },
+              });
+            }}
+            title="Deposit"
+          />
+          <MemberActionCard
+            buttonLabel="Make Withdrawal"
+            buttonVariant="secondary"
+            caption="Initiate a withdrawal using the member deposit account."
+            disabled={!canTakeWithdrawal}
+            fullWidth
+            icon="swap-horizontal-outline"
+            onPress={() => {
+              if (!canTakeWithdrawal) {
+                return;
+              }
 
-                router.push({
-                  pathname: "/agent/transactions/withdrawal",
-                  params: { memberId: member.id, returnTo: "member" },
-                });
-              }}
-            />
-          </View>
+              router.push({
+                pathname: "/agent/transactions/withdrawal",
+                params: { memberId: member.id, returnTo: "member" },
+              });
+            }}
+            title="Withdrawal"
+          />
         </View>
         {!canTakeSavings || !canTakeDeposit || !canTakeWithdrawal ? (
           <Text style={styles.inlineNotice}>
@@ -418,6 +655,7 @@ export function AgentMemberDetailScreen() {
             amount={transaction.amount}
             dateLabel={formatTransactionRowDate(transaction.createdAt)}
             detailLabel={`${transaction.accountType === "deposit" ? "Deposit" : "Savings"} · ${transaction.agentName}`}
+            onPress={() => router.push(`/agent/transactions/${transaction.id}` as Href)}
             status={toStatusLabel(transaction.status)}
             typeLabel={transaction.type === "deposit" ? "Deposit" : "Withdrawal"}
           />
@@ -1372,6 +1610,76 @@ export function AgentChangePasswordScreen() {
   );
 }
 
+function MemberActionCard({
+  icon,
+  title,
+  caption,
+  buttonLabel,
+  onPress,
+  disabled,
+  buttonVariant,
+  fullWidth = false,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  caption: string;
+  buttonLabel: string;
+  onPress: () => void;
+  disabled: boolean;
+  buttonVariant: "primary" | "secondary";
+  fullWidth?: boolean;
+}) {
+  return (
+    <View style={[styles.memberActionCard, fullWidth && styles.memberActionCardFull]}>
+      <View style={styles.memberActionHeader}>
+        <View style={styles.memberActionIcon}>
+          <Ionicons color={colors.ink} name={icon} size={18} />
+        </View>
+        <Text style={styles.memberActionTitle}>{title}</Text>
+      </View>
+      <Text style={styles.memberActionCaption}>{caption}</Text>
+      {buttonVariant === "primary" ? (
+        <PrimaryButton disabled={disabled} label={buttonLabel} onPress={onPress} />
+      ) : (
+        <SecondaryButton disabled={disabled} label={buttonLabel} onPress={onPress} />
+      )}
+    </View>
+  );
+}
+
+function SummaryMetricCard({
+  icon,
+  label,
+  value,
+  hint,
+  iconBackgroundColor,
+  iconColor,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  hint: string;
+  iconBackgroundColor: string;
+  iconColor: string;
+}) {
+  return (
+    <View style={styles.summaryMetricCard}>
+      <View style={[styles.summaryMetricIcon, { backgroundColor: iconBackgroundColor }]}>
+        <Ionicons color={iconColor} name={icon} size={16} />
+      </View>
+      <Text numberOfLines={1} style={styles.summaryMetricLabel}>
+        {label}
+      </Text>
+      <Text adjustsFontSizeToFit numberOfLines={1} style={styles.summaryMetricValue}>
+        {value}
+      </Text>
+      <Text numberOfLines={2} style={styles.summaryMetricHint}>
+        {hint}
+      </Text>
+    </View>
+  );
+}
+
 function HeaderIconButton({
   icon,
   label,
@@ -1480,11 +1788,146 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: spacing.sm,
   },
+  quickActionsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+  },
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm,
     justifyContent: "space-between",
+  },
+  summaryHero: {
+    backgroundColor: "rgba(255,255,255,0.84)",
+    borderColor: "rgba(223, 246, 213, 0.95)",
+    borderRadius: 26,
+    borderWidth: 1,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+  },
+  summaryHeroTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: spacing.md,
+  },
+  summaryEyebrow: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(5,5,5,0.06)",
+    borderRadius: radii.pill,
+    marginBottom: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+  },
+  summaryEyebrowText: {
+    color: colors.inkMuted,
+    fontFamily: typography.medium,
+    fontSize: 10,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  summaryHeroLabel: {
+    color: colors.ink,
+    fontFamily: typography.medium,
+    fontSize: 15,
+  },
+  summaryHeroIcon: {
+    alignItems: "center",
+    backgroundColor: colors.foliwe,
+    borderRadius: radii.pill,
+    height: 42,
+    justifyContent: "center",
+    width: 42,
+  },
+  summaryHeroValue: {
+    color: colors.ink,
+    fontFamily: typography.display,
+    fontSize: 34,
+    lineHeight: 40,
+  },
+  summaryHeroFooter: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: spacing.sm,
+  },
+  summaryHeroHint: {
+    color: colors.inkMuted,
+    fontFamily: typography.body,
+    fontSize: 12,
+  },
+  summaryVariancePill: {
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
+  summaryVarianceBalanced: {
+    backgroundColor: "rgba(0, 184, 63, 0.12)",
+  },
+  summaryVarianceWarning: {
+    backgroundColor: "rgba(255, 139, 61, 0.14)",
+  },
+  summaryVarianceDanger: {
+    backgroundColor: "rgba(255, 84, 92, 0.12)",
+  },
+  summaryVarianceText: {
+    fontFamily: typography.medium,
+    fontSize: 10,
+  },
+  summaryVarianceBalancedText: {
+    color: colors.success,
+  },
+  summaryVarianceWarningText: {
+    color: colors.warning,
+  },
+  summaryVarianceDangerText: {
+    color: colors.danger,
+  },
+  summaryMetricGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+  },
+  summaryMetricCard: {
+    backgroundColor: "rgba(255,255,255,0.9)",
+    borderColor: "rgba(223, 246, 213, 0.95)",
+    borderRadius: 22,
+    borderWidth: 1,
+    flexBasis: "48%",
+    flexGrow: 1,
+    gap: spacing.xs,
+    minHeight: 128,
+    padding: spacing.md,
+  },
+  summaryMetricIcon: {
+    alignItems: "center",
+    borderRadius: radii.pill,
+    height: 32,
+    justifyContent: "center",
+    marginBottom: spacing.xs,
+    width: 32,
+  },
+  summaryMetricLabel: {
+    color: colors.inkMuted,
+    fontFamily: typography.medium,
+    fontSize: 11,
+  },
+  summaryMetricValue: {
+    color: colors.ink,
+    fontFamily: typography.heading,
+    fontSize: 24,
+    lineHeight: 29,
+  },
+  summaryMetricHint: {
+    color: colors.inkMuted,
+    fontFamily: typography.body,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: "auto",
   },
   rowBetween: {
     alignItems: "center",
@@ -1537,6 +1980,132 @@ const styles = StyleSheet.create({
     fontFamily: typography.body,
     fontSize: 12,
   },
+  memberPortfolioHero: {
+    backgroundColor: "rgba(255,255,255,0.88)",
+    borderColor: "rgba(223, 246, 213, 0.95)",
+    borderRadius: 26,
+    borderWidth: 1,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+  },
+  memberPortfolioTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: spacing.md,
+  },
+  memberPortfolioLabel: {
+    color: colors.ink,
+    fontFamily: typography.medium,
+    fontSize: 15,
+  },
+  memberPortfolioIcon: {
+    alignItems: "center",
+    backgroundColor: colors.foliwe,
+    borderRadius: radii.pill,
+    height: 42,
+    justifyContent: "center",
+    width: 42,
+  },
+  memberPortfolioValue: {
+    color: colors.ink,
+    fontFamily: typography.display,
+    fontSize: 36,
+    lineHeight: 42,
+  },
+  memberPortfolioFooter: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: spacing.sm,
+  },
+  memberPortfolioHint: {
+    color: colors.inkMuted,
+    fontFamily: typography.body,
+    fontSize: 12,
+  },
+  memberPortfolioPill: {
+    backgroundColor: "rgba(5,5,5,0.06)",
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
+  memberPortfolioPillText: {
+    color: colors.ink,
+    fontFamily: typography.medium,
+    fontSize: 10,
+  },
+  memberPortfolioGrid: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  memberPortfolioMetric: {
+    backgroundColor: "rgba(255,255,255,0.9)",
+    borderColor: "rgba(223, 246, 213, 0.95)",
+    borderRadius: 22,
+    borderWidth: 1,
+    flex: 1,
+    gap: spacing.xs,
+    minHeight: 116,
+    padding: spacing.md,
+  },
+  memberPortfolioMetricIcon: {
+    alignItems: "center",
+    borderRadius: radii.pill,
+    height: 32,
+    justifyContent: "center",
+    marginBottom: spacing.xs,
+    width: 32,
+  },
+  memberPortfolioMetricLabel: {
+    color: colors.inkMuted,
+    fontFamily: typography.medium,
+    fontSize: 11,
+  },
+  memberPortfolioMetricValue: {
+    color: colors.ink,
+    fontFamily: typography.heading,
+    fontSize: 20,
+    lineHeight: 26,
+  },
+  memberSearchRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  memberSearchBox: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.88)",
+    borderColor: "rgba(223, 246, 213, 0.95)",
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 48,
+    paddingHorizontal: spacing.md,
+  },
+  memberSearchPlaceholder: {
+    color: colors.inkMuted,
+    flex: 1,
+    fontFamily: typography.body,
+    fontSize: 12,
+  },
+  memberSearchBadge: {
+    alignItems: "center",
+    backgroundColor: colors.foliwe,
+    borderRadius: radii.pill,
+    height: 42,
+    justifyContent: "center",
+    minWidth: 42,
+    paddingHorizontal: spacing.sm,
+  },
+  memberSearchBadgeText: {
+    color: colors.ink,
+    fontFamily: typography.medium,
+    fontSize: 12,
+  },
   searchBox: {
     backgroundColor: colors.card,
     borderRadius: radii.pill,
@@ -1583,6 +2152,288 @@ const styles = StyleSheet.create({
     height: 30,
     justifyContent: "center",
     width: 30,
+  },
+  memberCard: {
+    backgroundColor: "rgba(255,255,255,0.9)",
+    borderColor: "rgba(223, 246, 213, 0.95)",
+    borderRadius: 24,
+    borderWidth: 1,
+    gap: spacing.md,
+    marginBottom: spacing.sm,
+    padding: spacing.md,
+  },
+  memberCardTop: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+  },
+  memberCardIdentity: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minWidth: 0,
+  },
+  memberCardAvatar: {
+    alignItems: "center",
+    backgroundColor: colors.brand,
+    borderRadius: radii.pill,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  memberCardName: {
+    color: colors.ink,
+    fontFamily: typography.medium,
+    fontSize: 15,
+  },
+  memberCardMeta: {
+    color: colors.inkMuted,
+    fontFamily: typography.body,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  memberCardStatusActive: {
+    backgroundColor: "rgba(0, 184, 63, 0.12)",
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
+  memberCardStatusActiveText: {
+    color: colors.success,
+    fontFamily: typography.medium,
+    fontSize: 10,
+  },
+  memberCardStatusPending: {
+    backgroundColor: "rgba(255, 139, 61, 0.14)",
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
+  memberCardStatusPendingText: {
+    color: colors.warning,
+    fontFamily: typography.medium,
+    fontSize: 10,
+  },
+  memberCardStats: {
+    alignItems: "center",
+    backgroundColor: "rgba(5,5,5,0.03)",
+    borderRadius: radii.md,
+    flexDirection: "row",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  memberCardStat: {
+    flex: 1,
+    gap: 4,
+  },
+  memberCardDivider: {
+    backgroundColor: "rgba(5,5,5,0.08)",
+    height: 32,
+    marginHorizontal: spacing.sm,
+    width: 1,
+  },
+  memberCardStatLabel: {
+    color: colors.inkMuted,
+    fontFamily: typography.body,
+    fontSize: 11,
+  },
+  memberCardStatValue: {
+    color: colors.ink,
+    fontFamily: typography.medium,
+    fontSize: 13,
+  },
+  memberCardFooter: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+  },
+  memberCardActivity: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.xs,
+    minWidth: 0,
+  },
+  memberCardActivityText: {
+    color: colors.inkMuted,
+    flex: 1,
+    fontFamily: typography.body,
+    fontSize: 11,
+  },
+  memberDetailHero: {
+    backgroundColor: "rgba(255,255,255,0.88)",
+    borderColor: "rgba(223, 246, 213, 0.95)",
+    borderRadius: 26,
+    borderWidth: 1,
+    padding: spacing.md,
+  },
+  memberDetailHeroTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+  },
+  memberDetailAvatar: {
+    alignItems: "center",
+    backgroundColor: colors.brand,
+    borderRadius: radii.pill,
+    height: 56,
+    justifyContent: "center",
+    width: 56,
+  },
+  memberDetailHeroText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  memberDetailName: {
+    color: colors.ink,
+    fontFamily: typography.heading,
+    fontSize: 24,
+    lineHeight: 30,
+  },
+  memberDetailMeta: {
+    color: colors.inkMuted,
+    fontFamily: typography.body,
+    fontSize: 12,
+    marginTop: 4,
+  },
+  memberDetailHeroFooter: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+    marginTop: spacing.md,
+  },
+  memberDetailActivity: {
+    color: colors.inkMuted,
+    flex: 1,
+    fontFamily: typography.body,
+    fontSize: 12,
+    textAlign: "right",
+  },
+  memberDetailBalanceGrid: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  memberDetailBalanceCard: {
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderColor: "rgba(223, 246, 213, 0.95)",
+    borderRadius: 22,
+    borderWidth: 1,
+    flex: 1,
+    gap: spacing.xs,
+    minHeight: 112,
+    padding: spacing.md,
+  },
+  memberDetailBalanceLabel: {
+    color: colors.inkMuted,
+    fontFamily: typography.medium,
+    fontSize: 11,
+  },
+  memberDetailBalanceValue: {
+    color: colors.ink,
+    fontFamily: typography.display,
+    fontSize: 24,
+    lineHeight: 30,
+    marginTop: "auto",
+  },
+  memberDetailInfoHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: spacing.sm,
+  },
+  memberDetailSectionTitle: {
+    color: colors.ink,
+    fontFamily: typography.medium,
+    fontSize: 15,
+  },
+  memberDetailInfoIcon: {
+    alignItems: "center",
+    backgroundColor: colors.foliwe,
+    borderRadius: radii.pill,
+    height: 34,
+    justifyContent: "center",
+    width: 34,
+  },
+  memberDetailInfoGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+  },
+  memberDetailInfoCard: {
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderColor: "rgba(223, 246, 213, 0.95)",
+    borderRadius: 20,
+    borderWidth: 1,
+    flexBasis: "48%",
+    flexGrow: 1,
+    gap: 4,
+    minHeight: 88,
+    padding: spacing.md,
+  },
+  memberDetailInfoLabel: {
+    color: colors.inkMuted,
+    fontFamily: typography.medium,
+    fontSize: 10,
+    textTransform: "uppercase",
+  },
+  memberDetailInfoValue: {
+    color: colors.ink,
+    fontFamily: typography.body,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: "auto",
+  },
+  memberActionGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+    marginTop: spacing.sm,
+  },
+  memberActionCard: {
+    backgroundColor: "rgba(255,255,255,0.9)",
+    borderColor: "rgba(223, 246, 213, 0.95)",
+    borderRadius: 22,
+    borderWidth: 1,
+    flexBasis: "48%",
+    flexGrow: 1,
+    gap: spacing.sm,
+    minHeight: 170,
+    padding: spacing.md,
+  },
+  memberActionCardFull: {
+    flexBasis: "100%",
+  },
+  memberActionHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  memberActionIcon: {
+    alignItems: "center",
+    backgroundColor: colors.foliwe,
+    borderRadius: radii.pill,
+    height: 34,
+    justifyContent: "center",
+    width: 34,
+  },
+  memberActionTitle: {
+    color: colors.ink,
+    fontFamily: typography.medium,
+    fontSize: 14,
+  },
+  memberActionCaption: {
+    color: colors.inkMuted,
+    fontFamily: typography.body,
+    fontSize: 12,
+    lineHeight: 18,
   },
   inlineNotice: {
     color: colors.inkMuted,

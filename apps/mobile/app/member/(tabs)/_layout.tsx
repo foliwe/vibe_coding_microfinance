@@ -1,10 +1,27 @@
 import { Ionicons } from "@expo/vector-icons";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { Tabs } from "expo-router";
 import { View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { colors, layout, radii, spacing } from "@/theme/tokens";
+import { colors, radii, spacing } from "@/theme/tokens";
 
 export default function MemberTabsLayout() {
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, spacing.xs);
+  const tabBarHeight = 54 + bottomInset;
+
+  const tabBubbleStyle = (focused: boolean) => ({
+    alignItems: "center" as const,
+    backgroundColor: focused ? colors.brand : "transparent",
+    borderColor: focused ? colors.brand : "transparent",
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: "center" as const,
+    width: 42,
+  });
+
   return (
     <Tabs
       screenOptions={({ route }) => ({
@@ -15,55 +32,70 @@ export default function MemberTabsLayout() {
         tabBarIcon: ({ color, focused }) => {
           const icons = {
             index: focused ? "home" : "home-outline",
-            accounts: focused ? "card" : "card-outline",
-            loans: focused ? "card" : "card-outline",
+            transactions: focused ? "receipt" : "receipt-outline",
+            "accounts/deposit": focused ? "logo-usd" : "logo-usd",
+            loans: focused ? "cash" : "cash-outline",
             more: focused ? "settings" : "settings-outline",
           } as const;
 
+          if (route.name === "accounts/savings") {
+            return (
+              <View style={tabBubbleStyle(focused)}>
+                <MaterialCommunityIcons
+                  color={focused ? colors.white : colors.ink}
+                  name="piggy-bank-outline"
+                  size={27}
+                />
+              </View>
+            );
+          }
+
           return (
-            <View style={{
-              alignItems: "center",
-              backgroundColor: focused ? colors.brand : colors.card,
-              borderColor: focused ? colors.brand : "#AEB4AA",
-              borderRadius: radii.pill,
-              borderWidth: 1,
-              height: 40,
-              justifyContent: "center",
-              width: 40,
-            }}>
+            <View style={tabBubbleStyle(focused)}>
               <Ionicons
-                color={focused ? colors.white : color}
+                color={focused ? colors.white : colors.ink}
                 name={icons[route.name as keyof typeof icons] ?? "ellipse-outline"}
-                size={21}
+                size={27}
               />
             </View>
           );
         },
-        tabBarItemStyle: { alignItems: "center", justifyContent: "center" },
+        tabBarItemStyle: {
+          alignItems: "center",
+          flex: 1,
+          justifyContent: "center",
+          paddingBottom: Math.round(bottomInset * 0.45),
+          paddingTop: 4,
+          paddingHorizontal: 0,
+        },
         tabBarStyle: {
           alignSelf: "center",
-          backgroundColor: "transparent",
-          borderColor: "transparent",
+          backgroundColor: colors.foliwe,
+          borderColor: colors.foliwe,
           borderTopWidth: 0,
           bottom: spacing.sm,
           elevation: 0,
-          height: layout.tabBarHeight,
-          left: "10%",
+          height: tabBarHeight,
+          left: 16,
+          paddingHorizontal: spacing.xs,
+          paddingTop: spacing.xs,
+          paddingBottom: bottomInset,
           position: "absolute",
-          right: "10%",
+          right: 16,
+          borderRadius: radii.lg,
           shadowOpacity: 0,
         },
       })}
     >
       <Tabs.Screen name="index" options={{ title: "Home" }} />
-      <Tabs.Screen name="accounts" options={{ title: "Accounts" }} />
-      <Tabs.Screen name="accounts/deposit" options={{ href: null }} />
-      <Tabs.Screen name="accounts/savings" options={{ href: null }} />
+      <Tabs.Screen name="transactions" options={{ title: "Transactions" }} />
+      <Tabs.Screen name="accounts/savings" options={{ title: "Savings" }} />
+      <Tabs.Screen name="accounts/deposit" options={{ title: "Deposit" }} />
       <Tabs.Screen name="loans" options={{ title: "Loans" }} />
       <Tabs.Screen name="more" options={{ title: "More" }} />
+      <Tabs.Screen name="accounts" options={{ href: null }} />
       <Tabs.Screen name="more/about" options={{ href: null }} />
       <Tabs.Screen name="more/legal" options={{ href: null }} />
-      <Tabs.Screen name="transactions" options={{ href: null }} />
     </Tabs>
   );
 }

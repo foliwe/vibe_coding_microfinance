@@ -11,6 +11,7 @@ import {
   Text,
   TextInput,
   View,
+  type ViewStyle,
   useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -171,6 +172,26 @@ function StatusIcon({ label }: { label: string }) {
   );
 }
 
+function getCompactStatusLabel(status: string) {
+  if (status === "APPROVED") {
+    return "Approved";
+  }
+
+  if (status === "REJECTED" || status === "FAILED TO SYNC" || status === "FLAGGED") {
+    return "Rejected";
+  }
+
+  return "Pending";
+}
+
+function StatusText({ label }: { label: string }) {
+  const tone = getStatusTone(label);
+
+  return (
+    <Text style={[styles.statusMetaText, { color: tone.text }]}>{getCompactStatusLabel(label)}</Text>
+  );
+}
+
 export function SurfaceCard({
   children,
   accent = colors.card,
@@ -249,22 +270,52 @@ export function ActionTile({
   title,
   caption,
   onPress,
+  iconBackgroundColor = colors.brand,
+  iconColor = colors.white,
+  layout = "row",
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   caption: string;
   onPress: () => void;
+  iconBackgroundColor?: string;
+  iconColor?: string;
+  layout?: "row" | "grid";
 }) {
+  const isGrid = layout === "grid";
+  const tileStyle: ViewStyle[] = [styles.actionTile];
+
+  if (isGrid) {
+    tileStyle.push(styles.actionTileGrid);
+  }
+
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.actionTile, pressed && styles.actionTilePressed]}>
-      <View style={styles.actionIconWrap}>
-        <Ionicons color={colors.white} name={icon} size={20} />
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text numberOfLines={1} style={styles.actionTitle}>{title}</Text>
-        <Text numberOfLines={2} style={styles.actionCaption}>{caption}</Text>
-      </View>
-      <Ionicons color={colors.ink} name="chevron-forward" size={18} />
+    <Pressable onPress={onPress} style={({ pressed }) => [...tileStyle, pressed && styles.actionTilePressed]}>
+      {isGrid ? (
+        <>
+          <View style={styles.actionTileGridHeader}>
+            <View style={[styles.actionIconWrap, { backgroundColor: iconBackgroundColor }]}>
+              <Ionicons color={iconColor} name={icon} size={20} />
+            </View>
+            <Ionicons color={colors.ink} name="chevron-forward" size={18} />
+          </View>
+          <View style={styles.actionTileGridContent}>
+            <Text numberOfLines={2} style={styles.actionTitle}>{title}</Text>
+            <Text numberOfLines={3} style={styles.actionCaption}>{caption}</Text>
+          </View>
+        </>
+      ) : (
+        <>
+          <View style={[styles.actionIconWrap, { backgroundColor: iconBackgroundColor }]}>
+            <Ionicons color={iconColor} name={icon} size={20} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text numberOfLines={1} style={styles.actionTitle}>{title}</Text>
+            <Text numberOfLines={2} style={styles.actionCaption}>{caption}</Text>
+          </View>
+          <Ionicons color={colors.ink} name="chevron-forward" size={18} />
+        </>
+      )}
     </Pressable>
   );
 }
@@ -481,6 +532,9 @@ export function TransactionRow({
             {subtitle}
           </Text>
         </View>
+        <View style={styles.rowStatusCell}>
+          <StatusText label={status} />
+        </View>
         <View style={styles.rowAmountCell}>
           <Text numberOfLines={1} style={[styles.rowAmount, { color: statusTone.text }]}>
             {`${sign}${formatCurrency(Math.abs(amount))}`}
@@ -543,6 +597,8 @@ export function ActivityRow({
   amount: number;
   status: string;
 }) {
+  const statusTone = getStatusTone(status);
+
   return (
     <SurfaceCard accent={colors.cardAlt}>
       <View style={styles.activityRowTop}>
@@ -553,9 +609,14 @@ export function ActivityRow({
           <Text numberOfLines={1} style={styles.rowTitle}>{title}</Text>
           <Text numberOfLines={1} style={styles.rowSubtitle}>{subtitle}</Text>
         </View>
-        <Text numberOfLines={1} style={[styles.rowAmount, { color: colors.success }]}>
-          {`+${formatCurrency(amount)}`}
-        </Text>
+        <View style={styles.rowStatusCell}>
+          <StatusText label={status} />
+        </View>
+        <View style={styles.rowAmountCell}>
+          <Text numberOfLines={1} style={[styles.rowAmount, { color: statusTone.text }]}>
+            {`+${formatCurrency(amount)}`}
+          </Text>
+        </View>
         <StatusIcon label={status} />
       </View>
     </SurfaceCard>
@@ -770,6 +831,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 22,
   },
+  statusMetaText: {
+    fontFamily: typography.medium,
+    fontSize: 10,
+  },
   card: {
     backgroundColor: colors.card,
     borderColor: "rgba(255,255,255,0.86)",
@@ -855,8 +920,28 @@ const styles = StyleSheet.create({
     minHeight: 70,
     padding: spacing.md,
   },
+  actionTileGrid: {
+    alignItems: "stretch",
+    flexBasis: "48%",
+    flexDirection: "column",
+    flexGrow: 1,
+    gap: spacing.md,
+    justifyContent: "space-between",
+    marginBottom: 0,
+    minHeight: 148,
+  },
   actionTilePressed: {
     opacity: 0.82,
+  },
+  actionTileGridHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  actionTileGridContent: {
+    flex: 1,
+    gap: spacing.xs,
+    minWidth: 0,
   },
   actionIconWrap: {
     alignItems: "center",
@@ -1006,6 +1091,11 @@ const styles = StyleSheet.create({
   rowTypeCell: {
     flex: 1,
     minWidth: 0,
+  },
+  rowStatusCell: {
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 82,
   },
   rowAmountCell: {
     alignItems: "flex-end",
