@@ -1,21 +1,41 @@
 import type { ReactNode } from "react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { ActionBar } from "./action-bar";
 
-type SectionCardProps = {
+type AdminSectionProps = {
   children: ReactNode;
+  actions?: ReactNode;
+  className?: string;
+  contentClassName?: string;
   description?: string;
   title: string;
 };
 
-export function SectionCard({ children, description, title }: SectionCardProps) {
+export function AdminSection({
+  actions,
+  children,
+  className,
+  contentClassName,
+  description,
+  title,
+}: AdminSectionProps) {
   return (
-    <Card className="border border-border/70 bg-card/95 shadow-sm backdrop-blur  my-2 ">
-      <CardHeader className="border-b border-border/60">
-        <CardTitle>{title}</CardTitle>
-        {description ? <CardDescription>{description}</CardDescription> : null}
+    <Card className={className ?? "border border-border/70 bg-card/95 shadow-sm"}>
+      <CardHeader className="gap-3 border-b border-border/60">
+        <div className="space-y-1">
+          <CardTitle>{title}</CardTitle>
+          {description ? <CardDescription>{description}</CardDescription> : null}
+        </div>
+        {actions ? <ActionBar>{actions}</ActionBar> : null}
       </CardHeader>
-      <CardContent className="space-y-4 pt-5">{children}</CardContent>
+      <CardContent className={contentClassName ?? "space-y-4 pt-5"}>
+        {children}
+      </CardContent>
     </Card>
   );
+}
+
+export function SectionCard(props: AdminSectionProps) {
+  return <AdminSection {...props} />;
 }

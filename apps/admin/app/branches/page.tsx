@@ -1,7 +1,18 @@
 import Link from "next/link";
 
 import { AdminShell } from "../../components/admin-shell";
+import { ActionBar } from "../../components/action-bar";
+import { AdminTableEmptyRow, AdminTableFrame } from "../../components/admin-table";
 import { SectionCard } from "../../components/section-card";
+import { Button } from "../../components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../components/ui/table";
 import { breadcrumb, withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import { getAdminDashboardData } from "../../lib/dashboard-data";
 import { prettyCurrency } from "../../lib/format";
@@ -20,56 +31,54 @@ export default async function BranchesPage() {
       subtitle="Institution branches with consolidated branch totals and manager ownership."
     >
       <SectionCard title="Branch Actions" description="Create new branches or review existing branch coverage.">
-        <div className="actions">
-          <Link className="button" href="/branches/new">
-            Create Branch
-          </Link>
-          <Link className="button-secondary" href="/managers/new">
-            Create Manager
-          </Link>
-        </div>
+        <ActionBar>
+          <Button asChild>
+            <Link href="/branches/new">Create Branch</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/managers/new">Create Manager</Link>
+          </Button>
+        </ActionBar>
       </SectionCard>
 
       <SectionCard title="Branch Directory" description="Each row includes savings, deposits, loans, and pending approvals for that branch.">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Branch</th>
-              <th>Manager</th>
-              <th>Members</th>
-              <th>Agents</th>
-              <th>Savings</th>
-              <th>Deposits</th>
-              <th>Loans</th>
-              <th>Pending</th>
-            </tr>
-          </thead>
-          <tbody>
+        <AdminTableFrame>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Branch</TableHead>
+                <TableHead>Manager</TableHead>
+                <TableHead>Members</TableHead>
+                <TableHead>Agents</TableHead>
+                <TableHead>Savings</TableHead>
+                <TableHead>Deposits</TableHead>
+                <TableHead>Loans</TableHead>
+                <TableHead>Pending</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
             {summary.branchPerformance.map((branch) => (
-              <tr key={branch.id}>
-                <td>
+              <TableRow key={branch.id}>
+                <TableCell>
                   <Link className="font-semibold underline-offset-4 hover:underline" href={`/branches/${branch.id}`}>
                     {branch.name}
                   </Link>
-                </td>
-                <td>{branch.managerName}</td>
-                <td>{branch.memberCount}</td>
-                <td>{branch.agentCount}</td>
-                <td>{prettyCurrency(branch.totalSavings)}</td>
-                <td>{prettyCurrency(branch.totalDeposits)}</td>
-                <td>{prettyCurrency(branch.totalLoans)}</td>
-                <td>{branch.pendingApprovals}</td>
-              </tr>
+                </TableCell>
+                <TableCell>{branch.managerName}</TableCell>
+                <TableCell>{branch.memberCount}</TableCell>
+                <TableCell>{branch.agentCount}</TableCell>
+                <TableCell>{prettyCurrency(branch.totalSavings)}</TableCell>
+                <TableCell>{prettyCurrency(branch.totalDeposits)}</TableCell>
+                <TableCell>{prettyCurrency(branch.totalLoans)}</TableCell>
+                <TableCell>{branch.pendingApprovals}</TableCell>
+              </TableRow>
             ))}
             {summary.branchPerformance.length === 0 ? (
-              <tr>
-                <td className="muted" colSpan={8}>
-                  No live branches were found yet.
-                </td>
-              </tr>
+              <AdminTableEmptyRow colSpan={8} description="No live branches were found yet." />
             ) : null}
-          </tbody>
-        </table>
+            </TableBody>
+          </Table>
+        </AdminTableFrame>
       </SectionCard>
     </AdminShell>
   );

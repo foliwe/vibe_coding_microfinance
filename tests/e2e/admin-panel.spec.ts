@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
-  STAFF_DEVICE_COOKIE,
+  STAFF_DEVICE_TOKEN_COOKIE,
   STAFF_DEVICE_NAME_COOKIE,
   WORKSTATION_DEVICE_ID_STORAGE_KEY,
 } from "../../apps/admin/lib/staff-device-shared";
@@ -8,6 +8,9 @@ import {
 import {
   canSignInWithPassword,
   createPendingTransactionRequest,
+  getAdminDashboardSummary,
+  getBranchDashboardSummary,
+  getMemberAccountBalance,
   getMemberAccountsByProfileId,
   getProfileByEmail,
   getProfileSecurityState,
@@ -34,7 +37,7 @@ async function primeWorkstationIdentity(page: Page) {
 
   await page.context().addCookies([
     {
-      name: STAFF_DEVICE_COOKIE,
+      name: STAFF_DEVICE_TOKEN_COOKIE,
       url: "http://127.0.0.1:3000",
       value: PLAYWRIGHT_WORKSTATION_ID,
     },

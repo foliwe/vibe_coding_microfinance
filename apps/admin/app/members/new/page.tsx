@@ -1,27 +1,14 @@
 import { cookies } from "next/headers";
 import { createMemberAction } from "../../actions";
+import { AdminFieldGrid, AdminFormField } from "../../../components/admin-form-field";
 import { AdminShell } from "../../../components/admin-shell";
+import { Notice, ResultNotice } from "../../../components/notice";
 import { SectionCard } from "../../../components/section-card";
+import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
+import { NativeSelect, NativeSelectOption } from "../../../components/ui/native-select";
 import { breadcrumb, withDashboardBreadcrumbs } from "../../../lib/breadcrumbs";
 import { getOnboardingPageContext } from "../../../lib/onboarding-data";
-
-function Notice({
-  detail,
-  result,
-}: {
-  detail?: string;
-  result?: string;
-}) {
-  if (!result) {
-    return null;
-  }
-
-  return (
-    <p className={`notice ${result === "success" ? "notice-success" : "notice-error"}`}>
-      {detail ?? (result === "success" ? "Saved successfully." : "Something went wrong.")}
-    </p>
-  );
-}
 
 function CredentialNotice({
   fullName,
@@ -33,13 +20,10 @@ function CredentialNotice({
   temporaryPassword: string;
 }) {
   return (
-    <div className="notice notice-success">
-      <strong>Secure member credentials for {fullName}:</strong>
-      <br />
-      Sign-in code: {signInCode}
-      <br />
-      Temporary password: {temporaryPassword}
-    </div>
+    <Notice title={`Secure member credentials for ${fullName}`} tone="success">
+      <p>Sign-in code: {signInCode}</p>
+      <p>Temporary password: {temporaryPassword}</p>
+    </Notice>
   );
 }
 
@@ -87,7 +71,12 @@ export default async function CreateMemberPage({
         title="Member Onboarding Form"
         description="This form creates the member account, assignment, and member accounts from only the core identity fields. Sign-in code and temporary password are generated automatically."
       >
-        <Notice detail={params?.detail} result={params?.result} />
+        <ResultNotice
+          detail={params?.detail}
+          errorFallback="Something went wrong."
+          result={params?.result}
+          successFallback="Saved successfully."
+        />
         {memberCreationFlash ? (
           <CredentialNotice
             fullName={memberCreationFlash.fullName}
@@ -96,55 +85,52 @@ export default async function CreateMemberPage({
           />
         ) : null}
         <form action={createMemberAction}>
-          <div className="form-grid">
-            <label className="field">
-              <span>Full Name</span>
-              <input name="fullName" placeholder="John Nkem" required />
-            </label>
-            <label className="field">
-              <span>Phone Number</span>
-              <input name="phone" placeholder="+2376..." required />
-            </label>
-            <label className="field">
-              <span>ID Card Number</span>
-              <input name="idNumber" placeholder="CM123456789" required />
-            </label>
-            <label className="field">
-              <span>Branch</span>
-              <select
+          <AdminFieldGrid className="mb-5">
+            <AdminFormField htmlFor="fullName" label="Full Name">
+              <Input id="fullName" name="fullName" placeholder="John Nkem" required />
+            </AdminFormField>
+            <AdminFormField htmlFor="phone" label="Phone Number">
+              <Input id="phone" name="phone" placeholder="+2376..." required />
+            </AdminFormField>
+            <AdminFormField htmlFor="idNumber" label="ID Card Number">
+              <Input
+                id="idNumber"
+                name="idNumber"
+                placeholder="CM123456789"
+                required
+              />
+            </AdminFormField>
+            <AdminFormField htmlFor="branchId" label="Branch">
+              <NativeSelect
                 defaultValue={profile.role === "branch_manager" ? profile.branch_id ?? "" : ""}
+                id="branchId"
                 name="branchId"
                 required
               >
-                <option value="" disabled>
+                <NativeSelectOption value="" disabled>
                   Select branch
-                </option>
+                </NativeSelectOption>
                 {branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
+                  <NativeSelectOption key={branch.id} value={branch.id}>
                     {branch.name} ({branch.code})
-                  </option>
+                  </NativeSelectOption>
                 ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>Assigned Agent</span>
-              <select defaultValue="" name="assignedAgentId" required>
-                <option value="" disabled>
+              </NativeSelect>
+            </AdminFormField>
+            <AdminFormField htmlFor="assignedAgentId" label="Assigned Agent">
+              <NativeSelect defaultValue="" id="assignedAgentId" name="assignedAgentId" required>
+                <NativeSelectOption value="" disabled>
                   Select agent
-                </option>
+                </NativeSelectOption>
                 {agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
+                  <NativeSelectOption key={agent.id} value={agent.id}>
                     {agent.fullName} · {agent.branchName}
-                  </option>
+                  </NativeSelectOption>
                 ))}
-              </select>
-            </label>
-          </div>
-          <div className="actions">
-            <button className="button" type="submit">
-              Save Member
-            </button>
-          </div>
+              </NativeSelect>
+            </AdminFormField>
+          </AdminFieldGrid>
+          <Button type="submit">Save Member</Button>
         </form>
       </SectionCard>
     </AdminShell>

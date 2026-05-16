@@ -69,7 +69,11 @@ export default function MemberLayout() {
     <MobileShell role="member">
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="accounts/[accountId]/index" />
+        <Stack.Screen name="transactions/[transactionId]/index" />
+        <Stack.Screen name="loans/[loanId]/index" />
         <Stack.Screen name="more/profile" />
+        <Stack.Screen name="notifications" />
         <Stack.Screen name="change-password" />
       </Stack>
     </MobileShell>

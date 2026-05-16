@@ -1,7 +1,14 @@
 import { redirect } from "next/navigation";
 
 import { rebindCurrentWorkstationAction, signOutAction } from "../actions";
+import {
+  AuthCard,
+  AuthCardContent,
+  AuthCardHeader,
+  AuthShell,
+} from "../../components/auth-shell";
 import { WorkstationIdentityFields } from "../../components/workstation-identity-bootstrap";
+import { Button } from "../../components/ui/button";
 import { getCurrentProfileOrNull } from "../../lib/auth";
 import {
   assertCurrentWorkstationAccess,
@@ -36,29 +43,34 @@ export default async function WorkstationBlockedPage() {
   const resetNeedsRebind = assertion.access === "needs_binding";
 
   return (
-    <main className="login-page">
-      <div className="login-stack">
-        <section className="login-card">
-          <p className="eyebrow">Workstation blocked</p>
-          <h1>
+    <AuthShell>
+      <div className="flex flex-col gap-4">
+        <AuthCard>
+          <AuthCardHeader>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">
+              Workstation blocked
+            </p>
+            <h1 className="text-2xl font-semibold tracking-tight">
             {resetNeedsRebind
               ? "This workstation needs to be trusted again for this account"
               : "This account is not trusted on this workstation/browser profile"}
-          </h1>
-          <p className="muted">
+            </h1>
+            <p className="text-sm text-muted-foreground">
             {resetNeedsRebind
               ? "No active trusted workstation is registered for this account. Trust this browser profile again to continue."
               : "Ask an admin or permitted branch manager to reset the trusted workstation binding for this staff account, then sign in again to rebind."}
-          </p>
-        </section>
+            </p>
+          </AuthCardHeader>
+        </AuthCard>
 
-        <section className="login-card">
+        <AuthCard>
+          <AuthCardContent>
           {resetNeedsRebind ? (
             <form action={rebindCurrentWorkstationAction} className="space-y-4">
               <WorkstationIdentityFields />
-              <button className="button w-full" type="submit">
+              <Button className="w-full" type="submit">
                 Trust This Workstation
-              </button>
+              </Button>
             </form>
           ) : (
             <p className="text-sm text-muted-foreground">
@@ -69,12 +81,13 @@ export default async function WorkstationBlockedPage() {
           )}
 
           <form action={signOutAction} className="mt-4">
-            <button className="button-secondary w-full" type="submit">
+            <Button className="w-full" type="submit" variant="outline">
               Sign Out
-            </button>
+            </Button>
           </form>
-        </section>
+          </AuthCardContent>
+        </AuthCard>
       </div>
-    </main>
+    </AuthShell>
   );
 }

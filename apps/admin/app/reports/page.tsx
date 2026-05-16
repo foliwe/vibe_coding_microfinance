@@ -1,26 +1,23 @@
 import { requestReportAction } from "../actions";
+import { AdminFieldGrid, AdminFormField } from "../../components/admin-form-field";
 import { AdminShell } from "../../components/admin-shell";
+import { AdminTableEmptyRow, AdminTableFrame } from "../../components/admin-table";
+import { ResultNotice } from "../../components/notice";
 import { SectionCard } from "../../components/section-card";
+import { StatusBadge } from "../../components/status-badge";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { NativeSelect, NativeSelectOption } from "../../components/ui/native-select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../components/ui/table";
 import { breadcrumb, withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import { getReportsPageData } from "../../lib/dashboard-data";
-
-function Notice({
-  detail,
-  result,
-}: {
-  detail?: string;
-  result?: string;
-}) {
-  if (!result) {
-    return null;
-  }
-
-  return (
-    <p className={`notice ${result === "success" ? "notice-success" : "notice-error"}`}>
-      {detail ?? (result === "success" ? "Saved successfully." : "Something went wrong.")}
-    </p>
-  );
-}
 
 export default async function ReportsPage({
   searchParams,
@@ -45,91 +42,88 @@ export default async function ReportsPage({
         title="Queue Report"
         description="This now records a live report job in Supabase instead of showing a dead placeholder button."
       >
-        <Notice detail={params?.detail} result={params?.result} />
+        <ResultNotice
+          detail={params?.detail}
+          errorFallback="Something went wrong."
+          result={params?.result}
+          successFallback="Saved successfully."
+        />
         <form action={requestReportAction}>
-          <div className="form-grid">
-            <label className="field">
-              <span>Report Type</span>
-              <select defaultValue="daily_collections" name="reportType">
-                <option value="daily_collections">Daily Collections</option>
-                <option value="member_statement">Member Statement</option>
-                <option value="loan_portfolio">Loan Portfolio</option>
-                <option value="arrears_default">Arrears / Default</option>
-                <option value="reconciliation_variance">Reconciliation Variance</option>
-                <option value="audit_trail">Audit Trail</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Branch</span>
-              <select
+          <AdminFieldGrid className="mb-5">
+            <AdminFormField htmlFor="reportType" label="Report Type">
+              <NativeSelect defaultValue="daily_collections" id="reportType" name="reportType">
+                <NativeSelectOption value="daily_collections">Daily Collections</NativeSelectOption>
+                <NativeSelectOption value="member_statement">Member Statement</NativeSelectOption>
+                <NativeSelectOption value="loan_portfolio">Loan Portfolio</NativeSelectOption>
+                <NativeSelectOption value="arrears_default">Arrears / Default</NativeSelectOption>
+                <NativeSelectOption value="reconciliation_variance">Reconciliation Variance</NativeSelectOption>
+                <NativeSelectOption value="audit_trail">Audit Trail</NativeSelectOption>
+              </NativeSelect>
+            </AdminFormField>
+            <AdminFormField htmlFor="branchId" label="Branch">
+              <NativeSelect
                 defaultValue={profile.role === "branch_manager" ? profile.branch_id ?? "" : ""}
+                id="branchId"
                 name="branchId"
               >
-                {profile.role === "admin" ? <option value="">All Branches</option> : null}
+                {profile.role === "admin" ? (
+                  <NativeSelectOption value="">All Branches</NativeSelectOption>
+                ) : null}
                 {branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
+                  <NativeSelectOption key={branch.id} value={branch.id}>
                     {branch.name}
-                  </option>
+                  </NativeSelectOption>
                 ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>Date From</span>
-              <input name="dateFrom" type="date" />
-            </label>
-            <label className="field">
-              <span>Date To</span>
-              <input name="dateTo" type="date" />
-            </label>
-            <label className="field">
-              <span>Export Format</span>
-              <select defaultValue="csv" name="exportFormat">
-                <option value="csv">CSV</option>
-                <option value="xlsx">XLSX</option>
-                <option value="pdf">Printable / PDF</option>
-              </select>
-            </label>
-          </div>
-          <div className="actions">
-            <button className="button" type="submit">
-              Queue Report
-            </button>
-          </div>
+              </NativeSelect>
+            </AdminFormField>
+            <AdminFormField htmlFor="dateFrom" label="Date From">
+              <Input id="dateFrom" name="dateFrom" type="date" />
+            </AdminFormField>
+            <AdminFormField htmlFor="dateTo" label="Date To">
+              <Input id="dateTo" name="dateTo" type="date" />
+            </AdminFormField>
+            <AdminFormField htmlFor="exportFormat" label="Export Format">
+              <NativeSelect defaultValue="csv" id="exportFormat" name="exportFormat">
+                <NativeSelectOption value="csv">CSV</NativeSelectOption>
+                <NativeSelectOption value="xlsx">XLSX</NativeSelectOption>
+                <NativeSelectOption value="pdf">Printable / PDF</NativeSelectOption>
+              </NativeSelect>
+            </AdminFormField>
+          </AdminFieldGrid>
+          <Button type="submit">Queue Report</Button>
         </form>
       </SectionCard>
 
       <SectionCard title="Recent Report Jobs" description="Latest queued exports in the visible scope.">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Report</th>
-              <th>Branch</th>
-              <th>Status</th>
-              <th>Requested</th>
-              <th>File</th>
-            </tr>
-          </thead>
-          <tbody>
+        <AdminTableFrame>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Report</TableHead>
+                <TableHead>Branch</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Requested</TableHead>
+                <TableHead>File</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
             {rows.map((row) => (
-              <tr key={row.id}>
-                <td>{row.reportType}</td>
-                <td>{row.branchName}</td>
-                <td>
-                  <span className="chip">{row.status}</span>
-                </td>
-                <td>{row.requestedAt}</td>
-                <td>{row.filePath ?? "Pending export"}</td>
-              </tr>
+              <TableRow key={row.id}>
+                <TableCell>{row.reportType}</TableCell>
+                <TableCell>{row.branchName}</TableCell>
+                <TableCell>
+                  <StatusBadge>{row.status}</StatusBadge>
+                </TableCell>
+                <TableCell>{row.requestedAt}</TableCell>
+                <TableCell>{row.filePath ?? "Pending export"}</TableCell>
+              </TableRow>
             ))}
             {rows.length === 0 ? (
-              <tr>
-                <td className="muted" colSpan={5}>
-                  No report jobs have been queued yet.
-                </td>
-              </tr>
+              <AdminTableEmptyRow colSpan={5} description="No report jobs have been queued yet." />
             ) : null}
-          </tbody>
-        </table>
+            </TableBody>
+          </Table>
+        </AdminTableFrame>
       </SectionCard>
     </AdminShell>
   );

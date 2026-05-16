@@ -1,6 +1,13 @@
 import { redirectIfSignedIn } from "../../lib/auth";
+import {
+  AuthCard,
+  AuthCardContent,
+  AuthCardHeader,
+  AuthShell,
+} from "../../components/auth-shell";
 import { hasSupabaseEnv } from "../../lib/supabase/env";
 import { LoginForm } from "../../components/login-form";
+import { Notice } from "../../components/notice";
 
 export default async function LoginPage({
   searchParams,
@@ -9,17 +16,22 @@ export default async function LoginPage({
 }) {
   if (!hasSupabaseEnv()) {
     return (
-      <main className="login-page">
-        <section className="login-card">
-          <p className="eyebrow">Configuration required</p>
-          <h1>Supabase credentials are missing</h1>
-          <p className="muted">
-            Add `NEXT_PUBLIC_SUPABASE_URL` and
-            `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to your environment, then restart
-            the admin app.
-          </p>
-        </section>
-      </main>
+      <AuthShell>
+        <AuthCard>
+          <AuthCardHeader>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">
+              Configuration required
+            </p>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Supabase credentials are missing
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+              to your environment, then restart the admin app.
+            </p>
+          </AuthCardHeader>
+        </AuthCard>
+      </AuthShell>
     );
   }
 
@@ -31,50 +43,43 @@ export default async function LoginPage({
   const showWorkstationRebind = params?.reason === "workstation-rebind";
 
   return (
-    <main className="login-page">
-      <div className="login-stack">
+    <AuthShell>
+      <div className="flex flex-col gap-4">
         {showUnauthorized ? (
-          <section className="login-card">
-            <p className="eyebrow">Access denied</p>
-            <h1>This web panel is for admins and branch managers only</h1>
-            <p className="muted">
-              Agent and member accounts should use the Expo mobile app instead of the admin
-              panel.
-            </p>
-          </section>
+          <Notice title="Access denied" tone="warning">
+            <p>This web panel is for admins and branch managers only.</p>
+            <p>Agent and member accounts should use the Expo mobile app instead.</p>
+          </Notice>
         ) : null}
         {showProfileMissing ? (
-          <section className="login-card">
-            <p className="eyebrow">Profile missing</p>
-            <h1>This user authenticated, but no matching admin profile was found</h1>
-            <p className="muted">
-              Make sure the user has a row in `public.profiles` with the same Auth user ID and
-              a role of `admin` or `branch_manager`.
+          <Notice title="Profile missing" tone="warning">
+            <p>This user authenticated, but no matching admin profile was found.</p>
+            <p>
+              Make sure the user has a row in `public.profiles` with the same Auth user ID
+              and a role of `admin` or `branch_manager`.
             </p>
-          </section>
+          </Notice>
         ) : null}
         {showWorkstationConfigMissing ? (
-          <section className="login-card">
-            <p className="eyebrow">Security configuration required</p>
-            <h1>Workstation token signing is not configured</h1>
-            <p className="muted">
-              Add `STAFF_DEVICE_TOKEN_SECRET` to the admin app environment, then restart the app
-              before branch managers sign in again.
+          <Notice title="Security configuration required" tone="warning">
+            <p>Workstation token signing is not configured.</p>
+            <p>
+              Add `STAFF_DEVICE_TOKEN_SECRET` to the admin app environment, then restart
+              the app before branch managers sign in again.
             </p>
-          </section>
+          </Notice>
         ) : null}
         {showWorkstationRebind ? (
-          <section className="login-card">
-            <p className="eyebrow">Workstation check failed</p>
-            <h1>Refresh and sign in again to rebind this workstation token</h1>
-            <p className="muted">
-              The secure workstation token could not be validated. Retry sign-in to create a new
-              trusted workstation binding.
+          <Notice title="Workstation check failed" tone="error">
+            <p>Refresh and sign in again to rebind this workstation token.</p>
+            <p>
+              The secure workstation token could not be validated. Retry sign-in to create
+              a new trusted workstation binding.
             </p>
-          </section>
+          </Notice>
         ) : null}
         <LoginForm />
       </div>
-    </main>
+    </AuthShell>
   );
 }

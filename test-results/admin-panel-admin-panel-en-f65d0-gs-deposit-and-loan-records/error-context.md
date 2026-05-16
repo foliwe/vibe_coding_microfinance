@@ -1,0 +1,221 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e7] [cursor=pointer]:
+    - img [ref=e8]
+  - alert [ref=e11]
+  - generic [ref=e12]:
+    - generic [ref=e15]:
+      - link "Credit Union Admin Bamenda Branch" [ref=e17] [cursor=pointer]:
+        - /url: /branch
+        - img [ref=e19]
+        - generic [ref=e23]:
+          - paragraph [ref=e24]: Credit Union Admin
+          - paragraph [ref=e25]: Bamenda Branch
+      - generic [ref=e26]:
+        - generic [ref=e27]:
+          - generic [ref=e28]: Overview
+          - list [ref=e30]:
+            - listitem [ref=e31]:
+              - link "Branch Dashboard" [ref=e32] [cursor=pointer]:
+                - /url: /branch
+                - img [ref=e33]
+                - generic [ref=e35]: Branch Dashboard
+        - generic [ref=e36]:
+          - generic [ref=e37]: People
+          - list [ref=e39]:
+            - listitem [ref=e40]:
+              - link "Members" [ref=e41] [cursor=pointer]:
+                - /url: /members
+                - img [ref=e42]
+                - generic [ref=e47]: Members
+            - listitem [ref=e48]:
+              - link "Create Member" [ref=e49] [cursor=pointer]:
+                - /url: /members/new
+                - img [ref=e50]
+                - generic [ref=e53]: Create Member
+            - listitem [ref=e54]:
+              - link "Agents" [ref=e55] [cursor=pointer]:
+                - /url: /agents
+                - img [ref=e56]
+                - generic [ref=e61]: Agents
+            - listitem [ref=e62]:
+              - link "Create Agent" [ref=e63] [cursor=pointer]:
+                - /url: /agents/new
+                - img [ref=e64]
+                - generic [ref=e67]: Create Agent
+        - generic [ref=e68]:
+          - generic [ref=e69]: Operations
+          - list [ref=e71]:
+            - listitem [ref=e72]:
+              - link "Transactions" [ref=e73] [cursor=pointer]:
+                - /url: /transactions
+                - img [ref=e74]
+                - generic [ref=e77]: Transactions
+              - list [ref=e78]:
+                - listitem [ref=e79]:
+                  - link "Deposit" [ref=e80] [cursor=pointer]:
+                    - /url: /transactions/deposit
+                    - generic [ref=e81]: Deposit
+                - listitem [ref=e82]:
+                  - link "Withdrawal" [ref=e83] [cursor=pointer]:
+                    - /url: /transactions/withdrawal
+                    - generic [ref=e84]: Withdrawal
+            - listitem [ref=e85]:
+              - link "Loans" [ref=e86] [cursor=pointer]:
+                - /url: /loans
+                - img [ref=e87]
+                - generic [ref=e90]: Loans
+            - listitem [ref=e91]:
+              - link "Reconciliation" [ref=e92] [cursor=pointer]:
+                - /url: /reconciliation
+                - img [ref=e93]
+                - generic [ref=e100]: Reconciliation
+            - listitem [ref=e101]:
+              - link "Staff Devices" [ref=e102] [cursor=pointer]:
+                - /url: /staff-devices
+                - img [ref=e103]
+                - generic [ref=e105]: Staff Devices
+            - listitem [ref=e106]:
+              - link "Reports" [ref=e107] [cursor=pointer]:
+                - /url: /reports
+                - img [ref=e108]
+                - generic [ref=e110]: Reports
+            - listitem [ref=e111]:
+              - link "Audit Log" [ref=e112] [cursor=pointer]:
+                - /url: /audit
+                - img [ref=e113]
+                - generic [ref=e116]: Audit Log
+            - listitem [ref=e117]:
+              - link "Settings" [ref=e118] [cursor=pointer]:
+                - /url: /settings
+                - img [ref=e119]
+                - generic [ref=e122]: Settings
+      - generic [ref=e123]:
+        - generic [ref=e124]:
+          - paragraph [ref=e125]: Playwright Manager pw-1778963472137-3904
+          - paragraph [ref=e126]: Branch Manager
+          - paragraph [ref=e127]: Current scope
+          - paragraph [ref=e128]: Bamenda Branch
+        - button "Sign out" [ref=e130]:
+          - img
+          - generic [ref=e131]: Sign out
+      - button "Toggle Sidebar" [ref=e132]
+    - main [ref=e133]:
+      - generic [ref=e136]:
+        - button "Toggle Sidebar" [ref=e137]:
+          - img
+          - generic [ref=e138]: Toggle Sidebar
+        - generic [ref=e139]:
+          - navigation "breadcrumb" [ref=e140]:
+            - list [ref=e141]:
+              - listitem [ref=e142]:
+                - link "Branch Dashboard" [ref=e143] [cursor=pointer]:
+                  - /url: /branch
+              - listitem [ref=e144]:
+                - img [ref=e145]
+              - listitem [ref=e147]:
+                - generic [ref=e148]: People
+              - listitem [ref=e149]:
+                - img [ref=e150]
+              - listitem [ref=e152]:
+                - link "Agents" [ref=e153] [cursor=pointer]:
+                  - /url: /agents
+              - listitem [ref=e154]:
+                - img [ref=e155]
+              - listitem [ref=e157]:
+                - link "Playwright Agent pw-1778963472137-3904" [disabled] [ref=e158]
+          - generic [ref=e159]:
+            - generic [ref=e160]: Bamenda Branch
+            - generic [ref=e161]: Live Supabase
+          - generic [ref=e162]:
+            - heading "Playwright Agent pw-1778963472137-3904" [level=1] [ref=e163]
+            - paragraph [ref=e164]: Profile context, assigned member relationships, and recent field activity for one agent.
+      - generic [ref=e165]:
+        - generic [ref=e166]:
+          - generic [ref=e167]:
+            - generic [ref=e169]:
+              - generic [ref=e170]:
+                - generic [ref=e171]: Assigned Members
+                - generic [ref=e172]: "0"
+              - generic [ref=e174]: Overview
+            - paragraph [ref=e176]: Members currently assigned to this agent.
+          - generic [ref=e177]:
+            - generic [ref=e179]:
+              - generic [ref=e180]:
+                - generic [ref=e181]: Collections Today
+                - generic [ref=e182]: FCFA 0
+              - generic [ref=e184]: Healthy
+            - paragraph [ref=e186]: Collections handled today.
+          - generic [ref=e187]:
+            - generic [ref=e189]:
+              - generic [ref=e190]:
+                - generic [ref=e191]: Pending Approvals
+                - generic [ref=e192]: "0"
+              - generic [ref=e194]: Attention
+            - paragraph [ref=e196]: Transactions awaiting review.
+          - generic [ref=e197]:
+            - generic [ref=e199]:
+              - generic [ref=e200]:
+                - generic [ref=e201]: Cash Variance
+                - generic [ref=e202]: FCFA 0
+              - generic [ref=e204]: Overview
+            - paragraph [ref=e206]: Current cash variance for this agent.
+        - generic [ref=e207]:
+          - generic [ref=e208]:
+            - generic [ref=e210]:
+              - generic [ref=e211]: Agent Profile
+              - generic [ref=e212]: Branch ownership, contact details, and current status.
+            - generic [ref=e214]:
+              - generic [ref=e215]:
+                - generic [ref=e216]: Branch
+                - generic [ref=e217]: Bamenda Branch
+              - generic [ref=e218]:
+                - generic [ref=e219]: Phone
+                - generic [ref=e220]: "+2376221373904"
+              - generic [ref=e221]:
+                - generic [ref=e222]: Status
+                - generic [ref=e224]: active
+              - generic [ref=e225]:
+                - generic [ref=e226]: Total Recent Collections
+                - generic [ref=e227]: FCFA 0
+          - generic [ref=e228]:
+            - generic [ref=e230]:
+              - generic [ref=e231]: Activity Snapshot
+              - generic [ref=e232]: Quick bar view of member coverage and approval pressure.
+            - application [ref=e237]:
+              - generic [ref=e241]:
+                - generic [ref=e242]:
+                  - generic [ref=e244]: Members
+                  - generic [ref=e246]: Pending
+                  - generic [ref=e248]: Today
+                - generic [ref=e249]:
+                  - generic [ref=e251]: "0"
+                  - generic [ref=e253]: "1"
+                  - generic [ref=e255]: "2"
+                  - generic [ref=e257]: "3"
+                  - generic [ref=e259]: "4"
+        - generic [ref=e260]:
+          - generic [ref=e261]:
+            - generic [ref=e263]:
+              - generic [ref=e264]: Collections Trend
+              - generic [ref=e265]: Deposit and withdrawal activity for the most recent seven days.
+            - paragraph [ref=e267]: No recent transaction activity is available for this agent yet.
+          - generic [ref=e268]:
+            - generic [ref=e270]:
+              - generic [ref=e271]: Assigned Members
+              - generic [ref=e272]: Members currently assigned to this agent.
+            - paragraph [ref=e274]: No members are assigned to this agent yet.
+        - generic [ref=e275]:
+          - generic [ref=e277]:
+            - generic [ref=e278]: Reset Login Password
+            - generic [ref=e279]: Generate a new temporary password for this agent. The password must be changed at next login and the current transaction PIN stays unchanged.
+          - button "Reset Login Password" [ref=e283]
+        - generic [ref=e284]:
+          - generic [ref=e286]:
+            - generic [ref=e287]: Recent Transactions
+            - generic [ref=e288]: Latest transaction requests handled by this agent.
+          - paragraph [ref=e290]: No transactions have been recorded for this agent yet.
+  - generic [ref=e291]: "0"
+```

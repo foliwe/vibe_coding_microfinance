@@ -1,33 +1,20 @@
 import { cookies } from "next/headers";
 import Link from "next/link";
 
+import { ActionBar } from "../../../components/action-bar";
+import { AdminDetailItem, AdminDetailList } from "../../../components/admin-detail-list";
 import { AdminShell } from "../../../components/admin-shell";
 import { PasswordResetNotice } from "../../../components/password-reset-notice";
+import { ResultNotice } from "../../../components/notice";
 import { SectionCard } from "../../../components/section-card";
 import { StatCard } from "../../../components/stat-card";
+import { StatusBadge } from "../../../components/status-badge";
+import { Button } from "../../../components/ui/button";
 import { resetLoginPasswordAction } from "../../actions";
 import { breadcrumb, withDashboardBreadcrumbs } from "../../../lib/breadcrumbs";
 import type { PasswordResetFlash } from "../../../lib/password-reset";
 import { getManagerDetailPageData } from "../../../lib/dashboard-data";
 import { prettyCurrency } from "../../../lib/format";
-
-function Notice({
-  detail,
-  result,
-}: {
-  detail?: string;
-  result?: string;
-}) {
-  if (!result) {
-    return null;
-  }
-
-  return (
-    <p className={`notice ${result === "success" ? "notice-success" : "notice-error"}`}>
-      {detail ?? (result === "success" ? "Saved successfully." : "Something went wrong.")}
-    </p>
-  );
-}
 
 export default async function ManagerDetailPage({
   params,
@@ -69,39 +56,46 @@ export default async function ManagerDetailPage({
     >
       {manager ? (
         <>
-          <div className="grid grid-4">
-            <StatCard label="Assigned Branch" value={branch?.name ?? "Unassigned"} />
-            <StatCard label="Members" value={String(branch?.memberCount ?? 0)} />
-            <StatCard label="Agents" value={String(branch?.agentCount ?? 0)} />
+          <div className="grid gap-4 xl:grid-cols-4">
             <StatCard
+              description="Current branch assignment for this manager."
+              label="Assigned Branch"
+              value={branch?.name ?? "Unassigned"}
+            />
+            <StatCard
+              description="Members in the assigned branch."
+              label="Members"
+              value={String(branch?.memberCount ?? 0)}
+            />
+            <StatCard
+              description="Agents working inside the assigned branch."
+              label="Agents"
+              value={String(branch?.agentCount ?? 0)}
+            />
+            <StatCard
+              description="Pending approvals inside the branch."
               label="Pending Approvals"
               value={String(branch?.pendingApprovals ?? 0)}
               tone="warning"
             />
           </div>
 
-          <div className="grid grid-2">
+          <div className="grid gap-6 xl:grid-cols-2">
             <SectionCard
               title="Manager Profile"
               description="Identity, contact information, and current assignment for this branch manager."
             >
-              <div className="list">
-                <div className="list-item">
-                  <strong>Email</strong>
-                  <span>{manager.email ?? "No email"}</span>
-                </div>
-                <div className="list-item">
-                  <strong>Phone</strong>
-                  <span>{manager.phone}</span>
-                </div>
-                <div className="list-item">
-                  <strong>Status</strong>
-                  <span className="chip">{manager.status}</span>
-                </div>
-                <div className="list-item">
-                  <strong>Assigned Branch</strong>
-                  <span>
-                    {manager.branchId && branch ? (
+              <AdminDetailList>
+                <AdminDetailItem label="Email" value={manager.email ?? "No email"} />
+                <AdminDetailItem label="Phone" value={manager.phone} />
+                <AdminDetailItem
+                  label="Status"
+                  value={<StatusBadge>{manager.status}</StatusBadge>}
+                />
+                <AdminDetailItem
+                  label="Assigned Branch"
+                  value={
+                    manager.branchId && branch ? (
                       <Link
                         className="font-semibold underline-offset-4 hover:underline"
                         href={`/branches/${manager.branchId}`}
@@ -110,29 +104,29 @@ export default async function ManagerDetailPage({
                       </Link>
                     ) : (
                       manager.branchName
-                    )}
-                  </span>
-                </div>
-              </div>
+                    )
+                  }
+                />
+              </AdminDetailList>
             </SectionCard>
 
             <SectionCard
               title="Manager Actions"
               description="Common follow-up links for branch ownership and staffing workflows."
             >
-              <div className="actions">
-                <Link className="button" href="/managers">
-                  Back to Managers
-                </Link>
+              <ActionBar>
+                <Button asChild>
+                  <Link href="/managers">Back to Managers</Link>
+                </Button>
                 {manager.branchId ? (
-                  <Link className="button-secondary" href={`/branches/${manager.branchId}`}>
-                    View Branch
-                  </Link>
+                  <Button asChild variant="outline">
+                    <Link href={`/branches/${manager.branchId}`}>View Branch</Link>
+                  </Button>
                 ) : null}
-                <Link className="button-secondary" href="/managers/new">
-                  Create Manager
-                </Link>
-              </div>
+                <Button asChild variant="outline">
+                  <Link href="/managers/new">Create Manager</Link>
+                </Button>
+              </ActionBar>
             </SectionCard>
           </div>
 
@@ -140,28 +134,46 @@ export default async function ManagerDetailPage({
             title="Reset Login Password"
             description="Generate a new temporary password for this branch manager. The password must be changed at next login and the current transaction PIN stays unchanged."
           >
-            <Notice detail={resolvedSearchParams?.detail} result={resolvedSearchParams?.result} />
+            <ResultNotice
+              detail={resolvedSearchParams?.detail}
+              errorFallback="Something went wrong."
+              result={resolvedSearchParams?.result}
+              successFallback="Saved successfully."
+            />
             {passwordResetFlash ? <PasswordResetNotice {...passwordResetFlash} /> : null}
             <form action={resetLoginPasswordAction}>
               <input name="targetProfileId" type="hidden" value={manager.id} />
               <input name="targetRole" type="hidden" value="branch_manager" />
-              <div className="actions">
-                <button className="button-secondary" type="submit">
+              <ActionBar>
+                <Button type="submit" variant="outline">
                   Reset Login Password
-                </button>
-              </div>
+                </Button>
+              </ActionBar>
             </form>
           </SectionCard>
 
-          <div className="grid grid-4">
+          <div className="grid gap-4 xl:grid-cols-4">
             <StatCard
+              description="Savings balance currently held in branch accounts."
               label="Branch Savings"
               value={prettyCurrency(branch?.totalSavings ?? 0)}
               tone="success"
             />
-            <StatCard label="Branch Deposits" value={prettyCurrency(branch?.totalDeposits ?? 0)} />
-            <StatCard label="Outstanding Principal" value={prettyCurrency(branch?.outstandingPrincipal ?? 0)} />
-            <StatCard label="Cash Variance" value={prettyCurrency(branch?.cashVariance ?? 0)} />
+            <StatCard
+              description="Deposit balances at branch scope."
+              label="Branch Deposits"
+              value={prettyCurrency(branch?.totalDeposits ?? 0)}
+            />
+            <StatCard
+              description="Loan principal still outstanding."
+              label="Outstanding Principal"
+              value={prettyCurrency(branch?.outstandingPrincipal ?? 0)}
+            />
+            <StatCard
+              description="Current cash variance in the branch."
+              label="Cash Variance"
+              value={prettyCurrency(branch?.cashVariance ?? 0)}
+            />
           </div>
 
           <SectionCard
@@ -169,32 +181,30 @@ export default async function ManagerDetailPage({
             description="High-level branch posture for the manager's current operational scope."
           >
             {branch ? (
-              <div className="list">
-                <div className="list-item">
-                  <strong>Branch</strong>
-                  <span>{branch.name}</span>
-                </div>
-                <div className="list-item">
-                  <strong>Manager</strong>
-                  <span>{branch.managerName}</span>
-                </div>
-                <div className="list-item">
-                  <strong>Total Loans</strong>
-                  <span>{prettyCurrency(branch.totalLoans)}</span>
-                </div>
-                <div className="list-item">
-                  <strong>Pending Approvals</strong>
-                  <span>{branch.pendingApprovals}</span>
-                </div>
-              </div>
+              <AdminDetailList>
+                <AdminDetailItem label="Branch" value={branch.name} />
+                <AdminDetailItem label="Manager" value={branch.managerName} />
+                <AdminDetailItem
+                  label="Total Loans"
+                  value={prettyCurrency(branch.totalLoans)}
+                />
+                <AdminDetailItem
+                  label="Pending Approvals"
+                  value={branch.pendingApprovals}
+                />
+              </AdminDetailList>
             ) : (
-              <p className="muted">This manager is not assigned to a branch yet.</p>
+              <p className="text-sm text-muted-foreground">
+                This manager is not assigned to a branch yet.
+              </p>
             )}
           </SectionCard>
         </>
       ) : (
         <SectionCard title="Manager not found">
-          <p className="muted">No live manager record matches this route.</p>
+          <p className="text-sm text-muted-foreground">
+            No live manager record matches this route.
+          </p>
         </SectionCard>
       )}
     </AdminShell>

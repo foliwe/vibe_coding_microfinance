@@ -120,9 +120,12 @@ export default function AgentLayout() {
         <Stack.Screen name="members/[memberId]" />
         <Stack.Screen name="transactions/deposit" />
         <Stack.Screen name="transactions/withdrawal" />
+        <Stack.Screen name="transactions/[transactionId]/index" />
+        <Stack.Screen name="transactions/[transactionId]/receipt" />
         <Stack.Screen name="more/sync-queue" />
         <Stack.Screen name="more/reconciliation" />
         <Stack.Screen name="more/profile" />
+        <Stack.Screen name="notifications" />
         <Stack.Screen name="change-password" />
       </Stack>
     </MobileShell>

@@ -1,5 +1,17 @@
 import { AdminShell } from "../../components/admin-shell";
+import { AdminTableEmptyRow, AdminTableFrame } from "../../components/admin-table";
+import { Notice } from "../../components/notice";
 import { SectionCard } from "../../components/section-card";
+import { StatusBadge } from "../../components/status-badge";
+import { Button } from "../../components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../components/ui/table";
 import { resetStaffDeviceAction } from "../actions";
 import { breadcrumb, withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import { requireRole } from "../../lib/auth";
@@ -116,9 +128,9 @@ export default async function StaffDevicesPage({
     >
       {params?.result && params.detail ? (
         <SectionCard title={params.result === "success" ? "Success" : "Issue"}>
-          <p className={params.result === "success" ? "text-sm text-emerald-700" : "text-sm text-destructive"}>
+          <Notice tone={params.result === "success" ? "success" : "error"}>
             {params.detail}
-          </p>
+          </Notice>
         </SectionCard>
       ) : null}
 
@@ -126,30 +138,31 @@ export default async function StaffDevicesPage({
         title="Trust Registry"
         description="Agents remain bound to one trusted phone. Branch managers bind per account, but multiple managers may trust the same office browser profile."
       >
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Staff</th>
-              <th>Role</th>
-              <th>Branch</th>
-              <th>Trusted Device</th>
-              <th>Last Seen</th>
-              <th>Status</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
+        <AdminTableFrame>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Staff</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Branch</TableHead>
+                <TableHead>Trusted Device</TableHead>
+                <TableHead>Last Seen</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
             {rows.map((row) => (
-              <tr key={row.id}>
-                <td>{row.staffName}</td>
-                <td>{row.roleLabel}</td>
-                <td>{row.branchName}</td>
-                <td>{row.deviceLabel}</td>
-                <td>{row.lastSeenAt}</td>
-                <td>
-                  <span className="chip">{row.status}</span>
-                </td>
-                <td>
+              <TableRow key={row.id}>
+                <TableCell>{row.staffName}</TableCell>
+                <TableCell>{row.roleLabel}</TableCell>
+                <TableCell>{row.branchName}</TableCell>
+                <TableCell>{row.deviceLabel}</TableCell>
+                <TableCell>{row.lastSeenAt}</TableCell>
+                <TableCell>
+                  <StatusBadge>{row.status}</StatusBadge>
+                </TableCell>
+                <TableCell>
                   <form action={resetStaffDeviceAction}>
                     <input name="profileId" type="hidden" value={row.id} />
                     <input
@@ -157,26 +170,22 @@ export default async function StaffDevicesPage({
                       type="hidden"
                       value="Manual reset from staff device trust console"
                     />
-                    <button
-                      className="button-secondary"
-                      disabled={!row.isActive}
-                      type="submit"
-                    >
+                    <Button disabled={!row.isActive} type="submit" variant="outline">
                       Reset Trust
-                    </button>
+                    </Button>
                   </form>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
             {rows.length === 0 ? (
-              <tr>
-                <td className="muted" colSpan={7}>
-                  No visible staff accounts were found for this scope yet.
-                </td>
-              </tr>
+              <AdminTableEmptyRow
+                colSpan={7}
+                description="No visible staff accounts were found for this scope yet."
+              />
             ) : null}
-          </tbody>
-        </table>
+            </TableBody>
+          </Table>
+        </AdminTableFrame>
       </SectionCard>
     </AdminShell>
   );

@@ -1,7 +1,19 @@
 import Link from "next/link";
 
 import { AdminShell } from "../../components/admin-shell";
+import { ActionBar } from "../../components/action-bar";
+import { AdminTableEmptyRow, AdminTableFrame } from "../../components/admin-table";
 import { SectionCard } from "../../components/section-card";
+import { StatusBadge } from "../../components/status-badge";
+import { Button } from "../../components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../components/ui/table";
 import { breadcrumb, withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import { getManagersPageData } from "../../lib/dashboard-data";
 
@@ -22,47 +34,45 @@ export default async function ManagersPage() {
       subtitle="Branch manager directory with branch ownership, phone, and account status."
     >
       <SectionCard title="Manager Actions" description="Create branch managers from here, then assign them to branches.">
-        <div className="actions">
-          <Link className="button" href="/managers/new">
-            Create Manager
-          </Link>
-        </div>
+        <ActionBar>
+          <Button asChild>
+            <Link href="/managers/new">Create Manager</Link>
+          </Button>
+        </ActionBar>
       </SectionCard>
 
       <SectionCard title="Manager Registry">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Branch</th>
-              <th>Phone</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
+        <AdminTableFrame>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Branch</TableHead>
+                <TableHead>Phone</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
             {managers.map((manager) => (
-              <tr key={manager.id}>
-                <td>
+              <TableRow key={manager.id}>
+                <TableCell>
                   <Link className="font-semibold underline-offset-4 hover:underline" href={`/managers/${manager.id}`}>
                     {manager.fullName}
                   </Link>
-                </td>
-                <td>{manager.branchName}</td>
-                <td>{manager.phone}</td>
-                <td>
-                  <span className="chip">{manager.status}</span>
-                </td>
-              </tr>
+                </TableCell>
+                <TableCell>{manager.branchName}</TableCell>
+                <TableCell>{manager.phone}</TableCell>
+                <TableCell>
+                  <StatusBadge>{manager.status}</StatusBadge>
+                </TableCell>
+              </TableRow>
             ))}
             {managers.length === 0 ? (
-              <tr>
-                <td className="muted" colSpan={4}>
-                  No live branch managers were found yet.
-                </td>
-              </tr>
+              <AdminTableEmptyRow colSpan={4} description="No live branch managers were found yet." />
             ) : null}
-          </tbody>
-        </table>
+            </TableBody>
+          </Table>
+        </AdminTableFrame>
       </SectionCard>
     </AdminShell>
   );

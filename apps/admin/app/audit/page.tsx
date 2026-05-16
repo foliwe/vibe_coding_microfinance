@@ -1,5 +1,15 @@
 import { AdminShell } from "../../components/admin-shell";
+import { AdminTableEmptyRow, AdminTableFrame } from "../../components/admin-table";
 import { SectionCard } from "../../components/section-card";
+import { StatusBadge } from "../../components/status-badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../components/ui/table";
 import { breadcrumb, withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import { getAuditPageData } from "../../lib/dashboard-data";
 
@@ -18,35 +28,35 @@ export default async function AuditPage() {
       subtitle="Immutable operational trail for approvals, member creation, loans, device actions, and high-risk events."
     >
       <SectionCard title="Recent Audit Events">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Actor</th>
-              <th>Action</th>
-              <th>Reference</th>
-              <th>Result</th>
-            </tr>
-          </thead>
-          <tbody>
+        <AdminTableFrame>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Time</TableHead>
+                <TableHead>Actor</TableHead>
+                <TableHead>Action</TableHead>
+                <TableHead>Reference</TableHead>
+                <TableHead>Result</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
             {rows.map((row, index) => (
-              <tr key={`${row.time}-${row.reference}-${row.actor}-${row.action}-${index}`}>
-                <td>{row.time}</td>
-                <td>{row.actor}</td>
-                <td>{row.action}</td>
-                <td>{row.reference}</td>
-                <td>{row.result}</td>
-              </tr>
+              <TableRow key={`${row.time}-${row.reference}-${row.actor}-${row.action}-${index}`}>
+                <TableCell>{row.time}</TableCell>
+                <TableCell>{row.actor}</TableCell>
+                <TableCell>{row.action}</TableCell>
+                <TableCell>{row.reference}</TableCell>
+                <TableCell>
+                  <StatusBadge>{row.result}</StatusBadge>
+                </TableCell>
+              </TableRow>
             ))}
             {rows.length === 0 ? (
-              <tr>
-                <td className="muted" colSpan={5}>
-                  No live audit events were found yet.
-                </td>
-              </tr>
+              <AdminTableEmptyRow colSpan={5} description="No live audit events were found yet." />
             ) : null}
-          </tbody>
-        </table>
+            </TableBody>
+          </Table>
+        </AdminTableFrame>
       </SectionCard>
     </AdminShell>
   );

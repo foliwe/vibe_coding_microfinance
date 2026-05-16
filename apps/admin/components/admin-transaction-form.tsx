@@ -1,12 +1,13 @@
 import type { TransactionType } from "@credit-union/shared";
 
 import type { AdminTransactionPageContext } from "../lib/onboarding-data";
+import { AdminFieldGrid, AdminFormField } from "./admin-form-field";
+import { ResultNotice } from "./notice";
+import { AdminSection } from "./section-card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { Label } from "./ui/label";
 import { NativeSelect, NativeSelectOption } from "./ui/native-select";
 import { Textarea } from "./ui/textarea";
-import { SectionCard } from "./section-card";
 
 type AdminTransactionFormProps = {
   action: (formData: FormData) => Promise<void>;
@@ -19,21 +20,6 @@ type AdminTransactionFormProps = {
   transactionType: Extract<TransactionType, "deposit" | "withdrawal">;
 };
 
-function Notice({ detail, result }: { detail?: string; result?: string }) {
-  if (!result) {
-    return null;
-  }
-
-  return (
-    <p className={`notice ${result === "success" ? "notice-success" : "notice-error"}`}>
-      {detail ??
-        (result === "success"
-          ? "Saved successfully."
-          : "Something went wrong while creating the transaction.")}
-    </p>
-  );
-}
-
 export function AdminTransactionForm({
   action,
   buttonLabel,
@@ -45,15 +31,19 @@ export function AdminTransactionForm({
   transactionType,
 }: AdminTransactionFormProps) {
   return (
-    <SectionCard
+    <AdminSection
       description={description}
       title={title}
     >
-      <Notice detail={detail} result={result} />
+      <ResultNotice
+        detail={detail}
+        errorFallback="Something went wrong while creating the transaction."
+        result={result}
+        successFallback="Saved successfully."
+      />
       <form action={action} className="space-y-5">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="memberAccountId">Member account</Label>
+        <AdminFieldGrid>
+          <AdminFormField htmlFor="memberAccountId" label="Member account">
             <NativeSelect defaultValue="" id="memberAccountId" name="memberAccountId" required>
               <NativeSelectOption disabled value="">
                 Select account
@@ -64,10 +54,9 @@ export function AdminTransactionForm({
                 </NativeSelectOption>
               ))}
             </NativeSelect>
-          </div>
+          </AdminFormField>
 
-          <div className="space-y-2">
-            <Label htmlFor="cashAgentProfileId">Cash drawer agent</Label>
+          <AdminFormField htmlFor="cashAgentProfileId" label="Cash drawer agent">
             <NativeSelect defaultValue="" id="cashAgentProfileId" name="cashAgentProfileId" required>
               <NativeSelectOption disabled value="">
                 Select agent
@@ -78,28 +67,34 @@ export function AdminTransactionForm({
                 </NativeSelectOption>
               ))}
             </NativeSelect>
-          </div>
+          </AdminFormField>
 
-          <div className="space-y-2">
-            <Label htmlFor="amount">
-              {transactionType === "deposit" ? "Deposit amount" : "Withdrawal amount"}
-            </Label>
-            <Input id="amount" min="0.01" name="amount" placeholder="25000" required step="0.01" type="number" />
-          </div>
+          <AdminFormField
+            htmlFor="amount"
+            label={transactionType === "deposit" ? "Deposit amount" : "Withdrawal amount"}
+          >
+            <Input
+              id="amount"
+              min="0.01"
+              name="amount"
+              placeholder="25000"
+              required
+              step="0.01"
+              type="number"
+            />
+          </AdminFormField>
 
-          <div className="space-y-2">
-            <Label htmlFor="branchScope">Branch scope</Label>
+          <AdminFormField htmlFor="branchScope" label="Branch scope">
             <Input disabled id="branchScope" value={context.currentBranchLabel} />
-          </div>
-        </div>
+          </AdminFormField>
+        </AdminFieldGrid>
 
-        <div className="space-y-2">
-          <Label htmlFor="note">Note</Label>
+        <AdminFormField htmlFor="note" label="Note">
           <Textarea id="note" name="note" placeholder="Optional ledger note or cash-drawer context." />
-        </div>
+        </AdminFormField>
 
         <Button type="submit">{buttonLabel}</Button>
       </form>
-    </SectionCard>
+    </AdminSection>
   );
 }

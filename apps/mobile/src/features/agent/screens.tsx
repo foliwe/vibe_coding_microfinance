@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams, type Href } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 import {
@@ -35,7 +35,7 @@ import {
 import { useResource } from "@/lib/use-resource";
 import type { SyncQueueItem } from "@/lib/mobile-models";
 import type { TransactionRequest } from "@credit-union/shared";
-import { colors, spacing, typography } from "@/theme/tokens";
+import { colors, radii, spacing, typography } from "@/theme/tokens";
 
 function ResourceErrorCard({ message }: { message: string }) {
   return (
@@ -116,10 +116,24 @@ export function AgentHomeScreen() {
   }
 
   return (
-    <Screen title="Home" subtitle={`${data.agentName} · ${data.branchName}`}>
-      <SurfaceCard accent="#EEF4ED">
-        <Text style={styles.heroTitle}>{data.welcomeNote}</Text>
-        <Text style={styles.heroCaption}>{data.lastSyncLabel}</Text>
+    <Screen
+      right={
+        <HeaderIconButton
+          icon="notifications-outline"
+          label="Notifications"
+          onPress={() => router.push("/agent/notifications" as Href)}
+        />
+      }
+      title="Home"
+      subtitle={`${data.agentName} · ${data.branchName}`}
+    >
+      <SurfaceCard accent={colors.foliwe} tone="hero">
+        <View style={styles.balanceHeader}>
+          <Text style={styles.heroCaption}>CFA</Text>
+          <Ionicons color={colors.ink} name="eye-off-outline" size={22} />
+        </View>
+        <Text style={styles.heroCaption}>Collected Today</Text>
+        <Text style={styles.moneyTitle}>{formatCurrency(data.collectionsToday)}</Text>
         <View style={styles.inlineWrap}>
           <StatusPill label={data.syncState} />
           <StatusPill label={`${data.pendingSyncCount} Pending Sync`} />
@@ -207,16 +221,41 @@ export function AgentMembersScreen() {
           <Text style={styles.heroCaption}>No assigned members are ready in this field shell yet.</Text>
         </SurfaceCard>
       ) : (
-        members.map((member) => (
-          <Pressable
-            key={member.id}
-            onPress={() => router.push(`/agent/members/${member.id}`)}
-            style={({ pressed }) => [styles.memberListRow, pressed && styles.memberListRowPressed]}
-          >
-            <Text style={styles.memberListName}>{member.fullName}</Text>
-            <Ionicons color={colors.inkMuted} name="chevron-forward" size={18} />
-          </Pressable>
-        ))
+        <>
+          <View style={styles.searchBox}>
+            <Text style={styles.searchPlaceholder}>Search member...</Text>
+          </View>
+          <SurfaceCard>
+            <View style={styles.memberSummaryRow}>
+              <View style={styles.memberSummaryIcon}>
+                <Ionicons color={colors.white} name="people-outline" size={28} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.memberCount}>{members.length}+</Text>
+                <Text style={styles.cardCaption}>Members</Text>
+              </View>
+              <Pressable
+                onPress={() => router.push("/agent/members/add")}
+                style={({ pressed }) => [styles.addMemberButton, pressed && styles.memberListRowPressed]}
+              >
+                <Ionicons color={colors.ink} name="add" size={26} />
+              </Pressable>
+            </View>
+          </SurfaceCard>
+          {members.map((member) => (
+            <Pressable
+              key={member.id}
+              onPress={() => router.push(`/agent/members/${member.id}`)}
+              style={({ pressed }) => [styles.memberListRow, pressed && styles.memberListRowPressed]}
+            >
+              <View style={styles.memberRowAvatar}>
+                <Ionicons color={colors.white} name="person-outline" size={18} />
+              </View>
+              <Text style={styles.memberListName}>{member.fullName}</Text>
+              <Ionicons color={colors.ink} name="chevron-forward" size={18} />
+            </Pressable>
+          ))}
+        </>
       )}
     </Screen>
   );
@@ -271,7 +310,7 @@ export function AgentMemberDetailScreen() {
 
   return (
     <Screen subtitle={`${member.code} · ${member.branchName}`} title={member.fullName}>
-      <SurfaceCard accent="#EEF4ED">
+      <SurfaceCard>
         <Text style={styles.heroTitle}>{member.fullName}</Text>
         <Text style={styles.heroCaption}>{member.lastActivity}</Text>
         <View style={styles.inlineWrap}>
@@ -444,6 +483,7 @@ export function AgentTransactionsScreen() {
                     amount={transaction.amount}
                     dateLabel={formatTransactionRowDate(transaction.createdAt)}
                     detailLabel={transaction.memberName}
+                    onPress={() => router.push(`/agent/transactions/${transaction.id}` as Href)}
                     status={toStatusLabel(transaction.status)}
                     typeLabel={transaction.type === "deposit" ? "Deposit" : "Withdrawal"}
                   />
@@ -483,6 +523,12 @@ export function AgentMoreScreen() {
         title="Profile"
       />
       <ActionTile
+        caption="Review recent approval, sync, and activity alerts."
+        icon="notifications-outline"
+        onPress={() => router.push("/agent/notifications" as Href)}
+        title="Notifications"
+      />
+      <ActionTile
         caption="Complete first-login security setup or revisit the secure-account screen."
         icon="key-outline"
         onPress={() => router.push("/agent/change-password")}
@@ -494,6 +540,139 @@ export function AgentMoreScreen() {
           void signOut();
         }}
       />
+    </Screen>
+  );
+}
+
+export function AgentTransactionDetailScreen() {
+  const params = useLocalSearchParams<{ transactionId?: string | string[] }>();
+  const transactionId = getSingleParam(params.transactionId) ?? "";
+  const loader = useMemo(
+    () => () => mobileData.getAgentTransactionDetail(transactionId),
+    [transactionId],
+  );
+  const { data: transaction, error, loading } = useResource(loader);
+
+  if (!transactionId) {
+    return (
+      <Screen subtitle="We could not identify which transaction to open." title="Transaction">
+        <SubmissionErrorCard message="This route is missing a transaction identifier." />
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen subtitle="Money movement state, member, and account stay explicit." title="Transaction">
+      {error ? (
+        <ResourceErrorCard message={error} />
+      ) : loading ? (
+        <SkeletonCard />
+      ) : !transaction ? (
+        <SubmissionErrorCard message="No transaction matches this route for the signed-in agent." />
+      ) : (
+        <>
+          <SurfaceCard accent={colors.foliwe} tone="hero">
+            <Text style={styles.moneyTitle}>{formatCurrency(transaction.amount)}</Text>
+            <Text style={styles.heroCaption}>
+              {transaction.type === "deposit" ? "Deposit" : "Withdrawal"} · {transaction.accountType.toUpperCase()}
+            </Text>
+            <StatusPill label={toStatusLabel(transaction.status)} />
+          </SurfaceCard>
+          <SurfaceCard>
+            <InfoRow label="Member" value={transaction.memberName} />
+            <InfoRow label="Agent" value={transaction.agentName} />
+            <InfoRow label="Branch" value={transaction.branchName} />
+            <InfoRow label="Date" value={formatTransactionRowDate(transaction.createdAt)} />
+            <InfoRow label="Reference" value={transaction.id.slice(0, 12).toUpperCase()} />
+          </SurfaceCard>
+          {transaction.note ? (
+            <SurfaceCard accent="#EEF4ED">
+              <Text style={styles.cardCaption}>{transaction.note}</Text>
+            </SurfaceCard>
+          ) : null}
+          <PrimaryButton
+            label="View Receipt"
+            onPress={() => router.push(`/agent/transactions/${transaction.id}/receipt` as Href)}
+          />
+        </>
+      )}
+    </Screen>
+  );
+}
+
+export function AgentReceiptScreen() {
+  const params = useLocalSearchParams<{ transactionId?: string | string[] }>();
+  const transactionId = getSingleParam(params.transactionId) ?? "";
+  const loader = useMemo(
+    () => () => mobileData.getAgentTransactionDetail(transactionId),
+    [transactionId],
+  );
+  const { data: transaction, error, loading } = useResource(loader);
+
+  return (
+    <Screen subtitle="Receipt preview for field confirmation and support follow-up." title="Receipt">
+      {error ? (
+        <ResourceErrorCard message={error} />
+      ) : loading ? (
+        <SkeletonCard />
+      ) : !transaction ? (
+        <SubmissionErrorCard message="No transaction receipt is available for this route." />
+      ) : (
+        <>
+          <SurfaceCard accent={colors.foliwe} tone="hero">
+            <Text style={styles.receiptLabel}>Credit Union Receipt</Text>
+            <Text style={styles.moneyTitle}>{formatCurrency(transaction.amount)}</Text>
+            <StatusPill label={toStatusLabel(transaction.status)} />
+          </SurfaceCard>
+          <SurfaceCard tone="receipt">
+            <InfoRow label="Type" value={transaction.type === "deposit" ? "Deposit" : "Withdrawal"} />
+            <InfoRow label="Account" value={transaction.accountType.toUpperCase()} />
+            <InfoRow label="Member" value={transaction.memberName} />
+            <InfoRow label="Agent" value={transaction.agentName} />
+            <InfoRow label="Branch" value={transaction.branchName} />
+            <InfoRow label="Created" value={formatTransactionRowDate(transaction.createdAt)} />
+            <InfoRow label="Receipt ID" value={transaction.id.slice(0, 12).toUpperCase()} />
+          </SurfaceCard>
+          <SecondaryButton label="Back To Transaction" onPress={() => router.back()} />
+        </>
+      )}
+    </Screen>
+  );
+}
+
+export function AgentNotificationsScreen() {
+  const { data: notifications, error, loading } = useResource(mobileData.getAgentNotifications);
+
+  return (
+    <Screen subtitle="Approval, sync, and transaction activity in one place." title="Notifications">
+      {error ? (
+        <ResourceErrorCard message={error} />
+      ) : loading || !notifications ? (
+        <>
+          <SkeletonCard />
+          <SkeletonCard />
+        </>
+      ) : notifications.length === 0 ? (
+        <SurfaceCard accent="#EEF4ED">
+          <Text style={styles.heroCaption}>No field notifications are waiting right now.</Text>
+        </SurfaceCard>
+      ) : (
+        notifications.map((item) => (
+          <SurfaceCard key={item.id}>
+            <View style={styles.rowBetween}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>{item.title}</Text>
+                <Text style={styles.cardCaption}>{item.subtitle}</Text>
+              </View>
+              {item.amount ? <Text style={styles.cardValue}>{formatCurrency(item.amount)}</Text> : null}
+            </View>
+            <View style={styles.inlineWrap}>
+              <StatusPill label={item.status} />
+              <Text style={styles.cardCaption}>{formatTransactionRowDate(item.createdAt)}</Text>
+            </View>
+          </SurfaceCard>
+        ))
+      )}
     </Screen>
   );
 }
@@ -1248,13 +1427,13 @@ function toStatusLabel(status: TransactionRequest["status"]) {
 const styles = StyleSheet.create({
   headerIconButton: {
     alignItems: "center",
-    backgroundColor: colors.card,
-    borderColor: colors.border,
+    backgroundColor: "transparent",
+    borderColor: "transparent",
     borderRadius: 999,
-    borderWidth: 1,
-    height: 42,
+    borderWidth: 0,
+    height: 26,
     justifyContent: "center",
-    width: 42,
+    width: 26,
   },
   headerIconButtonPressed: {
     opacity: 0.8,
@@ -1262,14 +1441,33 @@ const styles = StyleSheet.create({
   heroTitle: {
     color: colors.ink,
     fontFamily: typography.heading,
-    fontSize: 18,
-    lineHeight: 24,
+    fontSize: 22,
+    lineHeight: 28,
+    textAlign: "center",
   },
   heroCaption: {
     color: colors.inkMuted,
     fontFamily: typography.body,
     fontSize: 14,
     lineHeight: 21,
+  },
+  moneyTitle: {
+    color: colors.ink,
+    fontFamily: typography.display,
+    fontSize: 40,
+    lineHeight: 46,
+    textAlign: "center",
+  },
+  balanceHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  receiptLabel: {
+    color: colors.inkMuted,
+    fontFamily: typography.medium,
+    fontSize: 13,
+    textTransform: "uppercase",
   },
   sectionCaption: {
     color: colors.inkMuted,
@@ -1285,7 +1483,7 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.md,
+    gap: spacing.sm,
     justifyContent: "space-between",
   },
   rowBetween: {
@@ -1321,14 +1519,14 @@ const styles = StyleSheet.create({
   memberListRow: {
     alignItems: "center",
     backgroundColor: colors.card,
-    borderColor: colors.border,
-    borderRadius: 18,
-    borderWidth: 1,
+    borderRadius: radii.pill,
     flexDirection: "row",
+    gap: spacing.sm,
     justifyContent: "space-between",
     marginBottom: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
   },
   memberListRowPressed: {
     opacity: 0.82,
@@ -1336,8 +1534,55 @@ const styles = StyleSheet.create({
   memberListName: {
     color: colors.ink,
     flex: 1,
-    fontFamily: typography.medium,
-    fontSize: 16,
+    fontFamily: typography.body,
+    fontSize: 12,
+  },
+  searchBox: {
+    backgroundColor: colors.card,
+    borderRadius: radii.pill,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
+  searchPlaceholder: {
+    color: "#B4B4B4",
+    fontFamily: typography.body,
+    fontSize: 11,
+  },
+  memberSummaryRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    minHeight: 106,
+  },
+  memberSummaryIcon: {
+    alignItems: "center",
+    backgroundColor: colors.brandSoft,
+    borderRadius: radii.pill,
+    height: 48,
+    justifyContent: "center",
+    width: 48,
+  },
+  memberCount: {
+    color: colors.ink,
+    fontFamily: typography.body,
+    fontSize: 22,
+  },
+  addMemberButton: {
+    alignItems: "center",
+    backgroundColor: colors.foliwe,
+    borderRadius: radii.pill,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  memberRowAvatar: {
+    alignItems: "center",
+    backgroundColor: colors.brand,
+    borderRadius: radii.pill,
+    height: 30,
+    justifyContent: "center",
+    width: 30,
   },
   inlineNotice: {
     color: colors.inkMuted,

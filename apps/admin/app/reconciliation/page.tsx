@@ -1,9 +1,22 @@
 import {
   reviewCashReconciliationAction,
 } from "../actions";
+import { ActionBar } from "../../components/action-bar";
 import { AdminShell } from "../../components/admin-shell";
+import { AdminTableEmptyRow, AdminTableFrame } from "../../components/admin-table";
+import { Notice, ResultNotice } from "../../components/notice";
 import { SectionCard } from "../../components/section-card";
 import { Input } from "../../components/ui/input";
+import { StatusBadge } from "../../components/status-badge";
+import { Button } from "../../components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../components/ui/table";
 import { Textarea } from "../../components/ui/textarea";
 import { breadcrumb, withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import {
@@ -25,24 +38,6 @@ function prettyDateTime(value: string) {
   }).format(new Date(value));
 }
 
-function ReconciliationResultNotice({
-  detail,
-  result,
-}: {
-  detail?: string;
-  result?: string;
-}) {
-  if (!result) {
-    return null;
-  }
-
-  return (
-    <p className={result === "error" ? "notice notice-error" : "notice notice-success"}>
-      {detail ?? (result === "error" ? "The reconciliation review failed." : "Reconciliation review recorded.")}
-    </p>
-  );
-}
-
 function ReconciliationTable({
   emptyMessage,
   rows,
@@ -53,46 +48,55 @@ function ReconciliationTable({
   showActions: boolean;
 }) {
   return (
-    <table className="table">
-      <thead>
-        <tr>
-          <th>Reference</th>
-          <th>Submitted</th>
-          <th>Business Date</th>
-          <th>Branch</th>
-          <th>Agent</th>
-          <th>Expected</th>
-          <th>Counted</th>
-          <th>Variance</th>
-          <th>Status</th>
-          <th>Notes</th>
-          {showActions ? <th>Action</th> : null}
-        </tr>
-      </thead>
-      <tbody>
+    <AdminTableFrame>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Reference</TableHead>
+            <TableHead>Submitted</TableHead>
+            <TableHead>Business Date</TableHead>
+            <TableHead>Branch</TableHead>
+            <TableHead>Agent</TableHead>
+            <TableHead>Expected</TableHead>
+            <TableHead>Counted</TableHead>
+            <TableHead>Variance</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Notes</TableHead>
+            {showActions ? <TableHead>Action</TableHead> : null}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
         {rows.length ? (
           rows.map((row) => (
-            <tr key={row.id}>
-              <td>{row.id.toUpperCase()}</td>
-              <td>{prettyDateTime(row.submittedAt)}</td>
-              <td>{row.businessDate}</td>
-              <td>{row.branchName}</td>
-              <td>{row.agentName}</td>
-              <td>{prettyCurrency(row.expectedCash)}</td>
-              <td>{prettyCurrency(row.countedCash)}</td>
-              <td>{prettyCurrency(row.variance)}</td>
-              <td>
-                <span className="chip">{row.status}</span>
-              </td>
-              <td>
+            <TableRow key={row.id}>
+              <TableCell>{row.id.toUpperCase()}</TableCell>
+              <TableCell>{prettyDateTime(row.submittedAt)}</TableCell>
+              <TableCell>{row.businessDate}</TableCell>
+              <TableCell>{row.branchName}</TableCell>
+              <TableCell>{row.agentName}</TableCell>
+              <TableCell>{prettyCurrency(row.expectedCash)}</TableCell>
+              <TableCell>{prettyCurrency(row.countedCash)}</TableCell>
+              <TableCell>{prettyCurrency(row.variance)}</TableCell>
+              <TableCell>
+                <StatusBadge>{row.status}</StatusBadge>
+              </TableCell>
+              <TableCell>
                 <div className="space-y-2">
                   <p>{row.varianceReason || "No variance note."}</p>
-                  {!showActions && row.reviewNote ? <p className="muted">Review note: {row.reviewNote}</p> : null}
-                  {!showActions && row.reviewedAt ? <p className="muted">Reviewed {prettyDateTime(row.reviewedAt)}</p> : null}
+                  {!showActions && row.reviewNote ? (
+                    <p className="text-sm text-muted-foreground">
+                      Review note: {row.reviewNote}
+                    </p>
+                  ) : null}
+                  {!showActions && row.reviewedAt ? (
+                    <p className="text-sm text-muted-foreground">
+                      Reviewed {prettyDateTime(row.reviewedAt)}
+                    </p>
+                  ) : null}
                 </div>
-              </td>
+              </TableCell>
               {showActions ? (
-                <td>
+                <TableCell>
                   <form action={reviewCashReconciliationAction} className="space-y-2 min-w-[18rem]">
                     <input name="reconciliationId" type="hidden" value={row.id} />
                     <Input
@@ -105,33 +109,34 @@ function ReconciliationTable({
                       name="reviewNote"
                       placeholder="Optional review note."
                     />
-                    <div className="table-actions">
-                      <button className="button table-button" name="reviewAction" type="submit" value="approve">
+                    <ActionBar>
+                      <Button name="reviewAction" size="sm" type="submit" value="approve">
                         Approve
-                      </button>
-                      <button
-                        className="button-secondary table-button"
+                      </Button>
+                      <Button
                         name="reviewAction"
+                        size="sm"
                         type="submit"
                         value="reject"
+                        variant="outline"
                       >
                         Reject
-                      </button>
-                    </div>
+                      </Button>
+                    </ActionBar>
                   </form>
-                </td>
+                </TableCell>
               ) : null}
-            </tr>
+            </TableRow>
           ))
         ) : (
-          <tr>
-            <td className="muted" colSpan={showActions ? 11 : 10}>
-              {emptyMessage}
-            </td>
-          </tr>
+          <AdminTableEmptyRow
+            colSpan={showActions ? 11 : 10}
+            description={emptyMessage}
+          />
         )}
-      </tbody>
-    </table>
+        </TableBody>
+      </Table>
+    </AdminTableFrame>
   );
 }
 
@@ -158,34 +163,38 @@ export default async function ReconciliationPage({
       title="Reconciliation"
       subtitle="Daily cash drawer review, pending submissions, and recent branch decisions."
     >
-      <ReconciliationResultNotice
+      <ResultNotice
         detail={firstParam(params?.detail)}
+        errorFallback="The reconciliation review failed."
         result={firstParam(params?.result)}
+        successFallback="Reconciliation review recorded."
       />
 
       <SectionCard title="Branch Cash Summary">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Metric</th>
-              <th>Value</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Expected Cash Today</td>
-              <td>{prettyCurrency(summary.expectedCashToday)}</td>
-            </tr>
-            <tr>
-              <td>Cash Variance</td>
-              <td>{prettyCurrency(summary.cashVariance)}</td>
-            </tr>
-            <tr>
-              <td>Pending Approvals</td>
-              <td>{summary.pendingApprovals}</td>
-            </tr>
-          </tbody>
-        </table>
+        <AdminTableFrame>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Metric</TableHead>
+                <TableHead>Value</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow>
+                <TableCell>Expected Cash Today</TableCell>
+                <TableCell>{prettyCurrency(summary.expectedCashToday)}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>Cash Variance</TableCell>
+                <TableCell>{prettyCurrency(summary.cashVariance)}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>Pending Approvals</TableCell>
+                <TableCell>{summary.pendingApprovals}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </AdminTableFrame>
       </SectionCard>
 
       <SectionCard

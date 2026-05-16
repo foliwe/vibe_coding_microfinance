@@ -216,6 +216,13 @@ async function upsertProfile({
   email,
   branchId,
 }) {
+  const resolvedPhone = await resolveUniquePhone({
+    branchCode,
+    desiredPhone: phone,
+    role,
+    userId,
+  });
+
   const response = await supabase
     .from("profiles")
     .upsert(
@@ -304,6 +311,12 @@ async function resolveUniqueMemberIdNumber({
 }
 
 async function upsertMemberProfile(profileId, branchId, assignedAgentId, createdBy) {
+  const resolvedIdNumber = await resolveUniqueMemberIdNumber({
+    desiredIdNumber: TEST_MEMBER_ID_NUMBER,
+    profileId,
+    signInCode: TEST_MEMBER_SIGN_IN_CODE,
+  });
+
   const response = await supabase
     .from("member_profiles")
     .upsert(

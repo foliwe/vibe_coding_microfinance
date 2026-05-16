@@ -1,4 +1,5 @@
 import type { PasswordResetFlash } from "../lib/password-reset";
+import { Notice } from "./notice";
 
 export function PasswordResetNotice({
   fullName,
@@ -7,14 +8,12 @@ export function PasswordResetNotice({
   temporaryPassword,
 }: PasswordResetFlash) {
   return (
-    <div className="notice notice-success">
-      <strong>Temporary login credentials for {fullName}:</strong>
-      <br />
-      {loginLabel}: {loginIdentifier}
-      <br />
-      Temporary password: {temporaryPassword}
-      <br />
-      This password must be changed at the next login. Transaction PIN remains unchanged.
-    </div>
+    <Notice title={`Temporary login credentials for ${fullName}`} tone="success">
+      <p>
+        {loginLabel}: {loginIdentifier}
+      </p>
+      <p>Temporary password: {temporaryPassword}</p>
+      <p>This password must be changed at the next login. Transaction PIN remains unchanged.</p>
+    </Notice>
   );
 }

@@ -2,10 +2,15 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 
 import { ActivityTrendChart, ChartBars } from "../../../components/chart-bars";
+import { ActionBar } from "../../../components/action-bar";
+import { AdminDetailItem, AdminDetailList } from "../../../components/admin-detail-list";
 import { AdminShell } from "../../../components/admin-shell";
 import { PasswordResetNotice } from "../../../components/password-reset-notice";
+import { ResultNotice } from "../../../components/notice";
 import { SectionCard } from "../../../components/section-card";
 import { StatCard } from "../../../components/stat-card";
+import { StatusBadge } from "../../../components/status-badge";
+import { Button } from "../../../components/ui/button";
 import {
   Table,
   TableBody,
@@ -19,24 +24,6 @@ import { breadcrumb, withDashboardBreadcrumbs } from "../../../lib/breadcrumbs";
 import type { PasswordResetFlash } from "../../../lib/password-reset";
 import { getAgentDetailPageData } from "../../../lib/dashboard-data";
 import { prettyCurrency } from "../../../lib/format";
-
-function Notice({
-  detail,
-  result,
-}: {
-  detail?: string;
-  result?: string;
-}) {
-  if (!result) {
-    return null;
-  }
-
-  return (
-    <p className={`notice ${result === "success" ? "notice-success" : "notice-error"}`}>
-      {detail ?? (result === "success" ? "Saved successfully." : "Something went wrong.")}
-    </p>
-  );
-}
 
 export default async function AgentDetailPage({
   params,
@@ -79,33 +66,45 @@ export default async function AgentDetailPage({
     >
       {agent ? (
         <>
-          <div className="grid grid-4">
-            <StatCard label="Assigned Members" value={String(agent.assignedMemberCount)} />
-            <StatCard label="Collections Today" value={prettyCurrency(agent.collectionsToday)} tone="success" />
-            <StatCard label="Pending Approvals" value={String(agent.pendingApprovals)} tone="warning" />
-            <StatCard label="Cash Variance" value={prettyCurrency(agent.cashVariance)} />
+          <div className="grid gap-4 xl:grid-cols-4">
+            <StatCard
+              description="Members currently assigned to this agent."
+              label="Assigned Members"
+              value={String(agent.assignedMemberCount)}
+            />
+            <StatCard
+              description="Collections handled today."
+              label="Collections Today"
+              tone="success"
+              value={prettyCurrency(agent.collectionsToday)}
+            />
+            <StatCard
+              description="Transactions awaiting review."
+              label="Pending Approvals"
+              tone="warning"
+              value={String(agent.pendingApprovals)}
+            />
+            <StatCard
+              description="Current cash variance for this agent."
+              label="Cash Variance"
+              value={prettyCurrency(agent.cashVariance)}
+            />
           </div>
 
-          <div className="grid grid-2">
+          <div className="grid gap-6 xl:grid-cols-2">
             <SectionCard title="Agent Profile" description="Branch ownership, contact details, and current status.">
-              <div className="list">
-                <div className="list-item">
-                  <strong>Branch</strong>
-                  <span>{agent.branchName}</span>
-                </div>
-                <div className="list-item">
-                  <strong>Phone</strong>
-                  <span>{agent.phone}</span>
-                </div>
-                <div className="list-item">
-                  <strong>Status</strong>
-                  <span className="chip">{agent.status}</span>
-                </div>
-                <div className="list-item">
-                  <strong>Total Recent Collections</strong>
-                  <span>{prettyCurrency(agent.collectionsTotal)}</span>
-                </div>
-              </div>
+              <AdminDetailList>
+                <AdminDetailItem label="Branch" value={agent.branchName} />
+                <AdminDetailItem label="Phone" value={agent.phone} />
+                <AdminDetailItem
+                  label="Status"
+                  value={<StatusBadge>{agent.status}</StatusBadge>}
+                />
+                <AdminDetailItem
+                  label="Total Recent Collections"
+                  value={prettyCurrency(agent.collectionsTotal)}
+                />
+              </AdminDetailList>
             </SectionCard>
 
             <SectionCard title="Activity Snapshot" description="Quick bar view of member coverage and approval pressure.">
@@ -119,12 +118,14 @@ export default async function AgentDetailPage({
             </SectionCard>
           </div>
 
-          <div className="grid grid-2">
+          <div className="grid gap-6 xl:grid-cols-2">
             <SectionCard title="Collections Trend" description="Deposit and withdrawal activity for the most recent seven days.">
               {recentTransactions.length ? (
                 <ActivityTrendChart data={activityTrend} />
               ) : (
-                <p className="muted">No recent transaction activity is available for this agent yet.</p>
+                <p className="text-sm text-muted-foreground">
+                  No recent transaction activity is available for this agent yet.
+                </p>
               )}
             </SectionCard>
 
@@ -155,7 +156,9 @@ export default async function AgentDetailPage({
                   </TableBody>
                 </Table>
               ) : (
-                <p className="muted">No members are assigned to this agent yet.</p>
+                <p className="text-sm text-muted-foreground">
+                  No members are assigned to this agent yet.
+                </p>
               )}
             </SectionCard>
           </div>
@@ -164,16 +167,21 @@ export default async function AgentDetailPage({
             title="Reset Login Password"
             description="Generate a new temporary password for this agent. The password must be changed at next login and the current transaction PIN stays unchanged."
           >
-            <Notice detail={resolvedSearchParams?.detail} result={resolvedSearchParams?.result} />
+            <ResultNotice
+              detail={resolvedSearchParams?.detail}
+              errorFallback="Something went wrong."
+              result={resolvedSearchParams?.result}
+              successFallback="Saved successfully."
+            />
             {passwordResetFlash ? <PasswordResetNotice {...passwordResetFlash} /> : null}
             <form action={resetLoginPasswordAction}>
               <input name="targetProfileId" type="hidden" value={agent.id} />
               <input name="targetRole" type="hidden" value="agent" />
-              <div className="actions">
-                <button className="button-secondary" type="submit">
+              <ActionBar>
+                <Button type="submit" variant="outline">
                   Reset Login Password
-                </button>
-              </div>
+                </Button>
+              </ActionBar>
             </form>
           </SectionCard>
 
@@ -206,13 +214,17 @@ export default async function AgentDetailPage({
                 </TableBody>
               </Table>
             ) : (
-              <p className="muted">No transactions have been recorded for this agent yet.</p>
+              <p className="text-sm text-muted-foreground">
+                No transactions have been recorded for this agent yet.
+              </p>
             )}
           </SectionCard>
         </>
       ) : (
         <SectionCard title="Agent not found">
-          <p className="muted">No live agent record matches this route or your current branch scope.</p>
+          <p className="text-sm text-muted-foreground">
+            No live agent record matches this route or your current branch scope.
+          </p>
         </SectionCard>
       )}
     </AdminShell>

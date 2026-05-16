@@ -11,6 +11,7 @@ import {
   PASSWORD_POLICY,
   assertValidBranchCode,
   buildTemporaryPassword,
+  isAppContentPageKey,
   provisionMember,
 } from "@credit-union/shared";
 
@@ -705,6 +706,79 @@ export async function signOutAction() {
   const supabase = await createClient();
   await supabase.auth.signOut();
   redirect("/login");
+}
+
+export async function saveAppContentPageAction(formData: FormData) {
+  assertServiceEnv("/settings");
+
+  const { profile } = await requireRole(["admin"]);
+  const service = createServiceClient();
+  let successDetail = "";
+
+  try {
+    const key = requiredValue(formData, "key", "Content page");
+    const title = requiredValue(formData, "title", "Page title");
+    const content = requiredValue(formData, "content", "Content");
+
+    if (!isAppContentPageKey(key)) {
+      throw toUserFacingError("Selected content page is not supported.");
+    }
+
+    if (title.length > 120) {
+      throw toUserFacingError("Page title must be 120 characters or fewer.");
+    }
+
+    if (content.length > 12000) {
+      throw toUserFacingError("Content must be 12,000 characters or fewer.");
+    }
+
+    const response = await service
+      .from("app_content_pages")
+      .upsert(
+        {
+          key,
+          title,
+          content,
+          is_published: true,
+          updated_at: new Date().toISOString(),
+          updated_by: profile.id,
+        },
+        { onConflict: "key" },
+      )
+      .select("key")
+      .single();
+
+    if (response.error || !response.data) {
+      throw response.error ?? new Error("Unable to save content page.");
+    }
+
+    await writeAuditLogEntry(service, {
+      actorId: profile.id,
+      branchId: profile.branch_id,
+      action: "app_content_page.updated",
+      entityType: "app_content_page",
+      entityId: key,
+      metadata: {
+        source: "admin_settings",
+        title,
+      },
+    }).catch((error) => {
+      console.warn("Unable to record content page audit log.", error);
+    });
+
+    successDetail = `Saved ${title}.`;
+  } catch (error) {
+    const safeMessage = toRedirectErrorMessage({
+      action: "saveAppContentPageAction",
+      error,
+      userMessage: "Unable to save content page.",
+      errorCode: "CONTENT_PAGE_SAVE_FAILED",
+    });
+    redirect(buildRedirect("/settings", "error", safeMessage));
+  }
+
+  revalidatePath("/settings");
+  redirect(buildRedirect("/settings", "success", successDetail));
 }
 
 export async function completeBranchManagerSetupAction(formData: FormData) {

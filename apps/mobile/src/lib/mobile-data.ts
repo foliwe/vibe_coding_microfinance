@@ -1,6 +1,9 @@
 import {
   calculateMonthlyInterest,
+  DEFAULT_APP_CONTENT_PAGES,
   PASSWORD_POLICY,
+  type AppContentPage,
+  type AppContentPageKey,
   type LoanStatus,
   type TransactionType,
   type TransactionRequest,
@@ -10,6 +13,9 @@ import {
   type AgentDashboard,
   type AssignedMember,
   type LoanCard,
+  type MobileAccountCard,
+  type MobileAccountStatement,
+  type MobileNotificationItem,
   type MemberDashboard,
   type TrendDatum,
 } from "./mobile-models";
@@ -142,6 +148,13 @@ type LoanRepaymentRow = {
   loan_id: string;
   principal_component: number | string;
   repayment_mode: "interest_only" | "interest_plus_principal";
+};
+
+type AppContentPageRow = {
+  content: string;
+  key: AppContentPageKey;
+  title: string;
+  updated_at: string;
 };
 
 type CreateMemberResponse = {
@@ -442,6 +455,32 @@ function buildLastActivity(row?: TransactionRow) {
   return `${titleCase(row.transaction_type)} ${buildActivityStatus(row).toLowerCase()} ${formatRelativeTime(row.created_at)}`;
 }
 
+function buildAccountCards(
+  accountRows: MemberAccountRow[],
+  transactionRows: TransactionRow[],
+  balanceMap: Map<string, number>,
+): MobileAccountCard[] {
+  return accountRows.map((account) => {
+    const accountTransactions = transactionRows.filter(
+      (transaction) => transaction.member_account_id === account.id,
+    );
+    const latestTransaction = accountTransactions[0];
+    const pendingTransactions = accountTransactions.filter((transaction) =>
+      ["draft", "pending_approval", "sync_conflict", "unsynced"].includes(transaction.status),
+    ).length;
+
+    return {
+      id: account.id,
+      accountNumber: account.account_number,
+      accountType: account.account_type,
+      balance: balanceMap.get(account.id) ?? 0,
+      latestActivity: buildLastActivity(latestTransaction),
+      pendingTransactions,
+      status: account.status,
+    };
+  });
+}
+
 function buildAgentTrend(rows: TransactionRow[]) {
   const totals = new Map<string, number>();
   const labels: string[] = [];
@@ -505,6 +544,22 @@ function buildMemberTrend(rows: TransactionRow[]) {
 
 function buildBranchContact(branchName: string, phone: string | null) {
   return phone ? `${branchName} support: ${phone}` : `${branchName} support desk`;
+}
+
+function toLoanStatusLabel(status: LoanStatus) {
+  if (status === "rejected") {
+    return "REJECTED";
+  }
+
+  if (status === "defaulted") {
+    return "RECONCILIATION REQUIRED";
+  }
+
+  if (status === "application_submitted" || status === "under_review") {
+    return "PENDING APPROVAL";
+  }
+
+  return "APPROVED";
 }
 
 function buildNextDueLabel(loan: LoanRow, latestRepayment?: LoanRepaymentRow) {
@@ -1115,6 +1170,57 @@ export const mobileData = {
     );
   },
 
+  async getAgentTransactionDetail(transactionId: string): Promise<TransactionRequest | null> {
+    const transactions = await mobileData.getAgentTransactions();
+    return transactions.find((transaction) => transaction.id === transactionId) ?? null;
+  },
+
+  async getAgentNotifications(): Promise<MobileNotificationItem[]> {
+    const [dashboard, transactions, queue] = await Promise.all([
+      mobileData.getAgentDashboard(),
+      mobileData.getAgentTransactions(),
+      mobileData.getSyncQueue(),
+    ]);
+    const transactionNotices = transactions.slice(0, 8).map((transaction) => ({
+      id: transaction.id,
+      amount: transaction.amount,
+      createdAt: transaction.createdAt,
+      status: buildActivityStatus({
+        agent_profile_id: transaction.agentId,
+        amount: transaction.amount,
+        created_at: transaction.createdAt,
+        id: transaction.id,
+        member_account_id: transaction.id,
+        member_profile_id: transaction.memberId,
+        note: transaction.note ?? null,
+        status: transaction.status,
+        transaction_type: transaction.type,
+      }),
+      subtitle: `${transaction.memberName} · ${titleCase(transaction.accountType)} account`,
+      title:
+        transaction.type === "withdrawal"
+          ? "Withdrawal request updated"
+          : "Deposit request updated",
+    }));
+    const syncNotice =
+      queue.length > 0
+        ? [
+            {
+              id: "agent-sync-queue",
+              createdAt: new Date().toISOString(),
+              status: dashboard.syncState,
+              subtitle: `${queue.length} local item${queue.length === 1 ? "" : "s"} waiting for action`,
+              title: "Sync queue needs attention",
+            },
+          ]
+        : [];
+
+    return [...syncNotice, ...transactionNotices].sort(
+      (left, right) =>
+        new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+    );
+  },
+
   async createAgentTransactionRequest({
     accountType,
     amount,
@@ -1640,6 +1746,162 @@ export const mobileData = {
     );
   },
 
+  async getMemberTransactionDetail(transactionId: string): Promise<TransactionRequest | null> {
+    const transactions = await mobileData.getMemberTransactions();
+    return transactions.find((transaction) => transaction.id === transactionId) ?? null;
+  },
+
+  async getMemberAccounts(): Promise<MobileAccountCard[]> {
+    const supabase = getSupabaseClient();
+    const profile = await requireCurrentMobileProfile(["member"]);
+    const [accountResponse, transactionResponse] = await Promise.all([
+      supabase
+        .from("member_accounts")
+        .select("id, member_profile_id, account_type, account_number, status")
+        .eq("member_profile_id", profile.id)
+        .eq("status", "active")
+        .in("account_type", [...MEMBER_ACCOUNT_TYPES]),
+      supabase
+        .from("transaction_requests")
+        .select(
+          "id, member_profile_id, member_account_id, agent_profile_id, transaction_type, amount, status, created_at, note",
+        )
+        .eq("member_profile_id", profile.id)
+        .order("created_at", { ascending: false }),
+    ]);
+
+    if (accountResponse.error) {
+      throw accountResponse.error;
+    }
+
+    if (transactionResponse.error) {
+      throw transactionResponse.error;
+    }
+
+    const accountRows = (accountResponse.data as MemberAccountRow[] | null) ?? [];
+    const transactionRows = (transactionResponse.data as TransactionRow[] | null) ?? [];
+    const accountMap = new Map(accountRows.map((row) => [row.id, row]));
+    const balanceMap = buildBalanceMap(transactionRows, accountMap);
+
+    return buildAccountCards(accountRows, transactionRows, balanceMap);
+  },
+
+  async getMemberAccountStatement(accountId: string): Promise<MobileAccountStatement | null> {
+    const supabase = getSupabaseClient();
+    const profile = await requireCurrentMobileProfile(["member"]);
+    const branch = await getBranch(profile.branchId);
+    const [accountResponse, transactionResponse] = await Promise.all([
+      supabase
+        .from("member_accounts")
+        .select("id, member_profile_id, account_type, account_number, status")
+        .eq("member_profile_id", profile.id)
+        .eq("id", accountId)
+        .maybeSingle(),
+      supabase
+        .from("transaction_requests")
+        .select(
+          "id, member_profile_id, member_account_id, agent_profile_id, transaction_type, amount, status, created_at, note",
+        )
+        .eq("member_profile_id", profile.id)
+        .eq("member_account_id", accountId)
+        .order("created_at", { ascending: false }),
+    ]);
+
+    if (accountResponse.error) {
+      throw accountResponse.error;
+    }
+
+    if (transactionResponse.error) {
+      throw transactionResponse.error;
+    }
+
+    const accountRow = (accountResponse.data as MemberAccountRow | null) ?? null;
+
+    if (!accountRow) {
+      return null;
+    }
+
+    const transactionRows = (transactionResponse.data as TransactionRow[] | null) ?? [];
+    const accountMap = new Map([[accountRow.id, accountRow]]);
+    const balanceMap = buildBalanceMap(transactionRows, accountMap);
+    const agentIds = Array.from(new Set(transactionRows.map((row) => row.agent_profile_id)));
+    const agentMap = await getProfilesByIds(agentIds);
+    const account = buildAccountCards([accountRow], transactionRows, balanceMap)[0];
+
+    return {
+      account,
+      transactions: transactionRows.map((row) =>
+        buildTransactionLabel(
+          row,
+          profile.fullName,
+          branch?.id ?? profile.branchId ?? "",
+          branch?.name ?? "Assigned Branch",
+          agentMap.get(row.agent_profile_id)?.full_name ?? "Assigned agent",
+          accountRow.account_type,
+        ),
+      ),
+    };
+  },
+
+  async getMemberLoanDetail(loanId: string): Promise<LoanCard | null> {
+    const loans = await mobileData.getLoans();
+    return loans.find((loan) => loan.id === loanId) ?? null;
+  },
+
+  async getMemberNotifications(): Promise<MobileNotificationItem[]> {
+    const [dashboard, transactions, loans] = await Promise.all([
+      mobileData.getMemberDashboard(),
+      mobileData.getMemberTransactions(),
+      mobileData.getLoans(),
+    ]);
+    const transactionNotices = transactions.slice(0, 8).map((transaction) => ({
+      id: transaction.id,
+      amount: transaction.amount,
+      createdAt: transaction.createdAt,
+      status: buildActivityStatus({
+        agent_profile_id: transaction.agentId,
+        amount: transaction.amount,
+        created_at: transaction.createdAt,
+        id: transaction.id,
+        member_account_id: transaction.id,
+        member_profile_id: transaction.memberId,
+        note: transaction.note ?? null,
+        status: transaction.status,
+        transaction_type: transaction.type,
+      }),
+      subtitle: `${titleCase(transaction.accountType)} account · ${transaction.agentName}`,
+      title:
+        transaction.type === "withdrawal"
+          ? "Withdrawal status updated"
+          : "Deposit status updated",
+    }));
+    const loanNotices = loans.slice(0, 4).map((loan) => ({
+      id: `loan-${loan.id}`,
+      amount: loan.remainingPrincipal,
+      createdAt: new Date().toISOString(),
+      status: toLoanStatusLabel(loan.status),
+      subtitle: `${loan.loanCode} · next due ${loan.nextDueLabel}`,
+      title: "Loan timeline updated",
+    }));
+    const syncNotice =
+      dashboard.syncState !== "ONLINE"
+        ? [
+            {
+              id: "member-sync-state",
+              createdAt: new Date().toISOString(),
+              status: dashboard.syncState,
+              subtitle: "Some account states may still be refreshing.",
+              title: "Account sync status changed",
+            },
+          ]
+        : [];
+
+    return [...syncNotice, ...transactionNotices, ...loanNotices].sort(
+      (left, right) =>
+        new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+    );
+  },
+
   async getLoans(): Promise<LoanCard[]> {
     const supabase = getSupabaseClient();
     const profile = await requireCurrentMobileProfile(["member"]);
@@ -1770,6 +2032,39 @@ export const mobileData = {
         ],
       };
     });
+  },
+
+  async getContentPage(key: AppContentPageKey): Promise<AppContentPage> {
+    const fallback = DEFAULT_APP_CONTENT_PAGES[key];
+
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
+        .from("app_content_pages")
+        .select("key, title, content, updated_at")
+        .eq("key", key)
+        .eq("is_published", true)
+        .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      const row = (data as AppContentPageRow | null) ?? null;
+
+      if (!row) {
+        return fallback;
+      }
+
+      return {
+        content: row.content,
+        key: row.key,
+        title: row.title,
+        updatedAt: row.updated_at,
+      };
+    } catch {
+      return fallback;
+    }
   },
 
   async getMemberProfile(): Promise<AssignedMember> {

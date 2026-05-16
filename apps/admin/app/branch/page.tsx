@@ -1,9 +1,12 @@
 import Link from "next/link";
 
+import { AdminDetailItem, AdminDetailList } from "../../components/admin-detail-list";
 import { AdminShell } from "../../components/admin-shell";
+import { ActionBar } from "../../components/action-bar";
 import { ChartBars } from "../../components/chart-bars";
 import { SectionCard } from "../../components/section-card";
 import { StatCard } from "../../components/stat-card";
+import { Button } from "../../components/ui/button";
 import { withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import { getBranchDashboardData } from "../../lib/dashboard-data";
 import { prettyCurrency } from "../../lib/format";
@@ -21,43 +24,74 @@ export default async function BranchDashboardPage() {
       title="Branch Dashboard"
       subtitle="Branch-only totals, agent performance, approvals, and reconciliation indicators."
     >
-      <div className="grid grid-4">
-        <StatCard label="Total Members" value={String(summary.totalMembers)} />
-        <StatCard label="Active Agents" value={String(summary.activeAgents)} />
-        <StatCard label="Branch Savings" value={prettyCurrency(summary.totalSavings)} tone="success" />
-        <StatCard label="Pending Approvals" value={String(summary.pendingApprovals)} tone="warning" />
+      <div className="grid gap-4 xl:grid-cols-4">
+        <StatCard
+          description="Members currently assigned to this branch."
+          label="Total Members"
+          value={String(summary.totalMembers)}
+        />
+        <StatCard
+          description="Agents active in this branch office."
+          label="Active Agents"
+          value={String(summary.activeAgents)}
+        />
+        <StatCard
+          description="Combined savings balances held by this branch."
+          label="Branch Savings"
+          tone="success"
+          value={prettyCurrency(summary.totalSavings)}
+        />
+        <StatCard
+          description="Transactions needing review in this branch."
+          label="Pending Approvals"
+          tone="warning"
+          value={String(summary.pendingApprovals)}
+        />
       </div>
 
-      <div className="grid grid-4">
-        <StatCard label="Branch Deposits" value={prettyCurrency(summary.totalDeposits)} />
-        <StatCard label="Branch Loans" value={prettyCurrency(summary.totalLoans)} />
+      <div className="grid gap-4 xl:grid-cols-4">
         <StatCard
+          description="Deposit balances on branch books."
+          label="Branch Deposits"
+          value={prettyCurrency(summary.totalDeposits)}
+        />
+        <StatCard
+          description="Principal approved to this branch scope."
+          label="Branch Loans"
+          value={prettyCurrency(summary.totalLoans)}
+        />
+        <StatCard
+          description="Principal still outstanding in branch loans."
           label="Outstanding Principal"
           value={prettyCurrency(summary.outstandingPrincipal)}
         />
-        <StatCard label="Expected Cash Today" value={prettyCurrency(summary.expectedCashToday)} />
+        <StatCard
+          description="Expected counted cash for today."
+          label="Expected Cash Today"
+          value={prettyCurrency(summary.expectedCashToday)}
+        />
       </div>
 
-      <div className="grid grid-2">
+      <div className="grid gap-6 xl:grid-cols-2">
         <SectionCard
-          title="Branch Actions"
           description="Branch managers can onboard members, create agents, and review pending transactions from one place."
+          title="Branch Actions"
         >
-          <div className="actions">
-            <Link className="button" href="/members/new">
-              Create Member
-            </Link>
-            <Link className="button-secondary" href="/agents/new">
-              Create Agent
-            </Link>
-            <Link className="button-secondary" href="/transactions">
-              Review Transactions
-            </Link>
-          </div>
+          <ActionBar>
+            <Button asChild>
+              <Link href="/members/new">Create Member</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/agents/new">Create Agent</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/transactions">Review Transactions</Link>
+            </Button>
+          </ActionBar>
         </SectionCard>
         <SectionCard
-          title="Agent Performance"
           description="Daily collections, pending approvals, and cash variance by agent."
+          title="Agent Performance"
         >
           <ChartBars
             data={summary.agentPerformance.map((agent) => ({
@@ -69,27 +103,24 @@ export default async function BranchDashboardPage() {
         </SectionCard>
 
         <SectionCard
-          title="Branch Risk Summary"
           description="Branch managers should see only their branch indicators."
+          title="Branch Risk Summary"
         >
-          <div className="list">
-            <div className="list-item">
-              <strong>New Members This Month</strong>
-              <span>{summary.newMembersThisMonth}</span>
-            </div>
-            <div className="list-item">
-              <strong>Interest Collected</strong>
-              <span>{prettyCurrency(summary.interestCollected)}</span>
-            </div>
-            <div className="list-item">
-              <strong>Overdue Loans</strong>
-              <span>{summary.overdueLoans}</span>
-            </div>
-            <div className="list-item">
-              <strong>Cash Variance</strong>
-              <span>{prettyCurrency(summary.cashVariance)}</span>
-            </div>
-          </div>
+          <AdminDetailList>
+            <AdminDetailItem
+              label="New Members This Month"
+              value={summary.newMembersThisMonth}
+            />
+            <AdminDetailItem
+              label="Interest Collected"
+              value={prettyCurrency(summary.interestCollected)}
+            />
+            <AdminDetailItem label="Overdue Loans" value={summary.overdueLoans} />
+            <AdminDetailItem
+              label="Cash Variance"
+              value={prettyCurrency(summary.cashVariance)}
+            />
+          </AdminDetailList>
         </SectionCard>
       </div>
     </AdminShell>

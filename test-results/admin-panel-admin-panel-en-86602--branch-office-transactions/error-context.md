@@ -1,0 +1,328 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e7] [cursor=pointer]:
+    - img [ref=e8]
+  - alert [ref=e11]
+  - generic [ref=e12]:
+    - generic [ref=e15]:
+      - link "Credit Union Admin Institution Control" [ref=e17] [cursor=pointer]:
+        - /url: /
+        - img [ref=e19]
+        - generic [ref=e23]:
+          - paragraph [ref=e24]: Credit Union Admin
+          - paragraph [ref=e25]: Institution Control
+      - generic [ref=e26]:
+        - generic [ref=e27]:
+          - generic [ref=e28]: Overview
+          - list [ref=e30]:
+            - listitem [ref=e31]:
+              - link "Dashboard" [ref=e32] [cursor=pointer]:
+                - /url: /
+                - img [ref=e33]
+                - generic [ref=e38]: Dashboard
+            - listitem [ref=e39]:
+              - link "Branches" [ref=e40] [cursor=pointer]:
+                - /url: /branches
+                - img [ref=e41]
+                - generic [ref=e45]: Branches
+        - generic [ref=e46]:
+          - generic [ref=e47]: People
+          - list [ref=e49]:
+            - listitem [ref=e50]:
+              - link "Members" [ref=e51] [cursor=pointer]:
+                - /url: /members
+                - img [ref=e52]
+                - generic [ref=e57]: Members
+            - listitem [ref=e58]:
+              - link "Create Member" [ref=e59] [cursor=pointer]:
+                - /url: /members/new
+                - img [ref=e60]
+                - generic [ref=e63]: Create Member
+            - listitem [ref=e64]:
+              - link "Agents" [ref=e65] [cursor=pointer]:
+                - /url: /agents
+                - img [ref=e66]
+                - generic [ref=e71]: Agents
+            - listitem [ref=e72]:
+              - link "Create Agent" [ref=e73] [cursor=pointer]:
+                - /url: /agents/new
+                - img [ref=e74]
+                - generic [ref=e77]: Create Agent
+            - listitem [ref=e78]:
+              - link "Managers" [ref=e79] [cursor=pointer]:
+                - /url: /managers
+                - img [ref=e80]
+                - generic [ref=e92]: Managers
+            - listitem [ref=e93]:
+              - link "Create Manager" [ref=e94] [cursor=pointer]:
+                - /url: /managers/new
+                - img [ref=e95]
+                - generic [ref=e98]: Create Manager
+        - generic [ref=e99]:
+          - generic [ref=e100]: Operations
+          - list [ref=e102]:
+            - listitem [ref=e103]:
+              - link "Transactions" [ref=e104] [cursor=pointer]:
+                - /url: /transactions
+                - img [ref=e105]
+                - generic [ref=e108]: Transactions
+              - list [ref=e109]:
+                - listitem [ref=e110]:
+                  - link "Deposit" [ref=e111] [cursor=pointer]:
+                    - /url: /transactions/deposit
+                    - generic [ref=e112]: Deposit
+                - listitem [ref=e113]:
+                  - link "Withdrawal" [ref=e114] [cursor=pointer]:
+                    - /url: /transactions/withdrawal
+                    - generic [ref=e115]: Withdrawal
+            - listitem [ref=e116]:
+              - link "Loans" [ref=e117] [cursor=pointer]:
+                - /url: /loans
+                - img [ref=e118]
+                - generic [ref=e121]: Loans
+            - listitem [ref=e122]:
+              - link "Reconciliation" [ref=e123] [cursor=pointer]:
+                - /url: /reconciliation
+                - img [ref=e124]
+                - generic [ref=e131]: Reconciliation
+            - listitem [ref=e132]:
+              - link "Staff Devices" [ref=e133] [cursor=pointer]:
+                - /url: /staff-devices
+                - img [ref=e134]
+                - generic [ref=e136]: Staff Devices
+            - listitem [ref=e137]:
+              - link "Reports" [ref=e138] [cursor=pointer]:
+                - /url: /reports
+                - img [ref=e139]
+                - generic [ref=e141]: Reports
+            - listitem [ref=e142]:
+              - link "Audit Log" [ref=e143] [cursor=pointer]:
+                - /url: /audit
+                - img [ref=e144]
+                - generic [ref=e147]: Audit Log
+            - listitem [ref=e148]:
+              - link "Settings" [ref=e149] [cursor=pointer]:
+                - /url: /settings
+                - img [ref=e150]
+                - generic [ref=e153]: Settings
+      - generic [ref=e154]:
+        - generic [ref=e155]:
+          - paragraph [ref=e156]: Main Admin
+          - paragraph [ref=e157]: Administrator
+          - paragraph [ref=e158]: Current scope
+          - paragraph [ref=e159]: All branches
+        - button "Sign out" [ref=e161]:
+          - img
+          - generic [ref=e162]: Sign out
+      - button "Toggle Sidebar" [ref=e163]
+    - main [ref=e164]:
+      - generic [ref=e167]:
+        - button "Toggle Sidebar" [ref=e168]:
+          - img
+          - generic [ref=e169]: Toggle Sidebar
+        - generic [ref=e170]:
+          - navigation "breadcrumb" [ref=e171]:
+            - list [ref=e172]:
+              - listitem [ref=e173]:
+                - link "Admin Dashboard" [disabled] [ref=e174]
+          - generic [ref=e175]:
+            - generic [ref=e176]: All branches
+            - generic [ref=e177]: Live Supabase
+          - generic [ref=e178]:
+            - heading "Admin Dashboard" [level=1] [ref=e179]
+            - paragraph [ref=e180]: Institution-wide performance, branch totals, approval pressure, and risk signals.
+      - generic [ref=e181]:
+        - generic [ref=e182]:
+          - generic [ref=e183]:
+            - generic [ref=e185]:
+              - generic [ref=e186]:
+                - generic [ref=e187]: Total Branches
+                - generic [ref=e188]: "3"
+              - generic [ref=e190]: Overview
+            - paragraph [ref=e192]: Registered operational branches in the institution.
+          - generic [ref=e193]:
+            - generic [ref=e195]:
+              - generic [ref=e196]:
+                - generic [ref=e197]: Total Members
+                - generic [ref=e198]: "3"
+              - generic [ref=e200]: Overview
+            - paragraph [ref=e202]: Member count across the full institution scope.
+          - generic [ref=e203]:
+            - generic [ref=e205]:
+              - generic [ref=e206]:
+                - generic [ref=e207]: Total Savings
+                - generic [ref=e208]: FCFA 40,071
+              - generic [ref=e210]: Healthy
+            - paragraph [ref=e212]: Combined savings balances across every branch.
+          - generic [ref=e213]:
+            - generic [ref=e215]:
+              - generic [ref=e216]:
+                - generic [ref=e217]: Pending Approvals
+                - generic [ref=e218]: "4"
+              - generic [ref=e220]: Attention
+            - paragraph [ref=e222]: Transactions still waiting for review.
+        - generic [ref=e223]:
+          - generic [ref=e224]:
+            - generic [ref=e226]:
+              - generic [ref=e227]:
+                - generic [ref=e228]: Total Deposits
+                - generic [ref=e229]: FCFA 22,538
+              - generic [ref=e231]: Overview
+            - paragraph [ref=e233]: Deposit balances currently on the books.
+          - generic [ref=e234]:
+            - generic [ref=e236]:
+              - generic [ref=e237]:
+                - generic [ref=e238]: Total Loans
+                - generic [ref=e239]: FCFA 50,000
+              - generic [ref=e241]: Overview
+            - paragraph [ref=e243]: Principal approved across active loan products.
+          - generic [ref=e244]:
+            - generic [ref=e246]:
+              - generic [ref=e247]:
+                - generic [ref=e248]: Outstanding Principal
+                - generic [ref=e249]: FCFA 49,000
+              - generic [ref=e251]: Overview
+            - paragraph [ref=e253]: Remaining principal still to be collected.
+          - generic [ref=e254]:
+            - generic [ref=e256]:
+              - generic [ref=e257]:
+                - generic [ref=e258]: Interest Collected
+                - generic [ref=e259]: FCFA 1,500
+              - generic [ref=e261]: Overview
+            - paragraph [ref=e263]: Interest collected across the reporting window.
+        - generic [ref=e264]:
+          - generic [ref=e265]:
+            - generic [ref=e267]:
+              - generic [ref=e268]: Branch Performance Mix
+              - generic [ref=e269]: Grouped balances compare branch savings and deposits side-by-side.
+            - generic [ref=e273]:
+              - generic [ref=e275]:
+                - generic [ref=e276]: Deposits
+                - generic [ref=e278]: Savings
+              - application [ref=e280]:
+                - generic [ref=e303]:
+                  - generic [ref=e304]:
+                    - generic [ref=e306]: Kumba Branch
+                    - generic [ref=e308]: Bamenda Branch
+                    - generic [ref=e310]: Buea Branch
+                  - generic [ref=e311]:
+                    - generic [ref=e313]: "0"
+                    - generic [ref=e315]: 10K
+                    - generic [ref=e317]: 20K
+                    - generic [ref=e319]: 30K
+                    - generic [ref=e321]: 40K
+          - generic [ref=e322]:
+            - generic [ref=e324]:
+              - generic [ref=e325]: Portfolio Trend
+              - generic [ref=e326]: Deposit and loan movement for the most recent six reporting periods.
+            - generic [ref=e330]:
+              - generic [ref=e332]:
+                - generic [ref=e333]: Deposits
+                - generic [ref=e335]: Loans
+              - application [ref=e337]:
+                - generic [ref=e348]:
+                  - generic [ref=e349]:
+                    - generic [ref=e351]: Dec
+                    - generic [ref=e353]: Jan
+                    - generic [ref=e355]: Feb
+                    - generic [ref=e357]: Mar
+                    - generic [ref=e359]: Apr
+                    - generic [ref=e361]: May
+                  - generic [ref=e362]:
+                    - generic [ref=e364]: "0"
+                    - generic [ref=e366]: 15K
+                    - generic [ref=e368]: 30K
+                    - generic [ref=e370]: 45K
+                    - generic [ref=e372]: 60K
+        - generic [ref=e373]:
+          - generic [ref=e374]:
+            - generic [ref=e376]:
+              - generic [ref=e377]: Admin Actions
+              - generic [ref=e378]: Create the operational entities that the live dashboards depend on.
+            - generic [ref=e380]:
+              - link "Create Branch" [ref=e381] [cursor=pointer]:
+                - /url: /branches/new
+              - link "Create Manager" [ref=e382] [cursor=pointer]:
+                - /url: /managers/new
+              - link "Create Agent" [ref=e383] [cursor=pointer]:
+                - /url: /agents/new
+              - link "Create Member" [ref=e384] [cursor=pointer]:
+                - /url: /members/new
+          - generic [ref=e385]:
+            - generic [ref=e387]:
+              - generic [ref=e388]: Approvals And Alerts
+              - generic [ref=e389]: Pending cash activity and open exceptions that need central attention.
+            - generic [ref=e391]:
+              - generic [ref=e392]:
+                - generic [ref=e393]: C1A8A1F2-4D8C-44B5-A254-914086C4B684
+                - generic [ref=e395]:
+                  - paragraph [ref=e396]: Member One · deposit · FCFA 19
+                  - generic [ref=e397]: pending_approval
+              - generic [ref=e398]:
+                - generic [ref=e399]: D1827130-B769-45C0-A556-FF426DC5B8CE
+                - generic [ref=e401]:
+                  - paragraph [ref=e402]: Member One · deposit · FCFA 19
+                  - generic [ref=e403]: pending_approval
+              - generic [ref=e404]:
+                - generic [ref=e405]: F7595526-9A26-4C42-8131-2B72B4950577
+                - generic [ref=e407]:
+                  - paragraph [ref=e408]: Member One · deposit · FCFA 43
+                  - generic [ref=e409]: pending_approval
+              - generic [ref=e410]:
+                - generic [ref=e411]: 8EA09289-79FA-482C-89BC-34547D725376
+                - generic [ref=e413]:
+                  - paragraph [ref=e414]: Kumba Member two · deposit · FCFA 1,000
+                  - generic [ref=e415]: pending_approval
+        - generic [ref=e416]:
+          - generic [ref=e418]:
+            - generic [ref=e419]: Branch Performance Table
+            - generic [ref=e420]: Each branch row carries consolidated savings, deposits, loans, and outstanding principal.
+          - table [ref=e424]:
+            - rowgroup [ref=e425]:
+              - row "Branch Manager Members Savings Deposits Loans Outstanding Pending" [ref=e426]:
+                - columnheader "Branch" [ref=e427]
+                - columnheader "Manager" [ref=e428]
+                - columnheader "Members" [ref=e429]
+                - columnheader "Savings" [ref=e430]
+                - columnheader "Deposits" [ref=e431]
+                - columnheader "Loans" [ref=e432]
+                - columnheader "Outstanding" [ref=e433]
+                - columnheader "Pending" [ref=e434]
+            - rowgroup [ref=e435]:
+              - row "Buea Branch Buea Branch Manager 0 FCFA 0 FCFA 0 FCFA 0 FCFA 0 0" [ref=e436]:
+                - cell "Buea Branch" [ref=e437]:
+                  - link "Buea Branch" [ref=e438] [cursor=pointer]:
+                    - /url: /branches/34ca2547-8f2e-40c1-a99f-45d5a9cf5272
+                - cell "Buea Branch Manager" [ref=e439]
+                - cell "0" [ref=e440]
+                - cell "FCFA 0" [ref=e441]
+                - cell "FCFA 0" [ref=e442]
+                - cell "FCFA 0" [ref=e443]
+                - cell "FCFA 0" [ref=e444]
+                - cell "0" [ref=e445]
+              - row "Kumba Branch Kumba Branch Manager 2 FCFA 40,000 FCFA 22,500 FCFA 50,000 FCFA 49,000 1" [ref=e446]:
+                - cell "Kumba Branch" [ref=e447]:
+                  - link "Kumba Branch" [ref=e448] [cursor=pointer]:
+                    - /url: /branches/206798e9-30c0-4d67-a315-9892d4bc0efe
+                - cell "Kumba Branch Manager" [ref=e449]
+                - cell "2" [ref=e450]
+                - cell "FCFA 40,000" [ref=e451]
+                - cell "FCFA 22,500" [ref=e452]
+                - cell "FCFA 50,000" [ref=e453]
+                - cell "FCFA 49,000" [ref=e454]
+                - cell "1" [ref=e455]
+              - row "Bamenda Branch Bamenda Manager 1 FCFA 71 FCFA 38 FCFA 0 FCFA 0 3" [ref=e456]:
+                - cell "Bamenda Branch" [ref=e457]:
+                  - link "Bamenda Branch" [ref=e458] [cursor=pointer]:
+                    - /url: /branches/677e484d-4b97-49a6-93e4-2d46df9cfd9f
+                - cell "Bamenda Manager" [ref=e459]
+                - cell "1" [ref=e460]
+                - cell "FCFA 71" [ref=e461]
+                - cell "FCFA 38" [ref=e462]
+                - cell "FCFA 0" [ref=e463]
+                - cell "FCFA 0" [ref=e464]
+                - cell "3" [ref=e465]
+  - generic [ref=e466]: 15K
+```

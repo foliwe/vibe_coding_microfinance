@@ -1,7 +1,19 @@
 import Link from "next/link";
 
 import { AdminShell } from "../../components/admin-shell";
+import { ActionBar } from "../../components/action-bar";
+import { AdminTableEmptyRow, AdminTableFrame } from "../../components/admin-table";
 import { SectionCard } from "../../components/section-card";
+import { StatusBadge } from "../../components/status-badge";
+import { Button } from "../../components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../components/ui/table";
 import { breadcrumb, withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import { getAgentsPageData } from "../../lib/dashboard-data";
 import { prettyCurrency } from "../../lib/format";
@@ -24,53 +36,51 @@ export default async function AgentsPage() {
       subtitle="Field staff directory with branch scope, member coverage, and cash-performance indicators."
     >
       <SectionCard title="Agent Actions" description="Create new field agents for the visible branch scope.">
-        <div className="actions">
-          <Link className="button" href="/agents/new">
-            Create Agent
-          </Link>
-        </div>
+        <ActionBar>
+          <Button asChild>
+            <Link href="/agents/new">Create Agent</Link>
+          </Button>
+        </ActionBar>
       </SectionCard>
 
       <SectionCard title="Agent Registry" description="Each row links to the full agent profile with member relationships and analytics.">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Agent</th>
-              <th>Branch</th>
-              <th>Members</th>
-              <th>Collections Today</th>
-              <th>Pending Approvals</th>
-              <th>Cash Variance</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
+        <AdminTableFrame>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Agent</TableHead>
+                <TableHead>Branch</TableHead>
+                <TableHead>Members</TableHead>
+                <TableHead>Collections Today</TableHead>
+                <TableHead>Pending Approvals</TableHead>
+                <TableHead>Cash Variance</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
             {agents.map((agent) => (
-              <tr key={agent.id}>
-                <td>
+              <TableRow key={agent.id}>
+                <TableCell>
                   <Link className="font-semibold underline-offset-4 hover:underline" href={`/agents/${agent.id}`}>
                     {agent.fullName}
                   </Link>
-                </td>
-                <td>{agent.branchName}</td>
-                <td>{agent.assignedMemberCount}</td>
-                <td>{prettyCurrency(agent.collectionsToday)}</td>
-                <td>{agent.pendingApprovals}</td>
-                <td>{prettyCurrency(agent.cashVariance)}</td>
-                <td>
-                  <span className="chip">{agent.status}</span>
-                </td>
-              </tr>
+                </TableCell>
+                <TableCell>{agent.branchName}</TableCell>
+                <TableCell>{agent.assignedMemberCount}</TableCell>
+                <TableCell>{prettyCurrency(agent.collectionsToday)}</TableCell>
+                <TableCell>{agent.pendingApprovals}</TableCell>
+                <TableCell>{prettyCurrency(agent.cashVariance)}</TableCell>
+                <TableCell>
+                  <StatusBadge>{agent.status}</StatusBadge>
+                </TableCell>
+              </TableRow>
             ))}
             {agents.length === 0 ? (
-              <tr>
-                <td className="muted" colSpan={7}>
-                  No live agents were found for this branch yet.
-                </td>
-              </tr>
+              <AdminTableEmptyRow colSpan={7} description="No live agents were found for this branch yet." />
             ) : null}
-          </tbody>
-        </table>
+            </TableBody>
+          </Table>
+        </AdminTableFrame>
       </SectionCard>
     </AdminShell>
   );

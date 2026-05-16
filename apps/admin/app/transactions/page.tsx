@@ -4,20 +4,33 @@ import {
   approveTransactionRequestAction,
   rejectTransactionRequestAction,
 } from "../actions";
+import { ActionBar } from "../../components/action-bar";
+import { AdminFieldGrid, AdminFormField } from "../../components/admin-form-field";
 import { SectionCard } from "../../components/section-card";
 import { AdminShell } from "../../components/admin-shell";
+import { AdminTableEmptyRow, AdminTableFrame } from "../../components/admin-table";
 import {
   getTransactionQueuePageData,
   type TransactionPageFilters,
 } from "../../lib/dashboard-data";
 import { breadcrumb, withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
 import { prettyCurrency } from "../../lib/format";
+import { ResultNotice } from "../../components/notice";
+import { StatusBadge } from "../../components/status-badge";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import {
   NativeSelect,
   NativeSelectOption,
 } from "../../components/ui/native-select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../components/ui/table";
 import { ClosedDrawerApprovalModal } from "../../components/closed-drawer-approval-modal";
 
 function firstParam(value?: string | string[]) {
@@ -67,29 +80,6 @@ function prettyDateTime(value: string) {
   }).format(new Date(value));
 }
 
-function TransactionResultNotice({
-  detail,
-  result,
-}: {
-  detail?: string;
-  result?: string;
-}) {
-  if (!result) {
-    return null;
-  }
-
-  const isError = result === "error";
-  const message =
-    detail ??
-    (isError
-      ? "The transaction action failed."
-      : result === "approved"
-        ? "Transaction approved and posted to the ledger."
-        : "Transaction rejected and preserved in history.");
-
-  return <p className={isError ? "notice notice-error" : "notice notice-success"}>{message}</p>;
-}
-
 function FilterForm({
   branchLabel,
   branches,
@@ -108,29 +98,26 @@ function FilterForm({
       title="Filters"
       description="Narrow both the pending queue and full history with the same transaction filters."
     >
-      <form className="space-y-5" method="get">
-        <div className="grid gap-4 md:grid-cols-4">
-          <div className="space-y-2">
-            <label htmlFor="type">Transaction type</label>
+      <form method="get">
+        <AdminFieldGrid className="mb-5 md:grid-cols-4">
+          <AdminFormField htmlFor="type" label="Transaction type">
             <NativeSelect defaultValue={filters.type ?? ""} id="type" name="type">
               <NativeSelectOption value="">All types</NativeSelectOption>
               <NativeSelectOption value="deposit">Deposit</NativeSelectOption>
               <NativeSelectOption value="withdrawal">Withdrawal</NativeSelectOption>
             </NativeSelect>
-          </div>
+          </AdminFormField>
 
-          <div className="space-y-2">
-            <label htmlFor="accountType">Account type</label>
+          <AdminFormField htmlFor="accountType" label="Account type">
             <NativeSelect defaultValue={filters.accountType ?? ""} id="accountType" name="accountType">
               <NativeSelectOption value="">All accounts</NativeSelectOption>
               <NativeSelectOption value="savings">Savings</NativeSelectOption>
               <NativeSelectOption value="deposit">Deposit</NativeSelectOption>
             </NativeSelect>
-          </div>
+          </AdminFormField>
 
           {isAdmin ? (
-            <div className="space-y-2">
-              <label htmlFor="branchId">Branch</label>
+            <AdminFormField htmlFor="branchId" label="Branch">
               <NativeSelect defaultValue={filters.branchId ?? ""} id="branchId" name="branchId">
                 <NativeSelectOption value="">All branches</NativeSelectOption>
                 {branches.map((branch) => (
@@ -139,33 +126,31 @@ function FilterForm({
                   </NativeSelectOption>
                 ))}
               </NativeSelect>
-            </div>
+            </AdminFormField>
           ) : (
-            <div className="space-y-2">
-              <label htmlFor="branchScope">Branch</label>
+            <AdminFormField htmlFor="branchScope" label="Branch">
               <Input disabled id="branchScope" value={branchLabel} />
-            </div>
+            </AdminFormField>
           )}
 
-          <div className="space-y-2">
-            <label htmlFor="agentId">Agent</label>
+          <AdminFormField htmlFor="agentId" label="Agent">
             <NativeSelect defaultValue={filters.agentId ?? ""} id="agentId" name="agentId">
               <NativeSelectOption value="">All agents</NativeSelectOption>
               {agents.map((agent) => (
                 <NativeSelectOption key={agent.id} value={agent.id}>
                   {agent.fullName}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </div>
-        </div>
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+          </AdminFormField>
+        </AdminFieldGrid>
 
-        <div className="actions">
+        <ActionBar>
           <Button type="submit">Apply Filters</Button>
-          <Link className="button-secondary" href="/transactions">
-            Clear Filters
-          </Link>
-        </div>
+          <Button asChild variant="outline">
+            <Link href="/transactions">Clear Filters</Link>
+          </Button>
+        </ActionBar>
       </form>
     </SectionCard>
   );
@@ -181,65 +166,66 @@ function TransactionTable({
   transactions: Awaited<ReturnType<typeof getTransactionQueuePageData>>["pendingTransactions"];
 }) {
   return (
-    <table className="table">
-      <thead>
-        <tr>
-          <th>Reference</th>
-          <th>Submitted</th>
-          <th>Branch</th>
-          <th>Member</th>
-          <th>Account</th>
-          <th>Type</th>
-          <th>Amount</th>
-          <th>Agent</th>
-          <th>Status</th>
-          {showActions ? <th>Action</th> : null}
-        </tr>
-      </thead>
-      <tbody>
+    <AdminTableFrame>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Reference</TableHead>
+            <TableHead>Submitted</TableHead>
+            <TableHead>Branch</TableHead>
+            <TableHead>Member</TableHead>
+            <TableHead>Account</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead>Amount</TableHead>
+            <TableHead>Agent</TableHead>
+            <TableHead>Status</TableHead>
+            {showActions ? <TableHead>Action</TableHead> : null}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
         {transactions.length ? (
           transactions.map((transaction) => (
-            <tr key={transaction.id}>
-              <td>{transaction.id.toUpperCase()}</td>
-              <td>{prettyDateTime(transaction.createdAt)}</td>
-              <td>{transaction.branchName}</td>
-              <td>{transaction.memberName}</td>
-              <td>{transaction.accountType}</td>
-              <td>{transaction.type}</td>
-              <td>{prettyCurrency(transaction.amount)}</td>
-              <td>{transaction.agentName}</td>
-              <td>
-                <span className="chip">{transaction.status}</span>
-              </td>
+            <TableRow key={transaction.id}>
+              <TableCell>{transaction.id.toUpperCase()}</TableCell>
+              <TableCell>{prettyDateTime(transaction.createdAt)}</TableCell>
+              <TableCell>{transaction.branchName}</TableCell>
+              <TableCell>{transaction.memberName}</TableCell>
+              <TableCell>{transaction.accountType}</TableCell>
+              <TableCell>{transaction.type}</TableCell>
+              <TableCell>{prettyCurrency(transaction.amount)}</TableCell>
+              <TableCell>{transaction.agentName}</TableCell>
+              <TableCell>
+                <StatusBadge>{transaction.status}</StatusBadge>
+              </TableCell>
               {showActions ? (
-                <td>
-                  <div className="table-actions">
+                <TableCell>
+                  <ActionBar>
                     <form action={approveTransactionRequestAction}>
                       <input name="requestId" type="hidden" value={transaction.id} />
-                      <button className="button table-button" type="submit">
+                      <Button size="sm" type="submit">
                         Approve
-                      </button>
+                      </Button>
                     </form>
                     <form action={rejectTransactionRequestAction}>
                       <input name="requestId" type="hidden" value={transaction.id} />
-                      <button className="button-secondary table-button" type="submit">
+                      <Button size="sm" type="submit" variant="outline">
                         Reject
-                      </button>
+                      </Button>
                     </form>
-                  </div>
-                </td>
+                  </ActionBar>
+                </TableCell>
               ) : null}
-            </tr>
+            </TableRow>
           ))
         ) : (
-          <tr>
-            <td className="muted" colSpan={showActions ? 10 : 9}>
-              {emptyMessage}
-            </td>
-          </tr>
+          <AdminTableEmptyRow
+            colSpan={showActions ? 10 : 9}
+            description={emptyMessage}
+          />
         )}
-      </tbody>
-    </table>
+        </TableBody>
+      </Table>
+    </AdminTableFrame>
   );
 }
 
@@ -305,15 +291,26 @@ export default async function TransactionsPage({
           transactionType={transactionType}
         />
       ) : null}
-      {!showClosedDrawerModal ? <TransactionResultNotice detail={detail} result={result} /> : null}
-      <div className="actions">
-        <Link className="button" href="/transactions/deposit">
-          New Deposit
-        </Link>
-        <Link className="button-secondary" href="/transactions/withdrawal">
-          New Withdrawal
-        </Link>
-      </div>
+      {!showClosedDrawerModal ? (
+        <ResultNotice
+          detail={detail}
+          errorFallback="The transaction action failed."
+          result={result}
+          successFallback={
+            result === "approved"
+              ? "Transaction approved and posted to the ledger."
+              : "Transaction rejected and preserved in history."
+          }
+        />
+      ) : null}
+      <ActionBar>
+        <Button asChild>
+          <Link href="/transactions/deposit">New Deposit</Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link href="/transactions/withdrawal">New Withdrawal</Link>
+        </Button>
+      </ActionBar>
 
       <FilterForm
         agents={agents}

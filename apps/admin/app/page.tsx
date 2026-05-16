@@ -1,12 +1,16 @@
 import Link from "next/link";
 
+import { AdminDetailItem, AdminDetailList } from "../components/admin-detail-list";
 import { AdminShell } from "../components/admin-shell";
+import { AdminTableEmptyRow, AdminTableFrame } from "../components/admin-table";
 import {
   BranchPerformanceChart,
   PortfolioTrendChart,
 } from "../components/chart-bars";
+import { ActionBar } from "../components/action-bar";
 import { SectionCard } from "../components/section-card";
 import { StatCard } from "../components/stat-card";
+import { StatusBadge } from "../components/status-badge";
 import { withDashboardBreadcrumbs } from "../lib/breadcrumbs";
 import {
   Card,
@@ -15,6 +19,15 @@ import {
   CardHeader,
   CardTitle,
 } from "../components/ui/card";
+import { Button } from "../components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
 import { getAdminDashboardData } from "../lib/dashboard-data";
 import { compactCurrency, prettyCurrency } from "../lib/format";
 
@@ -31,24 +44,55 @@ export default async function AdminDashboardPage() {
       title="Admin Dashboard"
       subtitle="Institution-wide performance, branch totals, approval pressure, and risk signals."
     >
-      <div className="grid grid-4">
-        <StatCard label="Total Branches" value={String(summary.branchCount)} />
-        <StatCard label="Total Members" value={compactCurrency(summary.totalMembers)} />
-        <StatCard label="Total Savings" value={prettyCurrency(summary.totalSavings)} tone="success" />
-        <StatCard label="Pending Approvals" value={String(summary.pendingApprovals)} tone="warning" />
+      <div className="grid gap-4 xl:grid-cols-4">
+        <StatCard
+          description="Registered operational branches in the institution."
+          label="Total Branches"
+          value={String(summary.branchCount)}
+        />
+        <StatCard
+          description="Member count across the full institution scope."
+          label="Total Members"
+          value={compactCurrency(summary.totalMembers)}
+        />
+        <StatCard
+          description="Combined savings balances across every branch."
+          label="Total Savings"
+          tone="success"
+          value={prettyCurrency(summary.totalSavings)}
+        />
+        <StatCard
+          description="Transactions still waiting for review."
+          label="Pending Approvals"
+          tone="warning"
+          value={String(summary.pendingApprovals)}
+        />
       </div>
 
-      <div className="grid grid-4">
-        <StatCard label="Total Deposits" value={prettyCurrency(summary.totalDeposits)} />
-        <StatCard label="Total Loans" value={prettyCurrency(summary.totalLoans)} />
+      <div className="grid gap-4 xl:grid-cols-4">
         <StatCard
+          description="Deposit balances currently on the books."
+          label="Total Deposits"
+          value={prettyCurrency(summary.totalDeposits)}
+        />
+        <StatCard
+          description="Principal approved across active loan products."
+          label="Total Loans"
+          value={prettyCurrency(summary.totalLoans)}
+        />
+        <StatCard
+          description="Remaining principal still to be collected."
           label="Outstanding Principal"
           value={prettyCurrency(summary.outstandingPrincipal)}
         />
-        <StatCard label="Interest Collected" value={prettyCurrency(summary.interestCollected)} />
+        <StatCard
+          description="Interest collected across the reporting window."
+          label="Interest Collected"
+          value={prettyCurrency(summary.interestCollected)}
+        />
       </div>
 
-      <div className="grid grid-2">
+      <div className="grid gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader>
             <div>
@@ -77,91 +121,107 @@ export default async function AdminDashboardPage() {
         </Card>
       </div>
 
-      <div className="grid grid-2">
+      <div className="grid gap-6 xl:grid-cols-2">
         <SectionCard
-          title="Admin Actions"
           description="Create the operational entities that the live dashboards depend on."
+          title="Admin Actions"
         >
-          <div className="actions">
-            <Link className="button" href="/branches/new">
-              Create Branch
-            </Link>
-            <Link className="button-secondary" href="/managers/new">
-              Create Manager
-            </Link>
-            <Link className="button-secondary" href="/agents/new">
-              Create Agent
-            </Link>
-            <Link className="button-secondary" href="/members/new">
-              Create Member
-            </Link>
-          </div>
+          <ActionBar>
+            <Button asChild>
+              <Link href="/branches/new">Create Branch</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/managers/new">Create Manager</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/agents/new">Create Agent</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/members/new">Create Member</Link>
+            </Button>
+          </ActionBar>
         </SectionCard>
         <SectionCard
-          title="Approvals And Alerts"
           description="Pending cash activity and open exceptions that need central attention."
+          title="Approvals And Alerts"
         >
-          <div className="list">
+          <AdminDetailList>
             {alerts.map((transaction) => (
-              <div className="list-item" key={transaction.id}>
-                <div>
-                  <strong>{transaction.id.toUpperCase()}</strong>
-                  <p className="muted">
-                    {transaction.memberName} · {transaction.type} · {prettyCurrency(transaction.amount)}
-                  </p>
-                </div>
-                <span className="chip">{transaction.status}</span>
-              </div>
+              <AdminDetailItem
+                key={transaction.id}
+                label={transaction.id.toUpperCase()}
+                value={
+                  <div className="space-y-1 text-left sm:text-right">
+                    <p className="text-sm text-foreground">
+                      {transaction.memberName} · {transaction.type} ·{" "}
+                      {prettyCurrency(transaction.amount)}
+                    </p>
+                    <StatusBadge>{transaction.status}</StatusBadge>
+                  </div>
+                }
+              />
             ))}
             {alerts.length === 0 ? (
-              <div className="list-item">
-                <div>
-                  <strong>No live alerts</strong>
-                  <p className="muted">Pending transactions and exception items will appear here.</p>
-                </div>
-                <span className="chip">clear</span>
-              </div>
+              <AdminDetailItem
+                label="No live alerts"
+                value={
+                  <div className="space-y-1 text-left sm:text-right">
+                    <p className="text-sm text-muted-foreground">
+                      Pending transactions and exception items will appear here.
+                    </p>
+                    <StatusBadge>clear</StatusBadge>
+                  </div>
+                }
+              />
             ) : null}
-          </div>
+          </AdminDetailList>
         </SectionCard>
       </div>
 
       <SectionCard
-        title="Branch Performance Table"
         description="Each branch row carries consolidated savings, deposits, loans, and outstanding principal."
+        title="Branch Performance Table"
       >
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Branch</th>
-              <th>Manager</th>
-              <th>Members</th>
-              <th>Savings</th>
-              <th>Deposits</th>
-              <th>Loans</th>
-              <th>Outstanding</th>
-              <th>Pending</th>
-            </tr>
-          </thead>
-          <tbody>
+        <AdminTableFrame>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Branch</TableHead>
+                <TableHead>Manager</TableHead>
+                <TableHead>Members</TableHead>
+                <TableHead>Savings</TableHead>
+                <TableHead>Deposits</TableHead>
+                <TableHead>Loans</TableHead>
+                <TableHead>Outstanding</TableHead>
+                <TableHead>Pending</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
             {summary.branchPerformance.map((branch) => (
-              <tr key={branch.id}>
-                <td>
+              <TableRow key={branch.id}>
+                <TableCell>
                   <Link className="font-semibold underline-offset-4 hover:underline" href={`/branches/${branch.id}`}>
                     {branch.name}
                   </Link>
-                </td>
-                <td>{branch.managerName}</td>
-                <td>{branch.memberCount}</td>
-                <td>{prettyCurrency(branch.totalSavings)}</td>
-                <td>{prettyCurrency(branch.totalDeposits)}</td>
-                <td>{prettyCurrency(branch.totalLoans)}</td>
-                <td>{prettyCurrency(branch.outstandingPrincipal)}</td>
-                <td>{branch.pendingApprovals}</td>
-              </tr>
+                </TableCell>
+                <TableCell>{branch.managerName}</TableCell>
+                <TableCell>{branch.memberCount}</TableCell>
+                <TableCell>{prettyCurrency(branch.totalSavings)}</TableCell>
+                <TableCell>{prettyCurrency(branch.totalDeposits)}</TableCell>
+                <TableCell>{prettyCurrency(branch.totalLoans)}</TableCell>
+                <TableCell>{prettyCurrency(branch.outstandingPrincipal)}</TableCell>
+                <TableCell>{branch.pendingApprovals}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+            {summary.branchPerformance.length === 0 ? (
+              <AdminTableEmptyRow
+                colSpan={8}
+                description="Branch performance rows will appear here once branches and balances are available."
+              />
+            ) : null}
+            </TableBody>
+          </Table>
+        </AdminTableFrame>
       </SectionCard>
     </AdminShell>
   );

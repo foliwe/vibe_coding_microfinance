@@ -2,10 +2,15 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 
 import { ActivityTrendChart, ChartBars } from "../../../components/chart-bars";
+import { ActionBar } from "../../../components/action-bar";
+import { AdminDetailItem, AdminDetailList } from "../../../components/admin-detail-list";
 import { AdminShell } from "../../../components/admin-shell";
 import { PasswordResetNotice } from "../../../components/password-reset-notice";
+import { ResultNotice } from "../../../components/notice";
 import { SectionCard } from "../../../components/section-card";
 import { StatCard } from "../../../components/stat-card";
+import { StatusBadge } from "../../../components/status-badge";
+import { Button } from "../../../components/ui/button";
 import {
   Table,
   TableBody,
@@ -19,24 +24,6 @@ import { breadcrumb, withDashboardBreadcrumbs } from "../../../lib/breadcrumbs";
 import type { PasswordResetFlash } from "../../../lib/password-reset";
 import { getMemberDetailPageData } from "../../../lib/dashboard-data";
 import { formatElapsedTime, prettyCurrency, prettyDate } from "../../../lib/format";
-
-function Notice({
-  detail,
-  result,
-}: {
-  detail?: string;
-  result?: string;
-}) {
-  if (!result) {
-    return null;
-  }
-
-  return (
-    <p className={`notice ${result === "success" ? "notice-success" : "notice-error"}`}>
-      {detail ?? (result === "success" ? "Saved successfully." : "Something went wrong.")}
-    </p>
-  );
-}
 
 export default async function MemberDetailPage({
   params,
@@ -79,98 +66,117 @@ export default async function MemberDetailPage({
     >
       {member ? (
         <>
-          <div className="grid grid-4">
-            <StatCard label="Savings Balance" value={prettyCurrency(member.savingsBalance)} tone="success" />
-            <StatCard label="Deposit Balance" value={prettyCurrency(member.depositBalance)} />
-            <StatCard label="Pending Transactions" value={String(member.pendingTransactions)} tone="warning" />
-            <StatCard label="Outstanding Loan Balance" value={prettyCurrency(member.outstandingLoanBalance)} />
+          <div className="grid gap-4 xl:grid-cols-4">
+            <StatCard
+              description="Current savings balance for this member."
+              label="Savings Balance"
+              tone="success"
+              value={prettyCurrency(member.savingsBalance)}
+            />
+            <StatCard
+              description="Current deposit balance for this member."
+              label="Deposit Balance"
+              value={prettyCurrency(member.depositBalance)}
+            />
+            <StatCard
+              description="Transactions still waiting to be processed."
+              label="Pending Transactions"
+              tone="warning"
+              value={String(member.pendingTransactions)}
+            />
+            <StatCard
+              description="Outstanding balance across active loans."
+              label="Outstanding Loan Balance"
+              value={prettyCurrency(member.outstandingLoanBalance)}
+            />
           </div>
 
-          <div className="grid grid-2">
+          <div className="grid gap-6 xl:grid-cols-2">
             <SectionCard title="Member Profile" description="Contact, branch, and assignment information for this member.">
-              <div className="list">
-                <div className="list-item">
-                  <strong>Branch</strong>
-                  <span>{member.branchName}</span>
-                </div>
-                <div className="list-item">
-                  <strong>Assigned Agent</strong>
-                  <span>
-                    {member.agentId ? (
+              <AdminDetailList>
+                <AdminDetailItem label="Branch" value={member.branchName} />
+                <AdminDetailItem
+                  label="Assigned Agent"
+                  value={
+                    member.agentId ? (
                       <Link className="font-semibold underline-offset-4 hover:underline" href={`/agents/${member.agentId}`}>
                         {member.agentName}
                       </Link>
                     ) : (
                       member.agentName
-                    )}
-                  </span>
-                </div>
-                <div className="list-item">
-                  <strong>Phone</strong>
-                  <span>{member.phone}</span>
-                </div>
-                <div className="list-item">
-                  <strong>Status</strong>
-                  <span className="chip">{member.status}</span>
-                </div>
-                <div className="list-item">
-                  <strong>Created</strong>
-                  <span>{member.createdAt ? prettyDate(member.createdAt) : "Unknown"}</span>
-                </div>
-                <div className="list-item">
-                  <strong>Member Since</strong>
-                  <span>
-                    {member.createdAt
+                    )
+                  }
+                />
+                <AdminDetailItem label="Phone" value={member.phone} />
+                <AdminDetailItem
+                  label="Status"
+                  value={<StatusBadge>{member.status}</StatusBadge>}
+                />
+                <AdminDetailItem
+                  label="Created"
+                  value={member.createdAt ? prettyDate(member.createdAt) : "Unknown"}
+                />
+                <AdminDetailItem
+                  label="Member Since"
+                  value={
+                    member.createdAt
                       ? `${prettyDate(member.createdAt)} (${formatElapsedTime(member.createdAt)} ago)`
-                      : "Unknown"}
-                  </span>
-                </div>
-                <div className="list-item">
-                  <strong>Occupation</strong>
-                  <span>{member.occupation ?? "No occupation"}</span>
-                </div>
-                <div className="list-item">
-                  <strong>Address</strong>
-                  <span>{member.address ?? "No address"}</span>
-                </div>
-              </div>
+                      : "Unknown"
+                  }
+                />
+                <AdminDetailItem
+                  label="Occupation"
+                  value={member.occupation ?? "No occupation"}
+                />
+                <AdminDetailItem label="Address" value={member.address ?? "No address"} />
+              </AdminDetailList>
             </SectionCard>
 
             <SectionCard title="Account Summary" description="Savings and deposit accounts linked to this member.">
-              <div className="list">
+              <AdminDetailList>
                 {accounts.map((account) => (
-                  <div className="list-item" key={account.id}>
-                    <div>
-                      <strong>{account.accountType === "savings" ? "Savings" : "Deposit"} Account</strong>
-                      <p className="muted">{account.accountNumber}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-medium">{prettyCurrency(account.balance)}</p>
-                      <p className="muted">{account.status}</p>
-                    </div>
-                  </div>
+                  <AdminDetailItem
+                    key={account.id}
+                    label={
+                      <div className="space-y-1">
+                        <p className="font-medium text-foreground">
+                          {account.accountType === "savings" ? "Savings" : "Deposit"} Account
+                        </p>
+                        <p className="text-sm text-muted-foreground">{account.accountNumber}</p>
+                      </div>
+                    }
+                    value={
+                      <div className="space-y-1 text-left sm:text-right">
+                        <p className="font-medium text-foreground">
+                          {prettyCurrency(account.balance)}
+                        </p>
+                        <p className="text-sm text-muted-foreground">{account.status}</p>
+                      </div>
+                    }
+                  />
                 ))}
                 {accounts.length === 0 ? (
-                  <p className="muted">No live accounts were found for this member yet.</p>
+                  <p className="text-sm text-muted-foreground">
+                    No live accounts were found for this member yet.
+                  </p>
                 ) : null}
-                <div className="list-item">
-                  <strong>Active Loans</strong>
-                  <span>{member.activeLoanCount}</span>
-                </div>
-                <div className="list-item">
-                  <strong>Outstanding Loan Balance</strong>
-                  <span>{prettyCurrency(member.outstandingLoanBalance)}</span>
-                </div>
-              </div>
+                <AdminDetailItem label="Active Loans" value={member.activeLoanCount} />
+                <AdminDetailItem
+                  label="Outstanding Loan Balance"
+                  value={prettyCurrency(member.outstandingLoanBalance)}
+                />
+              </AdminDetailList>
             </SectionCard>
           </div>
 
-          <div className="grid grid-2">
+          <div className="grid gap-6 xl:grid-cols-2">
             <SectionCard title="Transaction Trend" description="Deposit and withdrawal request movement across the most recent seven days.">
               {recentTransactions.length ? (
                 <ActivityTrendChart data={activityTrend} />
               ) : (
-                <p className="muted">No recent member transaction activity is available yet.</p>
+                <p className="text-sm text-muted-foreground">
+                  No recent member transaction activity is available yet.
+                </p>
               )}
             </SectionCard>
 
@@ -183,7 +189,9 @@ export default async function MemberDetailPage({
                   ]}
                 />
               ) : (
-                <p className="muted">Balance charts will appear after accounts are created.</p>
+                <p className="text-sm text-muted-foreground">
+                  Balance charts will appear after accounts are created.
+                </p>
               )}
             </SectionCard>
           </div>
@@ -192,16 +200,21 @@ export default async function MemberDetailPage({
             title="Reset Login Password"
             description="Generate a new temporary password for this member. The password must be changed at next login and any existing transaction PIN setup stays unchanged."
           >
-            <Notice detail={resolvedSearchParams?.detail} result={resolvedSearchParams?.result} />
+            <ResultNotice
+              detail={resolvedSearchParams?.detail}
+              errorFallback="Something went wrong."
+              result={resolvedSearchParams?.result}
+              successFallback="Saved successfully."
+            />
             {passwordResetFlash ? <PasswordResetNotice {...passwordResetFlash} /> : null}
             <form action={resetLoginPasswordAction}>
               <input name="targetProfileId" type="hidden" value={member.id} />
               <input name="targetRole" type="hidden" value="member" />
-              <div className="actions">
-                <button className="button-secondary" type="submit">
+              <ActionBar>
+                <Button type="submit" variant="outline">
                   Reset Login Password
-                </button>
-              </div>
+                </Button>
+              </ActionBar>
             </form>
           </SectionCard>
 
@@ -236,13 +249,17 @@ export default async function MemberDetailPage({
                 </TableBody>
               </Table>
             ) : (
-              <p className="muted">No transaction requests have been recorded for this member yet.</p>
+              <p className="text-sm text-muted-foreground">
+                No transaction requests have been recorded for this member yet.
+              </p>
             )}
           </SectionCard>
         </>
       ) : (
         <SectionCard title="Member not found">
-          <p className="muted">No live member record matches this route or your current branch scope.</p>
+          <p className="text-sm text-muted-foreground">
+            No live member record matches this route or your current branch scope.
+          </p>
         </SectionCard>
       )}
     </AdminShell>

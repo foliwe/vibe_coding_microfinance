@@ -1,26 +1,13 @@
 import { createAgentAction } from "../../actions";
+import { AdminFieldGrid, AdminFormField } from "../../../components/admin-form-field";
 import { AdminShell } from "../../../components/admin-shell";
+import { ResultNotice } from "../../../components/notice";
 import { SectionCard } from "../../../components/section-card";
+import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
+import { NativeSelect, NativeSelectOption } from "../../../components/ui/native-select";
 import { breadcrumb, withDashboardBreadcrumbs } from "../../../lib/breadcrumbs";
 import { getOnboardingPageContext } from "../../../lib/onboarding-data";
-
-function Notice({
-  detail,
-  result,
-}: {
-  detail?: string;
-  result?: string;
-}) {
-  if (!result) {
-    return null;
-  }
-
-  return (
-    <p className={`notice ${result === "success" ? "notice-success" : "notice-error"}`}>
-      {detail ?? (result === "success" ? "Saved successfully." : "Something went wrong.")}
-    </p>
-  );
-}
 
 export default async function CreateAgentPage({
   searchParams,
@@ -52,48 +39,57 @@ export default async function CreateAgentPage({
         title="Agent Setup"
         description="Admins can assign any branch. Branch managers can create agents only for their own branch."
       >
-        <Notice detail={params?.detail} result={params?.result} />
+        <ResultNotice
+          detail={params?.detail}
+          errorFallback="Something went wrong."
+          result={params?.result}
+          successFallback="Saved successfully."
+        />
         <form action={createAgentAction}>
-          <div className="form-grid">
-            <label className="field">
-              <span>Full Name</span>
-              <input name="fullName" placeholder="Field Agent One" required />
-            </label>
-            <label className="field">
-              <span>Email</span>
-              <input name="email" placeholder="agent@example.com" required type="email" />
-            </label>
-            <label className="field">
-              <span>Phone</span>
-              <input name="phone" placeholder="+2376..." required />
-            </label>
-            <label className="field">
-              <span>Temporary Password</span>
-              <input minLength={8} name="password" placeholder="Agent123456!" required />
-            </label>
-            <label className="field">
-              <span>Branch</span>
-              <select
+          <AdminFieldGrid className="mb-5">
+            <AdminFormField htmlFor="fullName" label="Full Name">
+              <Input id="fullName" name="fullName" placeholder="Field Agent One" required />
+            </AdminFormField>
+            <AdminFormField htmlFor="email" label="Email">
+              <Input
+                id="email"
+                name="email"
+                placeholder="agent@example.com"
+                required
+                type="email"
+              />
+            </AdminFormField>
+            <AdminFormField htmlFor="phone" label="Phone">
+              <Input id="phone" name="phone" placeholder="+2376..." required />
+            </AdminFormField>
+            <AdminFormField htmlFor="password" label="Temporary Password">
+              <Input
+                id="password"
+                minLength={8}
+                name="password"
+                placeholder="Agent123456!"
+                required
+              />
+            </AdminFormField>
+            <AdminFormField htmlFor="branchId" label="Branch">
+              <NativeSelect
                 defaultValue={profile.role === "branch_manager" ? profile.branch_id ?? "" : ""}
+                id="branchId"
                 name="branchId"
                 required
               >
-                <option value="" disabled>
+                <NativeSelectOption value="" disabled>
                   Select branch
-                </option>
+                </NativeSelectOption>
                 {branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
+                  <NativeSelectOption key={branch.id} value={branch.id}>
                     {branch.name} ({branch.code})
-                  </option>
+                  </NativeSelectOption>
                 ))}
-              </select>
-            </label>
-          </div>
-          <div className="actions">
-            <button className="button" type="submit">
-              Create Agent
-            </button>
-          </div>
+              </NativeSelect>
+            </AdminFormField>
+          </AdminFieldGrid>
+          <Button type="submit">Create Agent</Button>
         </form>
       </SectionCard>
     </AdminShell>

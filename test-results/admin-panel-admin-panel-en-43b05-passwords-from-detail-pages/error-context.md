@@ -1,0 +1,272 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e7] [cursor=pointer]:
+    - img [ref=e8]
+  - alert [ref=e11]
+  - generic [ref=e12]:
+    - generic [ref=e15]:
+      - link "Credit Union Admin Institution Control" [ref=e17] [cursor=pointer]:
+        - /url: /
+        - img [ref=e19]
+        - generic [ref=e23]:
+          - paragraph [ref=e24]: Credit Union Admin
+          - paragraph [ref=e25]: Institution Control
+      - generic [ref=e26]:
+        - generic [ref=e27]:
+          - generic [ref=e28]: Overview
+          - list [ref=e30]:
+            - listitem [ref=e31]:
+              - link "Dashboard" [ref=e32] [cursor=pointer]:
+                - /url: /
+                - img [ref=e33]
+                - generic [ref=e38]: Dashboard
+            - listitem [ref=e39]:
+              - link "Branches" [ref=e40] [cursor=pointer]:
+                - /url: /branches
+                - img [ref=e41]
+                - generic [ref=e45]: Branches
+        - generic [ref=e46]:
+          - generic [ref=e47]: People
+          - list [ref=e49]:
+            - listitem [ref=e50]:
+              - link "Members" [ref=e51] [cursor=pointer]:
+                - /url: /members
+                - img [ref=e52]
+                - generic [ref=e57]: Members
+            - listitem [ref=e58]:
+              - link "Create Member" [ref=e59] [cursor=pointer]:
+                - /url: /members/new
+                - img [ref=e60]
+                - generic [ref=e63]: Create Member
+            - listitem [ref=e64]:
+              - link "Agents" [ref=e65] [cursor=pointer]:
+                - /url: /agents
+                - img [ref=e66]
+                - generic [ref=e71]: Agents
+            - listitem [ref=e72]:
+              - link "Create Agent" [ref=e73] [cursor=pointer]:
+                - /url: /agents/new
+                - img [ref=e74]
+                - generic [ref=e77]: Create Agent
+            - listitem [ref=e78]:
+              - link "Managers" [ref=e79] [cursor=pointer]:
+                - /url: /managers
+                - img [ref=e80]
+                - generic [ref=e92]: Managers
+            - listitem [ref=e93]:
+              - link "Create Manager" [ref=e94] [cursor=pointer]:
+                - /url: /managers/new
+                - img [ref=e95]
+                - generic [ref=e98]: Create Manager
+        - generic [ref=e99]:
+          - generic [ref=e100]: Operations
+          - list [ref=e102]:
+            - listitem [ref=e103]:
+              - link "Transactions" [ref=e104] [cursor=pointer]:
+                - /url: /transactions
+                - img [ref=e105]
+                - generic [ref=e108]: Transactions
+              - list [ref=e109]:
+                - listitem [ref=e110]:
+                  - link "Deposit" [ref=e111] [cursor=pointer]:
+                    - /url: /transactions/deposit
+                    - generic [ref=e112]: Deposit
+                - listitem [ref=e113]:
+                  - link "Withdrawal" [ref=e114] [cursor=pointer]:
+                    - /url: /transactions/withdrawal
+                    - generic [ref=e115]: Withdrawal
+            - listitem [ref=e116]:
+              - link "Loans" [ref=e117] [cursor=pointer]:
+                - /url: /loans
+                - img [ref=e118]
+                - generic [ref=e121]: Loans
+            - listitem [ref=e122]:
+              - link "Reconciliation" [ref=e123] [cursor=pointer]:
+                - /url: /reconciliation
+                - img [ref=e124]
+                - generic [ref=e131]: Reconciliation
+            - listitem [ref=e132]:
+              - link "Staff Devices" [ref=e133] [cursor=pointer]:
+                - /url: /staff-devices
+                - img [ref=e134]
+                - generic [ref=e136]: Staff Devices
+            - listitem [ref=e137]:
+              - link "Reports" [ref=e138] [cursor=pointer]:
+                - /url: /reports
+                - img [ref=e139]
+                - generic [ref=e141]: Reports
+            - listitem [ref=e142]:
+              - link "Audit Log" [ref=e143] [cursor=pointer]:
+                - /url: /audit
+                - img [ref=e144]
+                - generic [ref=e147]: Audit Log
+            - listitem [ref=e148]:
+              - link "Settings" [ref=e149] [cursor=pointer]:
+                - /url: /settings
+                - img [ref=e150]
+                - generic [ref=e153]: Settings
+      - generic [ref=e154]:
+        - generic [ref=e155]:
+          - paragraph [ref=e156]: Main Admin
+          - paragraph [ref=e157]: Administrator
+          - paragraph [ref=e158]: Current scope
+          - paragraph [ref=e159]: All branches
+        - button "Sign out" [ref=e161]:
+          - img
+          - generic [ref=e162]: Sign out
+      - button "Toggle Sidebar" [ref=e163]
+    - main [ref=e164]:
+      - generic [ref=e167]:
+        - button "Toggle Sidebar" [ref=e168]:
+          - img
+          - generic [ref=e169]: Toggle Sidebar
+        - generic [ref=e170]:
+          - navigation "breadcrumb" [ref=e171]:
+            - list [ref=e172]:
+              - listitem [ref=e173]:
+                - link "Admin Dashboard" [ref=e174] [cursor=pointer]:
+                  - /url: /
+              - listitem [ref=e175]:
+                - img [ref=e176]
+              - listitem [ref=e178]:
+                - generic [ref=e179]: People
+              - listitem [ref=e180]:
+                - img [ref=e181]
+              - listitem [ref=e183]:
+                - link "Managers" [ref=e184] [cursor=pointer]:
+                  - /url: /managers
+              - listitem [ref=e185]:
+                - img [ref=e186]
+              - listitem [ref=e188]:
+                - link "Reset Manager pw-reset-1778963492911-9531" [disabled] [ref=e189]
+          - generic [ref=e190]:
+            - generic [ref=e191]: All branches
+            - generic [ref=e192]: Live Supabase
+          - generic [ref=e193]:
+            - heading "Reset Manager pw-reset-1778963492911-9531" [level=1] [ref=e194]
+            - paragraph [ref=e195]: Branch manager profile with assigned branch context and quick operational summary.
+      - generic [ref=e196]:
+        - generic [ref=e197]:
+          - generic [ref=e198]:
+            - generic [ref=e200]:
+              - generic [ref=e201]:
+                - generic [ref=e202]: Assigned Branch
+                - generic [ref=e203]: Bamenda Branch
+              - generic [ref=e205]: Overview
+            - paragraph [ref=e207]: Current branch assignment for this manager.
+          - generic [ref=e208]:
+            - generic [ref=e210]:
+              - generic [ref=e211]:
+                - generic [ref=e212]: Members
+                - generic [ref=e213]: "1"
+              - generic [ref=e215]: Overview
+            - paragraph [ref=e217]: Members in the assigned branch.
+          - generic [ref=e218]:
+            - generic [ref=e220]:
+              - generic [ref=e221]:
+                - generic [ref=e222]: Agents
+                - generic [ref=e223]: "2"
+              - generic [ref=e225]: Overview
+            - paragraph [ref=e227]: Agents working inside the assigned branch.
+          - generic [ref=e228]:
+            - generic [ref=e230]:
+              - generic [ref=e231]:
+                - generic [ref=e232]: Pending Approvals
+                - generic [ref=e233]: "4"
+              - generic [ref=e235]: Attention
+            - paragraph [ref=e237]: Pending approvals inside the branch.
+        - generic [ref=e238]:
+          - generic [ref=e239]:
+            - generic [ref=e241]:
+              - generic [ref=e242]: Manager Profile
+              - generic [ref=e243]: Identity, contact information, and current assignment for this branch manager.
+            - generic [ref=e245]:
+              - generic [ref=e246]:
+                - generic [ref=e247]: Email
+                - generic [ref=e248]: pw-reset-1778963492911-9531-manager@example.com
+              - generic [ref=e249]:
+                - generic [ref=e250]: Phone
+                - generic [ref=e251]: "+2377129119531"
+              - generic [ref=e252]:
+                - generic [ref=e253]: Status
+                - generic [ref=e255]: active
+              - generic [ref=e256]:
+                - generic [ref=e257]: Assigned Branch
+                - link "Bamenda Branch" [ref=e259] [cursor=pointer]:
+                  - /url: /branches/677e484d-4b97-49a6-93e4-2d46df9cfd9f
+          - generic [ref=e260]:
+            - generic [ref=e262]:
+              - generic [ref=e263]: Manager Actions
+              - generic [ref=e264]: Common follow-up links for branch ownership and staffing workflows.
+            - generic [ref=e266]:
+              - link "Back to Managers" [ref=e267] [cursor=pointer]:
+                - /url: /managers
+              - link "View Branch" [ref=e268] [cursor=pointer]:
+                - /url: /branches/677e484d-4b97-49a6-93e4-2d46df9cfd9f
+              - link "Create Manager" [ref=e269] [cursor=pointer]:
+                - /url: /managers/new
+        - generic [ref=e270]:
+          - generic [ref=e272]:
+            - generic [ref=e273]: Reset Login Password
+            - generic [ref=e274]: Generate a new temporary password for this branch manager. The password must be changed at next login and the current transaction PIN stays unchanged.
+          - generic [ref=e275]:
+            - alert [ref=e276]:
+              - img [ref=e277]
+              - generic [ref=e280]: Temporary password generated. Credentials are ready below for secure handoff.
+            - alert [ref=e281]:
+              - img [ref=e282]
+              - generic [ref=e285]: Temporary login credentials for Reset Manager pw-reset-1778963492911-9531
+              - generic [ref=e286]:
+                - paragraph [ref=e287]: "Email: pw-reset-1778963492911-9531-manager@example.com"
+                - paragraph [ref=e288]: "Temporary password: 3KUq4CEys6Pc"
+                - paragraph [ref=e289]: This password must be changed at the next login. Transaction PIN remains unchanged.
+            - button "Reset Login Password" [ref=e292]
+        - generic [ref=e293]:
+          - generic [ref=e294]:
+            - generic [ref=e296]:
+              - generic [ref=e297]:
+                - generic [ref=e298]: Branch Savings
+                - generic [ref=e299]: FCFA 113
+              - generic [ref=e301]: Healthy
+            - paragraph [ref=e303]: Savings balance currently held in branch accounts.
+          - generic [ref=e304]:
+            - generic [ref=e306]:
+              - generic [ref=e307]:
+                - generic [ref=e308]: Branch Deposits
+                - generic [ref=e309]: FCFA 38
+              - generic [ref=e311]: Overview
+            - paragraph [ref=e313]: Deposit balances at branch scope.
+          - generic [ref=e314]:
+            - generic [ref=e316]:
+              - generic [ref=e317]:
+                - generic [ref=e318]: Outstanding Principal
+                - generic [ref=e319]: FCFA 0
+              - generic [ref=e321]: Overview
+            - paragraph [ref=e323]: Loan principal still outstanding.
+          - generic [ref=e324]:
+            - generic [ref=e326]:
+              - generic [ref=e327]:
+                - generic [ref=e328]: Cash Variance
+                - generic [ref=e329]: FCFA 0
+              - generic [ref=e331]: Overview
+            - paragraph [ref=e333]: Current cash variance in the branch.
+        - generic [ref=e334]:
+          - generic [ref=e336]:
+            - generic [ref=e337]: Assigned Branch Summary
+            - generic [ref=e338]: High-level branch posture for the manager's current operational scope.
+          - generic [ref=e340]:
+            - generic [ref=e341]:
+              - generic [ref=e342]: Branch
+              - generic [ref=e343]: Bamenda Branch
+            - generic [ref=e344]:
+              - generic [ref=e345]: Manager
+              - generic [ref=e346]: Reset Manager pw-reset-1778963492911-9531
+            - generic [ref=e347]:
+              - generic [ref=e348]: Total Loans
+              - generic [ref=e349]: FCFA 0
+            - generic [ref=e350]:
+              - generic [ref=e351]: Pending Approvals
+              - generic [ref=e352]: "4"
+```

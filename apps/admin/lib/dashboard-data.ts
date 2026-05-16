@@ -1440,7 +1440,10 @@ export async function getMembersPageData(): Promise<MembersPageData> {
 
   const [{ data: memberRows }, { data: agentRows }, { data: branchRows }] = await Promise.all([
     memberIds.length
-      ? supabase.from("profiles").select("id, full_name, phone").in("id", memberIds)
+      ? supabase
+          .from("profiles")
+          .select("id, full_name, phone, created_at")
+          .in("id", memberIds)
       : Promise.resolve({ data: [] as ProfileRow[] }),
     agentIds.length
       ? supabase.from("profiles").select("id, full_name").in("id", agentIds)
@@ -1472,6 +1475,7 @@ export async function getMembersPageData(): Promise<MembersPageData> {
         agentId: member.assigned_agent_id,
         agentName: agentMap.get(member.assigned_agent_id ?? "") ?? "Unassigned",
         branchName: branchMap.get(member.branch_id) ?? member.branch_id,
+        createdAt: memberRow?.created_at ?? null,
         phone: memberRow?.phone ?? "No phone",
         status: member.status,
         occupation: member.occupation,
@@ -1754,6 +1758,7 @@ export async function getAgentDetailPageData(agentId: string): Promise<AgentDeta
         agentId: member.assigned_agent_id,
         agentName: agentRow.full_name,
         branchName: (branchRow as BranchRow | null)?.name ?? member.branch_id,
+        createdAt: memberRow?.created_at ?? null,
         phone: memberRow?.phone ?? "No phone",
         status: member.status,
         occupation: member.occupation,

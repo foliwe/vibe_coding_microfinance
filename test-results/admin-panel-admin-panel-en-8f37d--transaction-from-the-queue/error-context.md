@@ -1,0 +1,296 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e5]:
+      - link "Credit Union Admin Bamenda Branch" [ref=e7] [cursor=pointer]:
+        - /url: /branch
+        - img [ref=e9]
+        - generic [ref=e13]:
+          - paragraph [ref=e14]: Credit Union Admin
+          - paragraph [ref=e15]: Bamenda Branch
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - generic [ref=e18]: Overview
+          - list [ref=e20]:
+            - listitem [ref=e21]:
+              - link "Branch Dashboard" [ref=e22] [cursor=pointer]:
+                - /url: /branch
+                - img [ref=e23]
+                - generic [ref=e25]: Branch Dashboard
+        - generic [ref=e26]:
+          - generic [ref=e27]: People
+          - list [ref=e29]:
+            - listitem [ref=e30]:
+              - link "Members" [ref=e31] [cursor=pointer]:
+                - /url: /members
+                - img [ref=e32]
+                - generic [ref=e37]: Members
+            - listitem [ref=e38]:
+              - link "Create Member" [ref=e39] [cursor=pointer]:
+                - /url: /members/new
+                - img [ref=e40]
+                - generic [ref=e43]: Create Member
+            - listitem [ref=e44]:
+              - link "Agents" [ref=e45] [cursor=pointer]:
+                - /url: /agents
+                - img [ref=e46]
+                - generic [ref=e51]: Agents
+            - listitem [ref=e52]:
+              - link "Create Agent" [ref=e53] [cursor=pointer]:
+                - /url: /agents/new
+                - img [ref=e54]
+                - generic [ref=e57]: Create Agent
+        - generic [ref=e58]:
+          - generic [ref=e59]: Operations
+          - list [ref=e61]:
+            - listitem [ref=e62]:
+              - link "Transactions" [ref=e63] [cursor=pointer]:
+                - /url: /transactions
+                - img [ref=e64]
+                - generic [ref=e67]: Transactions
+              - list [ref=e68]:
+                - listitem [ref=e69]:
+                  - link "Deposit" [ref=e70] [cursor=pointer]:
+                    - /url: /transactions/deposit
+                    - generic [ref=e71]: Deposit
+                - listitem [ref=e72]:
+                  - link "Withdrawal" [ref=e73] [cursor=pointer]:
+                    - /url: /transactions/withdrawal
+                    - generic [ref=e74]: Withdrawal
+            - listitem [ref=e75]:
+              - link "Loans" [ref=e76] [cursor=pointer]:
+                - /url: /loans
+                - img [ref=e77]
+                - generic [ref=e80]: Loans
+            - listitem [ref=e81]:
+              - link "Reconciliation" [ref=e82] [cursor=pointer]:
+                - /url: /reconciliation
+                - img [ref=e83]
+                - generic [ref=e90]: Reconciliation
+            - listitem [ref=e91]:
+              - link "Staff Devices" [ref=e92] [cursor=pointer]:
+                - /url: /staff-devices
+                - img [ref=e93]
+                - generic [ref=e95]: Staff Devices
+            - listitem [ref=e96]:
+              - link "Reports" [ref=e97] [cursor=pointer]:
+                - /url: /reports
+                - img [ref=e98]
+                - generic [ref=e100]: Reports
+            - listitem [ref=e101]:
+              - link "Audit Log" [ref=e102] [cursor=pointer]:
+                - /url: /audit
+                - img [ref=e103]
+                - generic [ref=e106]: Audit Log
+            - listitem [ref=e107]:
+              - link "Settings" [ref=e108] [cursor=pointer]:
+                - /url: /settings
+                - img [ref=e109]
+                - generic [ref=e112]: Settings
+      - generic [ref=e113]:
+        - generic [ref=e114]:
+          - paragraph [ref=e115]: Bamenda Manager
+          - paragraph [ref=e116]: Branch Manager
+          - paragraph [ref=e117]: Current scope
+          - paragraph [ref=e118]: Bamenda Branch
+        - button "Sign out" [ref=e120]:
+          - img
+          - generic [ref=e121]: Sign out
+      - button "Toggle Sidebar" [ref=e122]
+    - main [ref=e123]:
+      - generic [ref=e126]:
+        - button "Toggle Sidebar" [ref=e127]:
+          - img
+          - generic [ref=e128]: Toggle Sidebar
+        - generic [ref=e129]:
+          - navigation "breadcrumb" [ref=e130]:
+            - list [ref=e131]:
+              - listitem [ref=e132]:
+                - link "Branch Dashboard" [ref=e133] [cursor=pointer]:
+                  - /url: /branch
+              - listitem [ref=e134]:
+                - img [ref=e135]
+              - listitem [ref=e137]:
+                - link "Transactions" [disabled] [ref=e138]
+          - generic [ref=e139]:
+            - generic [ref=e140]: Bamenda Branch
+            - generic [ref=e141]: Live Supabase
+          - generic [ref=e142]:
+            - heading "Transactions" [level=1] [ref=e143]
+            - paragraph [ref=e144]: Pending approvals stay pinned at the top while full transaction history remains searchable below.
+      - generic [ref=e145]:
+        - alert [ref=e146]:
+          - img [ref=e147]
+          - generic [ref=e150]: Transaction approved.
+        - generic [ref=e151]:
+          - link "New Deposit" [ref=e152] [cursor=pointer]:
+            - /url: /transactions/deposit
+          - link "New Withdrawal" [ref=e153] [cursor=pointer]:
+            - /url: /transactions/withdrawal
+        - generic [ref=e154]:
+          - generic [ref=e156]:
+            - generic [ref=e157]: Filters
+            - generic [ref=e158]: Narrow both the pending queue and full history with the same transaction filters.
+          - generic [ref=e160]:
+            - generic [ref=e161]:
+              - group [ref=e162]:
+                - generic [ref=e163]: Transaction type
+                - generic [ref=e165]:
+                  - combobox "Transaction type" [ref=e166]:
+                    - option "All types" [selected]
+                    - option "Deposit"
+                    - option "Withdrawal"
+                  - img
+              - group [ref=e167]:
+                - generic [ref=e168]: Account type
+                - generic [ref=e170]:
+                  - combobox "Account type" [ref=e171]:
+                    - option "All accounts" [selected]
+                    - option "Savings"
+                    - option "Deposit"
+                  - img
+              - group [ref=e172]:
+                - generic [ref=e173]: Branch
+                - generic [ref=e174]:
+                  - textbox "Branch" [disabled]: Bamenda Branch
+              - group [ref=e175]:
+                - generic [ref=e176]: Agent
+                - generic [ref=e178]:
+                  - combobox "Agent" [ref=e179]:
+                    - option "All agents" [selected]
+                    - option "Field Agent One"
+                  - img
+            - generic [ref=e180]:
+              - button "Apply Filters" [ref=e181]
+              - link "Clear Filters" [ref=e182] [cursor=pointer]:
+                - /url: /transactions
+        - generic [ref=e183]:
+          - generic [ref=e185]:
+            - generic [ref=e186]: Pending Approval Queue
+            - generic [ref=e187]: Agent-originated transactions still waiting for branch or admin review.
+          - table [ref=e191]:
+            - rowgroup [ref=e192]:
+              - row "Reference Submitted Branch Member Account Type Amount Agent Status Action" [ref=e193]:
+                - columnheader "Reference" [ref=e194]
+                - columnheader "Submitted" [ref=e195]
+                - columnheader "Branch" [ref=e196]
+                - columnheader "Member" [ref=e197]
+                - columnheader "Account" [ref=e198]
+                - columnheader "Type" [ref=e199]
+                - columnheader "Amount" [ref=e200]
+                - columnheader "Agent" [ref=e201]
+                - columnheader "Status" [ref=e202]
+                - columnheader "Action" [ref=e203]
+            - rowgroup [ref=e204]:
+              - row "C1A8A1F2-4D8C-44B5-A254-914086C4B684 16 May, 10:03 Bamenda Branch Member One savings deposit FCFA 19 Field Agent One pending_approval Approve Reject" [ref=e205]:
+                - cell "C1A8A1F2-4D8C-44B5-A254-914086C4B684" [ref=e206]
+                - cell "16 May, 10:03" [ref=e207]
+                - cell "Bamenda Branch" [ref=e208]
+                - cell "Member One" [ref=e209]
+                - cell "savings" [ref=e210]
+                - cell "deposit" [ref=e211]
+                - cell "FCFA 19" [ref=e212]
+                - cell "Field Agent One" [ref=e213]
+                - cell "pending_approval" [ref=e214]:
+                  - generic [ref=e215]: pending_approval
+                - cell "Approve Reject" [ref=e216]:
+                  - generic [ref=e217]:
+                    - button "Approve" [ref=e219]
+                    - button "Reject" [ref=e221]
+              - row "D1827130-B769-45C0-A556-FF426DC5B8CE 16 May, 10:02 Bamenda Branch Member One savings deposit FCFA 19 Field Agent One pending_approval Approve Reject" [ref=e222]:
+                - cell "D1827130-B769-45C0-A556-FF426DC5B8CE" [ref=e223]
+                - cell "16 May, 10:02" [ref=e224]
+                - cell "Bamenda Branch" [ref=e225]
+                - cell "Member One" [ref=e226]
+                - cell "savings" [ref=e227]
+                - cell "deposit" [ref=e228]
+                - cell "FCFA 19" [ref=e229]
+                - cell "Field Agent One" [ref=e230]
+                - cell "pending_approval" [ref=e231]:
+                  - generic [ref=e232]: pending_approval
+                - cell "Approve Reject" [ref=e233]:
+                  - generic [ref=e234]:
+                    - button "Approve" [ref=e236]
+                    - button "Reject" [ref=e238]
+              - row "F7595526-9A26-4C42-8131-2B72B4950577 16 May, 10:02 Bamenda Branch Member One savings deposit FCFA 43 Field Agent One pending_approval Approve Reject" [ref=e239]:
+                - cell "F7595526-9A26-4C42-8131-2B72B4950577" [ref=e240]
+                - cell "16 May, 10:02" [ref=e241]
+                - cell "Bamenda Branch" [ref=e242]
+                - cell "Member One" [ref=e243]
+                - cell "savings" [ref=e244]
+                - cell "deposit" [ref=e245]
+                - cell "FCFA 43" [ref=e246]
+                - cell "Field Agent One" [ref=e247]
+                - cell "pending_approval" [ref=e248]:
+                  - generic [ref=e249]: pending_approval
+                - cell "Approve Reject" [ref=e250]:
+                  - generic [ref=e251]:
+                    - button "Approve" [ref=e253]
+                    - button "Reject" [ref=e255]
+        - generic [ref=e256]:
+          - generic [ref=e258]:
+            - generic [ref=e259]: Transaction History
+            - generic [ref=e260]: All scoped transaction records except the still-pending approval queue above.
+          - table [ref=e264]:
+            - rowgroup [ref=e265]:
+              - row "Reference Submitted Branch Member Account Type Amount Agent Status" [ref=e266]:
+                - columnheader "Reference" [ref=e267]
+                - columnheader "Submitted" [ref=e268]
+                - columnheader "Branch" [ref=e269]
+                - columnheader "Member" [ref=e270]
+                - columnheader "Account" [ref=e271]
+                - columnheader "Type" [ref=e272]
+                - columnheader "Amount" [ref=e273]
+                - columnheader "Agent" [ref=e274]
+                - columnheader "Status" [ref=e275]
+            - rowgroup [ref=e276]:
+              - row "67022C44-7A87-4626-A864-3FC97B4B89F7 16 May, 22:30 Bamenda Branch Member One savings deposit FCFA 43 Field Agent One approved" [ref=e277]:
+                - cell "67022C44-7A87-4626-A864-3FC97B4B89F7" [ref=e278]
+                - cell "16 May, 22:30" [ref=e279]
+                - cell "Bamenda Branch" [ref=e280]
+                - cell "Member One" [ref=e281]
+                - cell "savings" [ref=e282]
+                - cell "deposit" [ref=e283]
+                - cell "FCFA 43" [ref=e284]
+                - cell "Field Agent One" [ref=e285]
+                - cell "approved" [ref=e286]:
+                  - generic [ref=e287]: approved
+              - row "8AC34059-E680-4E13-9F37-DF451D80F286 16 May, 22:30 Bamenda Branch Member One savings deposit FCFA 28 Field Agent One approved" [ref=e288]:
+                - cell "8AC34059-E680-4E13-9F37-DF451D80F286" [ref=e289]
+                - cell "16 May, 22:30" [ref=e290]
+                - cell "Bamenda Branch" [ref=e291]
+                - cell "Member One" [ref=e292]
+                - cell "savings" [ref=e293]
+                - cell "deposit" [ref=e294]
+                - cell "FCFA 28" [ref=e295]
+                - cell "Field Agent One" [ref=e296]
+                - cell "approved" [ref=e297]:
+                  - generic [ref=e298]: approved
+              - row "F4BAC9A3-9857-4D19-8626-F8EB5E2561F5 16 May, 22:30 Bamenda Branch Member One deposit deposit FCFA 38 Field Agent One approved" [ref=e299]:
+                - cell "F4BAC9A3-9857-4D19-8626-F8EB5E2561F5" [ref=e300]
+                - cell "16 May, 22:30" [ref=e301]
+                - cell "Bamenda Branch" [ref=e302]
+                - cell "Member One" [ref=e303]
+                - cell "deposit" [ref=e304]
+                - cell "deposit" [ref=e305]
+                - cell "FCFA 38" [ref=e306]
+                - cell "Field Agent One" [ref=e307]
+                - cell "approved" [ref=e308]:
+                  - generic [ref=e309]: approved
+              - row "302BF46F-9FF4-4EC4-AA60-B75AE9FE5437 16 May, 10:02 Bamenda Branch Member One savings deposit FCFA 43 Field Agent One approved" [ref=e310]:
+                - cell "302BF46F-9FF4-4EC4-AA60-B75AE9FE5437" [ref=e311]
+                - cell "16 May, 10:02" [ref=e312]
+                - cell "Bamenda Branch" [ref=e313]
+                - cell "Member One" [ref=e314]
+                - cell "savings" [ref=e315]
+                - cell "deposit" [ref=e316]
+                - cell "FCFA 43" [ref=e317]
+                - cell "Field Agent One" [ref=e318]
+                - cell "approved" [ref=e319]:
+                  - generic [ref=e320]: approved
+  - button "Open Next.js Dev Tools" [ref=e326] [cursor=pointer]:
+    - img [ref=e327]
+  - alert [ref=e330]
+```

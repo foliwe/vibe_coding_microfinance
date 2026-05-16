@@ -1,26 +1,13 @@
 import { createBranchAction } from "../../actions";
+import { AdminFieldGrid, AdminFormField } from "../../../components/admin-form-field";
 import { AdminShell } from "../../../components/admin-shell";
+import { ResultNotice } from "../../../components/notice";
 import { SectionCard } from "../../../components/section-card";
+import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
+import { NativeSelect, NativeSelectOption } from "../../../components/ui/native-select";
 import { breadcrumb, withDashboardBreadcrumbs } from "../../../lib/breadcrumbs";
 import { getOnboardingPageContext } from "../../../lib/onboarding-data";
-
-function Notice({
-  detail,
-  result,
-}: {
-  detail?: string;
-  result?: string;
-}) {
-  if (!result) {
-    return null;
-  }
-
-  return (
-    <p className={`notice ${result === "success" ? "notice-success" : "notice-error"}`}>
-      {detail ?? (result === "success" ? "Saved successfully." : "Something went wrong.")}
-    </p>
-  );
-}
 
 export default async function CreateBranchPage({
   searchParams,
@@ -49,46 +36,48 @@ export default async function CreateBranchPage({
         title="Branch Setup"
         description="Admins create branches. Branch codes must be exactly 3 uppercase letters or numbers. A manager can be assigned now or later from the branch-manager creation flow."
       >
-        <Notice detail={params?.detail} result={params?.result} />
+        <ResultNotice
+          detail={params?.detail}
+          errorFallback="Something went wrong."
+          result={params?.result}
+          successFallback="Saved successfully."
+        />
         <form action={createBranchAction}>
-          <div className="form-grid">
-            <label className="field">
-              <span>Branch Name</span>
-              <input name="name" placeholder="Bamenda Central" required />
-            </label>
-            <label className="field">
-              <span>Branch Code</span>
-              <input maxLength={3} name="code" pattern="[A-Za-z0-9]{3}" placeholder="BAM" required />
-            </label>
-            <label className="field">
-              <span>City</span>
-              <input name="city" placeholder="Bamenda" />
-            </label>
-            <label className="field">
-              <span>Region</span>
-              <input name="region" placeholder="Northwest" />
-            </label>
-            <label className="field">
-              <span>Phone</span>
-              <input name="phone" placeholder="+2376..." />
-            </label>
-            <label className="field">
-              <span>Branch Manager</span>
-              <select defaultValue="" name="managerProfileId">
-                <option value="">Assign later</option>
+          <AdminFieldGrid className="mb-5">
+            <AdminFormField htmlFor="name" label="Branch Name">
+              <Input id="name" name="name" placeholder="Bamenda Central" required />
+            </AdminFormField>
+            <AdminFormField htmlFor="code" label="Branch Code">
+              <Input
+                id="code"
+                maxLength={3}
+                name="code"
+                pattern="[A-Za-z0-9]{3}"
+                placeholder="BAM"
+                required
+              />
+            </AdminFormField>
+            <AdminFormField htmlFor="city" label="City">
+              <Input id="city" name="city" placeholder="Bamenda" />
+            </AdminFormField>
+            <AdminFormField htmlFor="region" label="Region">
+              <Input id="region" name="region" placeholder="Northwest" />
+            </AdminFormField>
+            <AdminFormField htmlFor="phone" label="Phone">
+              <Input id="phone" name="phone" placeholder="+2376..." />
+            </AdminFormField>
+            <AdminFormField htmlFor="managerProfileId" label="Branch Manager">
+              <NativeSelect defaultValue="" id="managerProfileId" name="managerProfileId">
+                <NativeSelectOption value="">Assign later</NativeSelectOption>
                 {managers.map((manager) => (
-                  <option key={manager.id} value={manager.id}>
+                  <NativeSelectOption key={manager.id} value={manager.id}>
                     {manager.fullName} · {manager.branchName}
-                  </option>
+                  </NativeSelectOption>
                 ))}
-              </select>
-            </label>
-          </div>
-          <div className="actions">
-            <button className="button" type="submit">
-              Create Branch
-            </button>
-          </div>
+              </NativeSelect>
+            </AdminFormField>
+          </AdminFieldGrid>
+          <Button type="submit">Create Branch</Button>
         </form>
       </SectionCard>
     </AdminShell>

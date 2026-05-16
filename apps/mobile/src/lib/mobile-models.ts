@@ -42,6 +42,30 @@ export interface SyncQueueItem {
   note: string;
 }
 
+export interface MobileAccountCard {
+  id: string;
+  accountNumber: string;
+  accountType: "savings" | "deposit";
+  balance: number;
+  latestActivity: string;
+  pendingTransactions: number;
+  status: string;
+}
+
+export interface MobileAccountStatement {
+  account: MobileAccountCard;
+  transactions: TransactionRequest[];
+}
+
+export interface MobileNotificationItem {
+  id: string;
+  amount?: number;
+  createdAt: string;
+  status: string;
+  subtitle: string;
+  title: string;
+}
+
 export interface AgentDashboard {
   syncState: SyncState;
   pendingSyncCount: number;
