@@ -9,6 +9,7 @@
   "scripts": {
     "dev:admin": "npm run dev --workspace @credit-union/admin",
     "dev:mobile": "npm run dev --workspace @credit-union/mobile --",
+    "create:admin-auth": "node scripts/create-admin-auth-user.mjs",
     "create:test-admin": "node scripts/create-test-admin.mjs",
     "create:test-users": "node scripts/bootstrap-test-users.mjs",
     "seed:branch-managers": "node scripts/seed-branch-managers.mjs",

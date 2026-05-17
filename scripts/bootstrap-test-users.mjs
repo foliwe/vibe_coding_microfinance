@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { loadEnvFile } from "node:process";
 
@@ -35,6 +36,8 @@ const TEST_MEMBER_PASSWORD = process.env.TEST_MEMBER_PASSWORD ?? "Member123456!"
 const TEST_MEMBER_NAME = process.env.TEST_MEMBER_NAME ?? "Member One";
 const TEST_MEMBER_PHONE = process.env.TEST_MEMBER_PHONE ?? "+237600000103";
 const TEST_MEMBER_ID_NUMBER = process.env.TEST_MEMBER_ID_NUMBER ?? "MEMBER1-260402-2160";
+const TEST_ADMIN_EMAIL = process.env.TEST_ADMIN_EMAIL ?? "admin@example.com";
+const TEST_ADMIN_PASSWORD = process.env.TEST_ADMIN_PASSWORD ?? "Admin123456!";
 
 function fail(message) {
   console.error(`\nError: ${message}\n`);
@@ -55,6 +58,10 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
     persistSession: false,
   },
 });
+
+function runNodeScript(path) {
+  execFileSync(process.execPath, [path], { stdio: "inherit" });
+}
 
 async function ensureAuthUser({ email, password, fullName }) {
   const listResponse = await supabase.auth.admin.listUsers();
@@ -451,6 +458,8 @@ function branchScopedAccountNumber(code, suffix) {
 async function main() {
   console.log("\nBootstrapping test branch users...\n");
 
+  runNodeScript("scripts/create-test-admin.mjs");
+
   const branch = await getBranchByCode(TEST_BRANCH_CODE);
 
   const managerUser = await ensureAuthUser({
@@ -518,6 +527,9 @@ async function main() {
   await updateBranchManager(branch.id, managerProfile.id);
 
   console.log(`Branch ready: ${branch.name} (${branch.code})`);
+  console.log("");
+  console.log("Admin user:");
+  console.log(`- Admin: ${TEST_ADMIN_EMAIL} / ${TEST_ADMIN_PASSWORD}`);
   console.log("");
   console.log("Test users:");
   console.log(`- Branch manager: ${TEST_MANAGER_EMAIL} / ${TEST_MANAGER_PASSWORD}`);

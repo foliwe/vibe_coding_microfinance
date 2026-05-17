@@ -10,6 +10,22 @@ export SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
 npm run create:test-admin
 ```
 
+## Split path
+
+If you want a dedicated admin bootstrap command:
+
+```bash
+export NEXT_PUBLIC_SUPABASE_URL="https://your-project.supabase.co"
+export SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
+ADMIN_EMAIL="owner@example.com" \
+ADMIN_PASSWORD="StrongPassword123!" \
+ADMIN_NAME="Owner Admin" \
+ADMIN_PHONE="+237600000999" \
+npm run create:admin-auth
+```
+
+That command now creates or updates both the Supabase Auth user and the matching `public.profiles` admin row using the service role key. You do not need to run [`supabase/scripts/upsert-admin-profile.sql`](/Users/foliwefossung/Vibe_code/supabase/scripts/upsert-admin-profile.sql) for this flow.
+
 Default credentials:
 
 - email: `admin@example.com`

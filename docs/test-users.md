@@ -16,6 +16,7 @@ Default branch:
 
 Default credentials:
 
+- admin: `admin@example.com` / `Admin123456!`
 - branch manager: `manager@example.com` / `Manager123456!`
 - agent: `agent@example.com` / `Agent123456!`
 - member: `MMBAMME01` / `Member123456!`
@@ -27,7 +28,7 @@ Seeded accounts:
 
 ## What the script does
 
-- creates or reuses Supabase Auth users for a branch manager, agent, and member
+- creates or reuses the default admin plus Supabase Auth users for a branch manager, agent, and member
 - upserts matching rows into `public.profiles`
 - upserts `staff_users` rows for the branch manager and agent
 - upserts the member profile with a sign-in code and active agent assignment
@@ -56,7 +57,7 @@ You can also override any of the default names, phones, passwords, member ID num
 
 After bootstrapping:
 
-1. Sign in to the admin app as the branch manager.
+1. Sign in to the admin app as `admin@example.com` or as the branch manager.
 2. Sign in to the mobile app as the agent and submit a deposit.
 3. Approve the transaction from the admin transactions page.
 4. Sign in to the mobile app as the member with the generated sign-in code and refresh balances/history.
