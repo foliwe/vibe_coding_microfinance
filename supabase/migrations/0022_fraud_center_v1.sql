@@ -1017,6 +1017,9 @@ $$;
 
 grant select on public.fraud_alerts to authenticated, service_role;
 
+revoke all on function public.upsert_fraud_alert(uuid, uuid, uuid, uuid, uuid, text, integer, text, text, jsonb, text) from public, anon, authenticated;
+grant execute on function public.upsert_fraud_alert(uuid, uuid, uuid, uuid, uuid, text, integer, text, text, jsonb, text) to service_role;
+
 revoke all on function public.evaluate_fraud_event(text, uuid, uuid, uuid, uuid, jsonb) from public, anon, authenticated;
 grant execute on function public.evaluate_fraud_event(text, uuid, uuid, uuid, uuid, jsonb) to authenticated, service_role;
 

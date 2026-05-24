@@ -487,6 +487,10 @@ type ReportJobTableRow = {
   created_at: string;
 };
 
+const FRAUD_ALERT_PAGE_SIZE = 1000;
+const FRAUD_ALERT_SELECT =
+  "id, branch_id, agent_profile_id, member_profile_id, transaction_request_id, cash_reconciliation_id, rule_id, severity, score, status, title, summary, evidence, fingerprint, detected_at, last_seen_at, resolved_at, resolution_note, assigned_to";
+
 function emptyProfile(role: UserRole = "admin"): AdminProfile {
   return {
     id: `empty-${role}`,
@@ -2339,18 +2343,35 @@ export async function getFraudPageData(context?: DashboardAuthContext): Promise<
     context,
   );
   const currentBranchLabel = await getCurrentBranchLabel(supabase, profile);
-  const alertQuery = supabase
-    .from("fraud_alerts")
-    .select(
-      "id, branch_id, agent_profile_id, member_profile_id, transaction_request_id, cash_reconciliation_id, rule_id, severity, score, status, title, summary, evidence, fingerprint, detected_at, last_seen_at, resolved_at, resolution_note, assigned_to",
-    )
-    .order("last_seen_at", { ascending: false })
-    .limit(200);
+  const alertRowsPromise = (async () => {
+    const rows: FraudAlertTableRow[] = [];
 
-  const scopedAlertQuery =
-    profile.role === "branch_manager" && profile.branch_id
-      ? alertQuery.eq("branch_id", profile.branch_id)
-      : alertQuery;
+    for (let page = 0; ; page += 1) {
+      const from = page * FRAUD_ALERT_PAGE_SIZE;
+      const to = from + FRAUD_ALERT_PAGE_SIZE - 1;
+      const alertQuery = supabase
+        .from("fraud_alerts")
+        .select(FRAUD_ALERT_SELECT)
+        .order("last_seen_at", { ascending: false })
+        .range(from, to);
+
+      const scopedAlertQuery =
+        profile.role === "branch_manager" && profile.branch_id
+          ? alertQuery.eq("branch_id", profile.branch_id)
+          : alertQuery;
+
+      const pageRows = readSupabaseRows<FraudAlertTableRow>(
+        await scopedAlertQuery,
+        "Load fraud alerts",
+      );
+
+      rows.push(...pageRows);
+
+      if (pageRows.length < FRAUD_ALERT_PAGE_SIZE) {
+        return rows;
+      }
+    }
+  })();
 
   const approvalTimeQuery = supabase
     .from("transaction_requests")
@@ -2365,16 +2386,12 @@ export async function getFraudPageData(context?: DashboardAuthContext): Promise<
       ? approvalTimeQuery.eq("branch_id", profile.branch_id)
       : approvalTimeQuery;
 
-  const [alertResult, approvalResult, { branches }] = await Promise.all([
-    scopedAlertQuery,
+  const [alertRows, approvalResult, { branches }] = await Promise.all([
+    alertRowsPromise,
     scopedApprovalTimeQuery,
     getBranchMappings(supabase),
   ]);
 
-  const alertRows = readSupabaseRows<FraudAlertTableRow>(
-    alertResult,
-    "Load fraud alerts",
-  );
   const approvalRows = readSupabaseRows<{
     approved_at: string | null;
     created_at: string;

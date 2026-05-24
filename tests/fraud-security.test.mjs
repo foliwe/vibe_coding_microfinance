@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   FRAUD_RULES,
@@ -36,4 +37,39 @@ test("fraud severity mapping stays aligned with persisted score thresholds", () 
   assert.equal(fraudSeverityToScore("low"), 30);
   assert.equal(fraudSeverityToScore("medium"), 60);
   assert.equal(fraudSeverityToScore("high"), 85);
+});
+
+test("fraud alert helper cannot be executed by broad SQL roles", () => {
+  const migration = readFileSync(
+    new URL("../supabase/migrations/0022_fraud_center_v1.sql", import.meta.url),
+    "utf8",
+  );
+  const repairMigration = readFileSync(
+    new URL("../supabase/migrations/0023_restrict_fraud_alert_helper.sql", import.meta.url),
+    "utf8",
+  );
+  const helperSignature =
+    "public.upsert_fraud_alert(uuid, uuid, uuid, uuid, uuid, text, integer, text, text, jsonb, text)";
+  const revokeStatement = `revoke all on function ${helperSignature} from public, anon, authenticated;`;
+  const grantStatement = `grant execute on function ${helperSignature} to service_role;`;
+  const broadGrantStatement = `grant execute on function ${helperSignature} to authenticated`;
+
+  for (const sql of [migration, repairMigration]) {
+    assert.ok(sql.includes(revokeStatement));
+    assert.ok(sql.includes(grantStatement));
+    assert.ok(!sql.includes(broadGrantStatement));
+  }
+});
+
+test("fraud dashboard paginates alert rows before calculating summaries", () => {
+  const dashboardData = readFileSync(
+    new URL("../apps/admin/lib/dashboard-data.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(dashboardData, /const FRAUD_ALERT_PAGE_SIZE = 1000;/);
+  assert.match(dashboardData, /\.range\(from, to\)/);
+  assert.match(dashboardData, /rows\.push\(\.\.\.pageRows\)/);
+  assert.match(dashboardData, /pageRows\.length < FRAUD_ALERT_PAGE_SIZE/);
+  assert.doesNotMatch(dashboardData, /\.limit\(200\)/);
 });
