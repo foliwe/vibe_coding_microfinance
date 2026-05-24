@@ -33,6 +33,7 @@ import {
   syncOfflineQueue,
 } from "./offline-sync";
 import { queueEntryToTransactionRequest } from "./offline-sync-core";
+import { evaluateMobileFraudEvent, recordFailedTransactionPin } from "./fraud";
 import { requireCurrentMobileProfile } from "./mobile-auth";
 import {
   registerMobileStaffDevice,
@@ -1276,6 +1277,14 @@ export const mobileData = {
     });
 
     if (error) {
+      if (
+        transactionType === "withdrawal" &&
+        typeof error.message === "string" &&
+        error.message.toLowerCase().includes("invalid transaction pin")
+      ) {
+        await recordFailedTransactionPin(device.id);
+      }
+
       if (shouldQueueOfflineTransaction(transactionType, isOfflineSyncableError(error))) {
         await queueTransactionRequest({
           accountType,
@@ -1301,6 +1310,23 @@ export const mobileData = {
 
       throw error;
     }
+
+    const requestId =
+      data && typeof data === "object" && "id" in data && typeof data.id === "string"
+        ? data.id
+        : null;
+
+    await evaluateMobileFraudEvent({
+      actorId: profile.id,
+      branchId: profile.branchId,
+      eventType: "transaction_created",
+      metadata: {
+        amount: Number(amount.toFixed(2)),
+        device_id: device.id,
+        transaction_type: transactionType,
+      },
+      transactionRequestId: requestId,
+    });
 
     return {
       data,
@@ -1555,7 +1581,7 @@ export const mobileData = {
     varianceReason: string;
   }) {
     const supabase = getSupabaseClient();
-    await requireCurrentMobileProfile(["agent"]);
+    const profile = await requireCurrentMobileProfile(["agent"]);
     const { device } = await requireAllowedMobileStaffDevice({
       autoRegisterIfNeeded: true,
     });
@@ -1576,7 +1602,20 @@ export const mobileData = {
       throw error;
     }
 
-    return mobileData.getAgentReconciliation();
+    const reconciliation = await mobileData.getAgentReconciliation();
+
+    await evaluateMobileFraudEvent({
+      actorId: profile.id,
+      branchId: profile.branchId,
+      cashReconciliationId: reconciliation.reconciliationId,
+      eventType: "reconciliation_submitted",
+      metadata: {
+        counted_cash: Number(countedCash.toFixed(2)),
+        device_id: device.id,
+      },
+    });
+
+    return reconciliation;
   },
 
   getSyncQueue: () => getOfflineSyncQueueItems(),

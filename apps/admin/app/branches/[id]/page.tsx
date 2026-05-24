@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ActionBar } from "../../../components/action-bar";
 import { AdminDetailItem, AdminDetailList } from "../../../components/admin-detail-list";
 import { AdminShell } from "../../../components/admin-shell";
-import { ChartBars } from "../../../components/chart-bars";
+import { ChartBars } from "../../../components/charts/collection-bars";
 import { SectionCard } from "../../../components/section-card";
 import { StatCard } from "../../../components/stat-card";
 import { StatusBadge } from "../../../components/status-badge";

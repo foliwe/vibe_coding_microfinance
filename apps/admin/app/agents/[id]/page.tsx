@@ -14,7 +14,8 @@ import {
   WalletCardsIcon,
 } from "lucide-react";
 
-import { ActivityTrendChart, ChartBars } from "../../../components/chart-bars";
+import { ActivityTrendChart } from "../../../components/charts/activity-trend-chart";
+import { ChartBars } from "../../../components/charts/collection-bars";
 import { ActionBar } from "../../../components/action-bar";
 import { AdminShell } from "../../../components/admin-shell";
 import { PasswordResetNotice } from "../../../components/password-reset-notice";

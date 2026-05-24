@@ -16,6 +16,7 @@ import {
 } from "@credit-union/shared";
 
 import { requireRole } from "../lib/auth";
+import { evaluateFraudEvent } from "../lib/fraud";
 import {
   buildPasswordResetAuditAction,
   buildPasswordResetAuditMetadata,
@@ -631,7 +632,7 @@ async function mutateTransactionRequest(
     const requestId = requiredValue(formData, "requestId", "Transaction request");
     const note = optionalValue(formData, "note");
     const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
-    const { error } = await supabase.rpc(action, {
+    const { data, error } = await supabase.rpc(action, {
       p_request_id: requestId,
       p_actor_id: profile.id,
       p_note: note,
@@ -639,6 +640,21 @@ async function mutateTransactionRequest(
 
     if (error) {
       throw error;
+    }
+
+    if (action === "approve_transaction_request") {
+      await evaluateFraudEvent(supabase, {
+        actorId: profile.id,
+        branchId:
+          data && typeof data === "object" && "branch_id" in data && typeof data.branch_id === "string"
+            ? data.branch_id
+            : profile.branch_id,
+        eventType: "transaction_approved",
+        transactionRequestId:
+          data && typeof data === "object" && "id" in data && typeof data.id === "string"
+            ? data.id
+            : requestId,
+      });
     }
   } catch (error) {
     const transactionRedirectParams = await getCurrentTransactionRedirectParams();
@@ -940,8 +956,8 @@ export async function reviewCashReconciliationAction(formData: FormData) {
       throw toUserFacingError("Review action must be approve or reject.");
     }
 
-    const { supabase } = await requireRole(["admin", "branch_manager"]);
-    const { error } = await supabase.rpc("review_cash_reconciliation", {
+    const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
+    const { data, error } = await supabase.rpc("review_cash_reconciliation", {
       p_action: reviewAction,
       p_reconciliation_id: reconciliationId,
       p_review_note: reviewNote,
@@ -950,6 +966,22 @@ export async function reviewCashReconciliationAction(formData: FormData) {
     if (error) {
       throw error;
     }
+
+    await evaluateFraudEvent(supabase, {
+      actorId: profile.id,
+      branchId:
+        data && typeof data === "object" && "branch_id" in data && typeof data.branch_id === "string"
+          ? data.branch_id
+          : profile.branch_id,
+      cashReconciliationId:
+        data && typeof data === "object" && "id" in data && typeof data.id === "string"
+          ? data.id
+          : reconciliationId,
+      eventType: "reconciliation_reviewed",
+      metadata: {
+        action: reviewAction,
+      },
+    });
   } catch (error) {
     const safeMessage = toRedirectErrorMessage({
       action: "reviewCashReconciliationAction",
@@ -1001,7 +1033,7 @@ async function createAdminTransactionAction(
       throw toUserFacingError("Amount must be greater than zero.");
     }
 
-    const { error } = await supabase.rpc("create_admin_transaction", {
+    const { data, error } = await supabase.rpc("create_admin_transaction", {
       p_actor_id: profile.id,
       p_member_account_id: memberAccountId,
       p_cash_agent_profile_id: cashAgentProfileId,
@@ -1013,6 +1045,37 @@ async function createAdminTransactionAction(
     if (error) {
       throw error;
     }
+
+    const branchId =
+      data && typeof data === "object" && "branch_id" in data && typeof data.branch_id === "string"
+        ? data.branch_id
+        : profile.branch_id;
+    const transactionRequestId =
+      data && typeof data === "object" && "id" in data && typeof data.id === "string"
+        ? data.id
+        : null;
+
+    await evaluateFraudEvent(supabase, {
+      actorId: profile.id,
+      branchId,
+      eventType: "transaction_created",
+      metadata: {
+        auto_approved: true,
+        source: "admin_panel",
+      },
+      transactionRequestId,
+    });
+
+    await evaluateFraudEvent(supabase, {
+      actorId: profile.id,
+      branchId,
+      eventType: "transaction_approved",
+      metadata: {
+        auto_approved: true,
+        source: "admin_panel",
+      },
+      transactionRequestId,
+    });
   } catch (error) {
     const safeMessage = toRedirectErrorMessage({
       action: `createAdminTransactionAction:${transactionType}`,
@@ -1738,7 +1801,7 @@ export async function resetStaffDeviceAction(formData: FormData) {
   }
 
   try {
-    const { supabase } = await requireRole(["admin", "branch_manager"]);
+    const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
     const profileId = requiredValue(formData, "profileId", "Staff account");
     const reason = optionalValue(formData, "reason");
     const { error } = await supabase.rpc("reset_staff_device", {
@@ -1749,6 +1812,15 @@ export async function resetStaffDeviceAction(formData: FormData) {
     if (error) {
       throw error;
     }
+
+    await evaluateFraudEvent(supabase, {
+      actorId: profile.id,
+      branchId: profile.branch_id,
+      eventType: "device_reset",
+      metadata: {
+        target_profile_id: profileId,
+      },
+    });
   } catch (error) {
     const safeMessage = toRedirectErrorMessage({
       action: "resetStaffDeviceAction",
@@ -1769,6 +1841,42 @@ export async function resetStaffDeviceAction(formData: FormData) {
   revalidatePath("/settings");
   revalidatePath("/audit");
   redirect(buildRedirect("/staff-devices", "success", "Trusted device reset."));
+}
+
+export async function updateFraudAlertStatusAction(formData: FormData) {
+  if (!hasSupabaseEnv()) {
+    redirect(buildRedirect("/fraud", "error", "Supabase credentials are missing."));
+  }
+
+  try {
+    const alertId = requiredValue(formData, "alertId", "Fraud alert");
+    const status = requiredValue(formData, "status", "Alert status");
+    const note = optionalValue(formData, "note");
+    const { supabase } = await requireRole(["admin", "branch_manager"]);
+    const { error } = await supabase.rpc("set_fraud_alert_status", {
+      p_alert_id: alertId,
+      p_note: note,
+      p_status: status,
+    });
+
+    if (error) {
+      throw error;
+    }
+  } catch (error) {
+    const safeMessage = toRedirectErrorMessage({
+      action: "updateFraudAlertStatusAction",
+      error,
+      userMessage: "Unable to update this fraud alert.",
+      errorCode: "FRAUD_ALERT_UPDATE_FAILED",
+    });
+    redirect(buildRedirect("/fraud", "error", safeMessage));
+  }
+
+  revalidatePath("/fraud");
+  revalidatePath("/");
+  revalidatePath("/branch");
+  revalidatePath("/audit");
+  redirect(buildRedirect("/fraud", "success", "Fraud alert updated."));
 }
 
 export async function requestReportAction(formData: FormData) {

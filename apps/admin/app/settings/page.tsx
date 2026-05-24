@@ -79,7 +79,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
           />
           <AdminDetailItem
             label="Suspicious activity alerts"
-            value={<StatusBadge>not implemented yet</StatusBadge>}
+            value={<StatusBadge>live in Fraud Center</StatusBadge>}
           />
         </AdminDetailList>
       </SectionCard>
@@ -118,6 +118,9 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
         <ActionBar>
           <Button asChild variant="outline">
             <Link href="/staff-devices">Review Staff Trust</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/fraud">Open Fraud Center</Link>
           </Button>
           {role === "admin" ? (
             <>

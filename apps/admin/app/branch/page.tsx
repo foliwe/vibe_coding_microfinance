@@ -3,16 +3,19 @@ import Link from "next/link";
 import { AdminDetailItem, AdminDetailList } from "../../components/admin-detail-list";
 import { AdminShell } from "../../components/admin-shell";
 import { ActionBar } from "../../components/action-bar";
-import { ChartBars } from "../../components/chart-bars";
+import { ChartBars } from "../../components/charts/collection-bars";
 import { SectionCard } from "../../components/section-card";
 import { StatCard } from "../../components/stat-card";
 import { Button } from "../../components/ui/button";
 import { withDashboardBreadcrumbs } from "../../lib/breadcrumbs";
-import { getBranchDashboardData } from "../../lib/dashboard-data";
+import { getBranchDashboardPageData } from "../../lib/dashboard-data";
 import { prettyCurrency } from "../../lib/format";
 
 export default async function BranchDashboardPage() {
-  const { profile, summary, isLive } = await getBranchDashboardData();
+  const {
+    dashboard: { profile, summary, isLive },
+    fraud,
+  } = await getBranchDashboardPageData();
 
   return (
     <AdminShell
@@ -121,6 +124,23 @@ export default async function BranchDashboardPage() {
               value={prettyCurrency(summary.cashVariance)}
             />
           </AdminDetailList>
+        </SectionCard>
+
+        <SectionCard
+          description="Your branch fraud queue, device trust flags, and approval-speed anomalies."
+          title="Fraud Snapshot"
+        >
+          <AdminDetailList>
+            <AdminDetailItem label="Open Alerts" value={fraud.summary.openAlerts} />
+            <AdminDetailItem label="High Risk Transactions" value={fraud.summary.highRiskTransactions} />
+            <AdminDetailItem label="Offline Bursts" value={fraud.summary.offlineBurstCases} />
+            <AdminDetailItem label="Avg Approval Time" value={`${fraud.summary.averageApprovalSeconds}s`} />
+          </AdminDetailList>
+          <ActionBar>
+            <Button asChild>
+              <Link href="/fraud">Open Fraud Center</Link>
+            </Button>
+          </ActionBar>
         </SectionCard>
       </div>
     </AdminShell>
