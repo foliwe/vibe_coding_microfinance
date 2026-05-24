@@ -1,10 +1,12 @@
 import { redirect } from "next/navigation";
 
 import {
+  getCurrentWorkstationIdentity,
   isWorkstationTokenConfigurationError,
   isBranchManagerSetupComplete,
   syncWorkstationIdentityFromFormData,
 } from "../lib/staff-device";
+import { recordStaffAuthEvent } from "../lib/fraud";
 import { createClient } from "../lib/supabase/server";
 import { AdminFormField } from "./admin-form-field";
 import { WorkstationIdentityFields } from "./workstation-identity-bootstrap";
@@ -43,6 +45,16 @@ async function signInAction(formData: FormData) {
   const { data: profileRows } = await supabase.rpc("get_my_profile");
   const profile = Array.isArray(profileRows) ? profileRows[0] : null;
   const role = profile?.role;
+
+  if (role === "admin" || role === "branch_manager") {
+    const identity = await getCurrentWorkstationIdentity();
+    await recordStaffAuthEvent(supabase, {
+      channel: "admin_web",
+      deviceId: identity.id,
+      deviceKind: identity.kind,
+      deviceName: identity.name,
+    });
+  }
 
   if (role === "branch_manager" && profile && !isBranchManagerSetupComplete(profile)) {
     redirect("/setup");

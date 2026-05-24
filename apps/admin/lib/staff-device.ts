@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { UserRole } from "@credit-union/shared";
 import { toStaffDeviceRpcError } from "@credit-union/shared";
 
+import { evaluateFraudEvent } from "./fraud";
 import {
   buildWorkstationDeviceName,
   createWorkstationDeviceId,
@@ -20,11 +21,17 @@ type StaffProfile = {
   role: UserRole;
 };
 
-type RpcCapableClient = {
+export type RpcCapableClient = {
   rpc: (
     fn: string,
     args?: Record<string, unknown>,
   ) => PromiseLike<{ data: unknown; error: { message: string } | null }>;
+};
+
+type ProfileLookupRow = {
+  branch_id: string | null;
+  id: string;
+  role: UserRole;
 };
 
 type WorkstationIdentity = {
@@ -208,7 +215,24 @@ export async function assertCurrentWorkstationAccess(supabase: RpcCapableClient)
     throw toStaffDeviceRpcError(error, "We could not verify workstation access.");
   }
 
-  return toStaffDeviceAssertion(data);
+  const assertion = toStaffDeviceAssertion(data);
+  const profile = await getCurrentStaffProfile(supabase);
+
+  if (profile?.role === "branch_manager") {
+    await evaluateFraudEvent(supabase, {
+      actorId: profile.id,
+      branchId: profile.branch_id,
+      eventType: "device_asserted",
+      metadata: {
+        access: assertion.access,
+        active_device_id: assertion.activeDeviceId,
+        active_device_kind: assertion.activeDeviceKind,
+        device_id: identity.id,
+      },
+    });
+  }
+
+  return assertion;
 }
 
 export async function registerCurrentWorkstation(supabase: RpcCapableClient) {
@@ -226,6 +250,21 @@ export async function registerCurrentWorkstation(supabase: RpcCapableClient) {
 
   if (error) {
     throw toStaffDeviceRpcError(error, "We could not trust this workstation yet.");
+  }
+
+  const profile = await getCurrentStaffProfile(supabase);
+
+  if (profile?.role === "branch_manager") {
+    await evaluateFraudEvent(supabase, {
+      actorId: profile.id,
+      branchId: profile.branch_id,
+      eventType: "device_registered",
+      metadata: {
+        device_id: identity.id,
+        device_kind: identity.kind,
+        device_name: identity.name,
+      },
+    });
   }
 
   return data;
@@ -258,4 +297,20 @@ export async function ensureCurrentWorkstationAccess(
     activeDeviceKind: "workstation",
     activeDeviceName: null,
   };
+}
+
+async function getCurrentStaffProfile(supabase: RpcCapableClient) {
+  const { data, error } = await supabase.rpc("get_my_profile");
+
+  if (error) {
+    return null;
+  }
+
+  const row = Array.isArray(data) ? ((data[0] as ProfileLookupRow | undefined) ?? null) : null;
+
+  if (!row || (row.role !== "admin" && row.role !== "branch_manager")) {
+    return null;
+  }
+
+  return row;
 }

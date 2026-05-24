@@ -1,9 +1,14 @@
 import {
   calculateMonthlyInterest,
+  FRAUD_RULES,
   type AdminDashboardSummary,
   type AgentPerformance,
   type BranchSummary,
   type BranchDashboardSummary,
+  type FraudAlertRecord,
+  type FraudDashboardSummary,
+  type FraudRuleId,
+  type FraudSeverity,
   type LoanStatus,
   type TransactionRequest,
   type UserRole,
@@ -12,6 +17,8 @@ import {
 import { requireRole, type AdminProfile } from "./auth";
 import { summarizeMemberDetailCards } from "./member-detail-summary";
 import { hasSupabaseEnv } from "./supabase/env";
+
+type DashboardAuthContext = Awaited<ReturnType<typeof requireRole>>;
 
 export type BranchPerformanceChartPoint = {
   branch: string;
@@ -31,9 +38,61 @@ export type ActivityTrendChartPoint = {
   withdrawals: number;
 };
 
+export type FraudTrendChartPoint = {
+  high: number;
+  label: string;
+  total: number;
+};
+
 export type AdminDashboardCharts = {
   branchPerformance: BranchPerformanceChartPoint[];
   portfolioTrend: PortfolioTrendChartPoint[];
+};
+
+export type FraudQueueRow = FraudAlertRecord & {
+  agentName: string | null;
+  assignedToName: string | null;
+  branchName: string;
+  memberName: string | null;
+};
+
+export type FraudBranchRiskRow = {
+  branchId: string;
+  branchName: string;
+  highCount: number;
+  investigatingCount: number;
+  openCount: number;
+  totalScore: number;
+};
+
+export type FraudAgentRiskRow = {
+  agentId: string;
+  agentName: string;
+  alertCount: number;
+  branchName: string;
+  highestScore: number;
+  latestDetectedAt: string;
+};
+
+export type FraudRuleLibraryRow = {
+  description: string;
+  id: FraudRuleId;
+  severity: FraudSeverity;
+  summaryLabel: string;
+  thresholdLabel: string;
+  title: string;
+};
+
+export type FraudPageData = {
+  branchRisk: FraudBranchRiskRow[];
+  currentBranchLabel: string;
+  investigationQueue: FraudQueueRow[];
+  isLive: boolean;
+  profile: AdminProfile;
+  rules: FraudRuleLibraryRow[];
+  summary: FraudDashboardSummary;
+  topAgents: FraudAgentRiskRow[];
+  trend: FraudTrendChartPoint[];
 };
 
 export type TransactionQueuePageData = {
@@ -385,6 +444,40 @@ type AuditLogTableRow = {
   created_at: string;
 };
 
+type FraudAlertTableRow = {
+  id: string;
+  branch_id: string;
+  agent_profile_id: string | null;
+  member_profile_id: string | null;
+  transaction_request_id: string | null;
+  cash_reconciliation_id: string | null;
+  rule_id: FraudRuleId;
+  severity: FraudSeverity;
+  score: number | string | null;
+  status: FraudAlertRecord["status"];
+  title: string;
+  summary: string;
+  evidence: Record<string, unknown> | null;
+  fingerprint: string;
+  detected_at: string;
+  last_seen_at: string;
+  resolved_at: string | null;
+  resolution_note: string | null;
+  assigned_to: string | null;
+};
+
+type SupabaseErrorLike = {
+  code?: string;
+  details?: string;
+  hint?: string;
+  message?: string;
+};
+
+type SupabaseQueryResult<T> = {
+  data: T | null;
+  error?: SupabaseErrorLike | null;
+};
+
 type ReportJobTableRow = {
   id: string;
   branch_id: string | null;
@@ -393,6 +486,10 @@ type ReportJobTableRow = {
   file_path: string | null;
   created_at: string;
 };
+
+const FRAUD_ALERT_PAGE_SIZE = 1000;
+const FRAUD_ALERT_SELECT =
+  "id, branch_id, agent_profile_id, member_profile_id, transaction_request_id, cash_reconciliation_id, rule_id, severity, score, status, title, summary, evidence, fingerprint, detected_at, last_seen_at, resolved_at, resolution_note, assigned_to";
 
 function emptyProfile(role: UserRole = "admin"): AdminProfile {
   return {
@@ -448,6 +545,76 @@ function toNumber(value: number | string | null | undefined) {
   if (typeof value === "number") return value;
   if (typeof value === "string") return Number(value);
   return 0;
+}
+
+function formatSupabaseError(error: SupabaseErrorLike) {
+  return [error.message, error.details, error.hint, error.code]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function isNoRowsError(error: SupabaseErrorLike) {
+  return error.code === "PGRST116";
+}
+
+function readSupabaseData<T>(
+  result: SupabaseQueryResult<unknown>,
+  label: string,
+  options: { allowNoRows?: boolean } = {},
+) {
+  if (result.error) {
+    if (options.allowNoRows && isNoRowsError(result.error)) {
+      return null;
+    }
+
+    throw new Error(`${label}: ${formatSupabaseError(result.error)}`);
+  }
+
+  return (result.data ?? null) as T | null;
+}
+
+function readSupabaseRows<T>(result: SupabaseQueryResult<unknown[]>, label: string) {
+  return readSupabaseData<T[]>(result, label) ?? [];
+}
+
+function groupRowsBy<T>(
+  rows: readonly T[],
+  getKey: (row: T) => string | null | undefined,
+) {
+  const grouped = new Map<string, T[]>();
+
+  for (const row of rows) {
+    const key = getKey(row);
+
+    if (!key) {
+      continue;
+    }
+
+    const existing = grouped.get(key);
+
+    if (existing) {
+      existing.push(row);
+    } else {
+      grouped.set(key, [row]);
+    }
+  }
+
+  return grouped;
+}
+
+async function getDashboardAuthContext(
+  allowedRoles: UserRole[],
+  context?: DashboardAuthContext,
+) {
+  if (!context) {
+    return requireRole(allowedRoles);
+  }
+
+  if (!allowedRoles.includes(context.profile.role)) {
+    throw new Error(`Authenticated profile cannot load this dashboard scope.`);
+  }
+
+  return context;
 }
 
 function firstDayOfCurrentMonth() {
@@ -532,6 +699,53 @@ function buildActivityTrend(transactions: TransactionRequest[], days = 7): Activ
   return buckets.map(({ key: _key, ...bucket }) => bucket);
 }
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) {
+    return "Pending";
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function buildFraudTrend(rows: FraudAlertRecord[], days = 7): FraudTrendChartPoint[] {
+  const buckets = Array.from({ length: days }, (_, index) => {
+    const date = new Date();
+    date.setUTCHours(0, 0, 0, 0);
+    date.setUTCDate(date.getUTCDate() - (days - index - 1));
+
+    return {
+      key: date.toISOString().slice(0, 10),
+      label: activityLabel(date),
+      total: 0,
+      high: 0,
+    };
+  });
+
+  const bucketMap = new Map(buckets.map((bucket) => [bucket.key, bucket]));
+
+  for (const row of rows) {
+    const key = row.detectedAt.slice(0, 10);
+    const bucket = bucketMap.get(key);
+
+    if (!bucket) {
+      continue;
+    }
+
+    bucket.total += 1;
+
+    if (row.severity === "high") {
+      bucket.high += 1;
+    }
+  }
+
+  return buckets.map(({ key: _key, ...bucket }) => bucket);
+}
+
 async function getCurrentBranchLabel(
   supabase: Awaited<ReturnType<typeof requireRole>>["supabase"],
   profile: AdminProfile,
@@ -544,13 +758,18 @@ async function getCurrentBranchLabel(
     return "Unassigned branch";
   }
 
-  const { data } = await supabase
+  const branchResult = await supabase
     .from("branches")
     .select("name")
     .eq("id", profile.branch_id)
     .maybeSingle();
+  const data = readSupabaseData<Pick<BranchRow, "name">>(
+    branchResult,
+    "Load current branch label",
+    { allowNoRows: true },
+  );
 
-  return (data as Pick<BranchRow, "name"> | null)?.name ?? "Branch";
+  return data?.name ?? "Branch";
 }
 
 async function mapTransactions(
@@ -563,7 +782,7 @@ async function mapTransactions(
   const memberAccountIds = Array.from(new Set(rows.map((row) => row.member_account_id)));
   const branchIds = Array.from(new Set(rows.map((row) => row.branch_id)));
 
-  const [{ data: profileData }, { data: branchData }, { data: accountData }] = await Promise.all([
+  const [profileResult, branchResult, accountResult] = await Promise.all([
     actorIds.length
       ? supabase.from("profiles").select("id, full_name").in("id", actorIds)
       : Promise.resolve({ data: [] as ProfileRow[] }),
@@ -577,21 +796,25 @@ async function mapTransactions(
           .in("id", memberAccountIds)
       : Promise.resolve({ data: [] as QueueMemberAccountRow[] }),
   ]);
+  const profileRows = readSupabaseRows<ProfileRow>(
+    profileResult,
+    "Load transaction profile names",
+  );
+  const branchRows = readSupabaseRows<BranchRow>(
+    branchResult,
+    "Load transaction branch names",
+  );
+  const accountRows = readSupabaseRows<QueueMemberAccountRow>(
+    accountResult,
+    "Load transaction account types",
+  );
 
   const profileMap = new Map(
-    ((profileData as ProfileRow[] | null) ?? []).map((profile) => [
-      profile.id,
-      profile.full_name,
-    ]),
+    profileRows.map((profile) => [profile.id, profile.full_name]),
   );
-  const branchMap = new Map(
-    ((branchData as BranchRow[] | null) ?? []).map((branch) => [branch.id, branch.name]),
-  );
+  const branchMap = new Map(branchRows.map((branch) => [branch.id, branch.name]));
   const accountMap = new Map(
-    ((accountData as QueueMemberAccountRow[] | null) ?? []).map((account) => [
-      account.id,
-      account.account_type,
-    ]),
+    accountRows.map((account) => [account.id, account.account_type]),
   );
 
   return rows.map(
@@ -614,24 +837,25 @@ async function mapTransactions(
 }
 
 async function getBranchMappings(supabase: Awaited<ReturnType<typeof requireRole>>["supabase"]) {
-  const { data: branchesData } = await supabase
+  const branchResult = await supabase
     .from("branches")
     .select("id, name, manager_profile_id");
 
-  const branches = (branchesData as BranchRow[] | null) ?? [];
+  const branches = readSupabaseRows<BranchRow>(branchResult, "Load branch mappings");
   const managerIds = branches
     .map((branch) => branch.manager_profile_id)
     .filter((value): value is string => Boolean(value));
 
-  const { data: managerData } = managerIds.length
+  const managerResult = managerIds.length
     ? await supabase.from("profiles").select("id, full_name").in("id", managerIds)
     : { data: [] as ProfileRow[] };
+  const managerRows = readSupabaseRows<ProfileRow>(
+    managerResult,
+    "Load branch manager names",
+  );
 
   const managerMap = new Map(
-    ((managerData as ProfileRow[] | null) ?? []).map((profile) => [
-      profile.id,
-      profile.full_name,
-    ]),
+    managerRows.map((profile) => [profile.id, profile.full_name]),
   );
 
   return { branches, managerMap };
@@ -645,11 +869,10 @@ async function getProfileNameMap(
     return new Map<string, string>();
   }
 
-  const { data } = await supabase.from("profiles").select("id, full_name").in("id", ids);
+  const result = await supabase.from("profiles").select("id, full_name").in("id", ids);
+  const rows = readSupabaseRows<ProfileRow>(result, "Load profile names");
 
-  return new Map(
-    ((data as ProfileRow[] | null) ?? []).map((profile) => [profile.id, profile.full_name]),
-  );
+  return new Map(rows.map((profile) => [profile.id, profile.full_name]));
 }
 
 async function getPendingTransactions(
@@ -808,7 +1031,7 @@ export async function getTransactionQueuePageData(
   };
 }
 
-export async function getAdminDashboardData() {
+export async function getAdminDashboardData(context?: DashboardAuthContext) {
   if (!hasSupabaseEnv()) {
     const summary = emptyAdminSummary();
     return {
@@ -820,9 +1043,9 @@ export async function getAdminDashboardData() {
     };
   }
 
-  const { supabase, profile } = await requireRole(["admin"]);
+  const { supabase, profile } = await getDashboardAuthContext(["admin"], context);
 
-  const [{ data: branchRowsData }, { branches, managerMap }, { data: loanRowsData }, { data: repaymentRowsData }, { data: cashRowsData }] =
+  const [branchRowsResult, { branches, managerMap }, loanRowsResult, repaymentRowsResult, cashRowsResult] =
     await Promise.all([
       supabase.from("branch_dashboard_summary").select("*"),
       getBranchMappings(supabase),
@@ -831,15 +1054,27 @@ export async function getAdminDashboardData() {
       supabase.from("cash_drawers").select("branch_id, expected_cash, variance, agent_profile_id"),
     ]);
 
-  const branchRows = (branchRowsData as BranchDashboardRow[] | null) ?? [];
-  const loanRows = (loanRowsData as LoanRow[] | null) ?? [];
-  const repaymentRows = (repaymentRowsData as RepaymentRow[] | null) ?? [];
-  const cashRows = (cashRowsData as CashDrawerRow[] | null) ?? [];
+  const branchRows = readSupabaseRows<BranchDashboardRow>(
+    branchRowsResult,
+    "Load admin branch dashboard summary",
+  );
+  const loanRows = readSupabaseRows<LoanRow>(loanRowsResult, "Load admin loan totals");
+  const repaymentRows = readSupabaseRows<RepaymentRow>(
+    repaymentRowsResult,
+    "Load admin repayment totals",
+  );
+  const cashRows = readSupabaseRows<CashDrawerRow>(
+    cashRowsResult,
+    "Load admin cash drawer totals",
+  );
+  const branchesById = new Map(branches.map((branch) => [branch.id, branch]));
+  const loanRowsByBranchId = groupRowsBy(loanRows, (loan) => loan.branch_id);
+  const cashRowsByBranchId = groupRowsBy(cashRows, (cash) => cash.branch_id);
 
   const branchPerformance = branchRows.map((row) => {
-    const branchLoanRows = loanRows.filter((loan) => loan.branch_id === row.branch_id);
-    const branchCashRows = cashRows.filter((cash) => cash.branch_id === row.branch_id);
-    const branchMeta = branches.find((branch) => branch.id === row.branch_id);
+    const branchLoanRows = loanRowsByBranchId.get(row.branch_id) ?? [];
+    const branchCashRows = cashRowsByBranchId.get(row.branch_id) ?? [];
+    const branchMeta = branchesById.get(row.branch_id);
 
     return {
       id: row.branch_id,
@@ -904,14 +1139,14 @@ async function getBranchDashboardSnapshot(
   const startOfMonth = firstDayOfCurrentMonth();
 
   const [
-    { data: branchRowsData },
-    { data: branchData },
-    { data: loanRowsData },
-    { data: repaymentRowsData },
-    { data: cashRowsData },
-    { data: memberRowsData },
-    { data: agentRowsData },
-    { data: transactionRowsData },
+    branchSummaryResult,
+    branchResult,
+    loanRowsResult,
+    repaymentRowsResult,
+    cashRowsResult,
+    memberRowsResult,
+    agentRowsResult,
+    transactionRowsResult,
   ] = await Promise.all([
     supabase.from("branch_dashboard_summary").select("*").eq("branch_id", branchId).single(),
     supabase.from("branches").select("id, name").eq("id", branchId).single(),
@@ -948,30 +1183,54 @@ async function getBranchDashboardSnapshot(
       .gte("created_at", `${today}T00:00:00.000Z`),
   ]);
 
-  const row = (branchRowsData as BranchDashboardRow | null) ?? null;
+  const row = readSupabaseData<BranchDashboardRow>(
+    branchSummaryResult,
+    "Load branch dashboard summary",
+    { allowNoRows: true },
+  );
+  const branch = readSupabaseData<BranchRow>(
+    branchResult,
+    "Load branch dashboard branch record",
+    { allowNoRows: true },
+  );
 
   if (!row) {
     return {
       summary: emptyBranchSummary(
         branchId,
-        ((branchData as BranchRow | null)?.name ?? "Branch"),
+        branch?.name ?? "Branch",
       ),
       alerts: [],
     };
   }
 
-  const loanRows = (loanRowsData as LoanRow[] | null) ?? [];
-  const repaymentRows = (repaymentRowsData as RepaymentRow[] | null) ?? [];
-  const cashRows = (cashRowsData as CashDrawerRow[] | null) ?? [];
-  const memberRows = (memberRowsData as ProfileRow[] | null) ?? [];
-  const agentRows = (agentRowsData as ProfileRow[] | null) ?? [];
-  const transactionRows = (transactionRowsData as TransactionRow[] | null) ?? [];
+  const loanRows = readSupabaseRows<LoanRow>(loanRowsResult, "Load branch loans");
+  const repaymentRows = readSupabaseRows<RepaymentRow>(
+    repaymentRowsResult,
+    "Load branch repayments",
+  );
+  const cashRows = readSupabaseRows<CashDrawerRow>(
+    cashRowsResult,
+    "Load branch cash drawers",
+  );
+  const memberRows = readSupabaseRows<ProfileRow>(
+    memberRowsResult,
+    "Load new branch members",
+  );
+  const agentRows = readSupabaseRows<ProfileRow>(agentRowsResult, "Load branch agents");
+  const transactionRows = readSupabaseRows<TransactionRow>(
+    transactionRowsResult,
+    "Load branch daily transactions",
+  );
+  const transactionRowsByAgentId = groupRowsBy(
+    transactionRows,
+    (transaction) => transaction.agent_profile_id,
+  );
+  const cashRowsByAgentId = groupRowsBy(cashRows, (cash) => cash.agent_profile_id);
 
   const agentPerformance: AgentPerformance[] = agentRows.map((agent) => {
-    const agentTransactions = transactionRows.filter(
-      (transaction) => transaction.agent_profile_id === agent.id,
-    );
-    const agentCashRows = cashRows.filter((cash) => cash.agent_profile_id === agent.id);
+    const agentTransactions = transactionRowsByAgentId.get(agent.id) ?? [];
+    const agentCashRows = cashRowsByAgentId.get(agent.id) ?? [];
 
     return {
       id: agent.id,
@@ -992,7 +1251,7 @@ async function getBranchDashboardSnapshot(
 
   const summary: BranchDashboardSummary = {
     branchId,
-    branchName: ((branchData as BranchRow | null)?.name ?? row.branch_name),
+    branchName: branch?.name ?? row.branch_name,
     totalMembers: toNumber(row.total_members),
     activeAgents: toNumber(row.active_agents),
     newMembersThisMonth: memberRows.length,
@@ -1020,7 +1279,7 @@ async function getBranchDashboardSnapshot(
   };
 }
 
-export async function getBranchDashboardData() {
+export async function getBranchDashboardData(context?: DashboardAuthContext) {
   if (!hasSupabaseEnv()) {
     return {
       profile: emptyProfile("branch_manager"),
@@ -1030,7 +1289,10 @@ export async function getBranchDashboardData() {
     };
   }
 
-  const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
+  const { supabase, profile } = await getDashboardAuthContext(
+    ["admin", "branch_manager"],
+    context,
+  );
   const branchId = profile.branch_id;
 
   if (!branchId) {
@@ -1049,6 +1311,44 @@ export async function getBranchDashboardData() {
     ...snapshot,
     isLive: true,
   };
+}
+
+export async function getAdminDashboardPageData() {
+  if (!hasSupabaseEnv()) {
+    const [dashboard, fraud] = await Promise.all([
+      getAdminDashboardData(),
+      getFraudPageData(),
+    ]);
+
+    return { dashboard, fraud };
+  }
+
+  const context = await requireRole(["admin"]);
+  const [dashboard, fraud] = await Promise.all([
+    getAdminDashboardData(context),
+    getFraudPageData(context),
+  ]);
+
+  return { dashboard, fraud };
+}
+
+export async function getBranchDashboardPageData() {
+  if (!hasSupabaseEnv()) {
+    const [dashboard, fraud] = await Promise.all([
+      getBranchDashboardData(),
+      getFraudPageData(),
+    ]);
+
+    return { dashboard, fraud };
+  }
+
+  const context = await requireRole(["admin", "branch_manager"]);
+  const [dashboard, fraud] = await Promise.all([
+    getBranchDashboardData(context),
+    getFraudPageData(context),
+  ]);
+
+  return { dashboard, fraud };
 }
 
 export async function getReconciliationPageData(): Promise<ReconciliationPageData> {
@@ -1998,17 +2298,263 @@ export async function getAuditPageData(): Promise<AuditPageData> {
   return {
     profile,
     rows: rows.map((row) => ({
-      time: new Intl.DateTimeFormat("en-GB", {
-        day: "2-digit",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      }).format(new Date(row.created_at)),
+      time: formatDateTime(row.created_at),
       actor: row.actor_id ? actorMap.get(row.actor_id) ?? row.actor_id : "System",
       action: row.action,
       reference: row.entity_id,
       result: "Recorded",
     })),
     isLive: true,
+  };
+}
+
+export async function getFraudPageData(context?: DashboardAuthContext): Promise<FraudPageData> {
+  const rules = FRAUD_RULES.map((rule) => ({
+    description: rule.description,
+    id: rule.id,
+    severity: rule.severity,
+    summaryLabel: rule.summaryLabel,
+    thresholdLabel: rule.thresholdLabel,
+    title: rule.title,
+  }));
+
+  if (!hasSupabaseEnv()) {
+    return {
+      branchRisk: [],
+      currentBranchLabel: "Supabase setup needed",
+      investigationQueue: [],
+      isLive: false,
+      profile: emptyProfile("admin"),
+      rules,
+      summary: {
+        averageApprovalSeconds: 0,
+        highRiskTransactions: 0,
+        multiDeviceFlags: 0,
+        offlineBurstCases: 0,
+        openAlerts: 0,
+      },
+      topAgents: [],
+      trend: [],
+    };
+  }
+
+  const { supabase, profile } = await getDashboardAuthContext(
+    ["admin", "branch_manager"],
+    context,
+  );
+  const currentBranchLabel = await getCurrentBranchLabel(supabase, profile);
+  const alertRowsPromise = (async () => {
+    const rows: FraudAlertTableRow[] = [];
+
+    for (let page = 0; ; page += 1) {
+      const from = page * FRAUD_ALERT_PAGE_SIZE;
+      const to = from + FRAUD_ALERT_PAGE_SIZE - 1;
+      const alertQuery = supabase
+        .from("fraud_alerts")
+        .select(FRAUD_ALERT_SELECT)
+        .order("last_seen_at", { ascending: false })
+        .range(from, to);
+
+      const scopedAlertQuery =
+        profile.role === "branch_manager" && profile.branch_id
+          ? alertQuery.eq("branch_id", profile.branch_id)
+          : alertQuery;
+
+      const pageRows = readSupabaseRows<FraudAlertTableRow>(
+        await scopedAlertQuery,
+        "Load fraud alerts",
+      );
+
+      rows.push(...pageRows);
+
+      if (pageRows.length < FRAUD_ALERT_PAGE_SIZE) {
+        return rows;
+      }
+    }
+  })();
+
+  const approvalTimeQuery = supabase
+    .from("transaction_requests")
+    .select("created_at, approved_at")
+    .eq("status", "approved")
+    .not("approved_at", "is", null)
+    .order("approved_at", { ascending: false })
+    .limit(100);
+
+  const scopedApprovalTimeQuery =
+    profile.role === "branch_manager" && profile.branch_id
+      ? approvalTimeQuery.eq("branch_id", profile.branch_id)
+      : approvalTimeQuery;
+
+  const [alertRows, approvalResult, { branches }] = await Promise.all([
+    alertRowsPromise,
+    scopedApprovalTimeQuery,
+    getBranchMappings(supabase),
+  ]);
+
+  const approvalRows = readSupabaseRows<{
+    approved_at: string | null;
+    created_at: string;
+  }>(approvalResult, "Load fraud approval timings");
+  const branchMap = new Map(branches.map((branch) => [branch.id, branch.name]));
+  const profileIds = Array.from(
+    new Set(
+      alertRows.flatMap((row) =>
+        [row.agent_profile_id, row.member_profile_id, row.assigned_to].filter(
+          (value): value is string => Boolean(value),
+        ),
+      ),
+    ),
+  );
+  const profileMap = await getProfileNameMap(supabase, profileIds);
+
+  const alerts: FraudQueueRow[] = alertRows.map((row) => ({
+    agentName: row.agent_profile_id ? profileMap.get(row.agent_profile_id) ?? row.agent_profile_id : null,
+    agentProfileId: row.agent_profile_id,
+    assignedTo: row.assigned_to,
+    assignedToName: row.assigned_to ? profileMap.get(row.assigned_to) ?? row.assigned_to : null,
+    branchId: row.branch_id,
+    branchName: branchMap.get(row.branch_id) ?? row.branch_id,
+    cashReconciliationId: row.cash_reconciliation_id,
+    detectedAt: row.detected_at,
+    evidence: row.evidence ?? {},
+    fingerprint: row.fingerprint,
+    id: row.id,
+    lastSeenAt: row.last_seen_at,
+    memberName: row.member_profile_id ? profileMap.get(row.member_profile_id) ?? row.member_profile_id : null,
+    memberProfileId: row.member_profile_id,
+    resolutionNote: row.resolution_note,
+    resolvedAt: row.resolved_at,
+    ruleId: row.rule_id,
+    score: toNumber(row.score),
+    severity: row.severity,
+    status: row.status,
+    summary: row.summary,
+    title: row.title,
+    transactionRequestId: row.transaction_request_id,
+  }));
+
+  const activeAlerts = alerts.filter(
+    (row) => row.status === "open" || row.status === "investigating",
+  );
+  const approvalDurations = approvalRows
+    .map((row) => {
+      if (!row.approved_at) {
+        return null;
+      }
+
+      const seconds = Math.round(
+        (new Date(row.approved_at).getTime() - new Date(row.created_at).getTime()) / 1000,
+      );
+      return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+    })
+    .filter((value): value is number => value !== null);
+
+  const summary: FraudDashboardSummary = {
+    averageApprovalSeconds:
+      approvalDurations.length > 0
+        ? Math.round(
+            approvalDurations.reduce((sum, value) => sum + value, 0) / approvalDurations.length,
+          )
+        : 0,
+    highRiskTransactions: activeAlerts.filter(
+      (row) => row.transactionRequestId && row.score >= 85,
+    ).length,
+    multiDeviceFlags: activeAlerts.filter((row) => row.ruleId === "multi_device_access").length,
+    offlineBurstCases: activeAlerts.filter((row) => row.ruleId === "offline_transaction_burst").length,
+    openAlerts: activeAlerts.length,
+  };
+
+  const branchRisk = Array.from(
+    activeAlerts.reduce((map, row) => {
+      const current = map.get(row.branchId) ?? {
+        branchId: row.branchId,
+        branchName: row.branchName,
+        highCount: 0,
+        investigatingCount: 0,
+        openCount: 0,
+        totalScore: 0,
+      };
+
+      current.totalScore += row.score;
+
+      if (row.score >= 85) {
+        current.highCount += 1;
+      }
+
+      if (row.status === "investigating") {
+        current.investigatingCount += 1;
+      }
+
+      if (row.status === "open") {
+        current.openCount += 1;
+      }
+
+      map.set(row.branchId, current);
+      return map;
+    }, new Map<string, FraudBranchRiskRow>()),
+  )
+    .map(([, value]) => value)
+    .sort((left, right) => right.totalScore - left.totalScore);
+
+  const topAgents = Array.from(
+    activeAlerts.reduce((map, row) => {
+      if (!row.agentProfileId) {
+        return map;
+      }
+
+      const current = map.get(row.agentProfileId) ?? {
+        agentId: row.agentProfileId,
+        agentName: row.agentName ?? row.agentProfileId,
+        alertCount: 0,
+        branchName: row.branchName,
+        highestScore: 0,
+        latestDetectedAt: row.lastSeenAt,
+      };
+
+      current.alertCount += 1;
+      current.highestScore = Math.max(current.highestScore, row.score);
+
+      if (new Date(row.lastSeenAt).getTime() > new Date(current.latestDetectedAt).getTime()) {
+        current.latestDetectedAt = row.lastSeenAt;
+      }
+
+      map.set(row.agentProfileId, current);
+      return map;
+    }, new Map<string, FraudAgentRiskRow>()),
+  )
+    .map(([, value]) => value)
+    .sort((left, right) => {
+      if (right.highestScore !== left.highestScore) {
+        return right.highestScore - left.highestScore;
+      }
+
+      return right.alertCount - left.alertCount;
+    })
+    .slice(0, 8);
+
+  const investigationQueue = [...activeAlerts]
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+
+      return new Date(right.lastSeenAt).getTime() - new Date(left.lastSeenAt).getTime();
+    })
+    .slice(0, 12);
+
+  return {
+    branchRisk,
+    currentBranchLabel,
+    investigationQueue,
+    isLive: true,
+    profile,
+    rules,
+    summary,
+    topAgents: topAgents.map((row) => ({
+      ...row,
+      latestDetectedAt: formatDateTime(row.latestDetectedAt),
+    })),
+    trend: buildFraudTrend(alerts),
   };
 }

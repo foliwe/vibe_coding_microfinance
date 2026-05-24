@@ -10,6 +10,7 @@ import {
   type MobileProfile,
 } from "./mobile-auth";
 import { getErrorMessage } from "./errors";
+import { recordMobileStaffAuthEvent } from "./fraud";
 import {
   ensureMobileStaffDeviceAccess,
   type StaffDeviceAssertion,
@@ -210,6 +211,12 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
 
           if (error) {
             throw error;
+          }
+
+          const nextProfile = await getCurrentMobileProfile();
+
+          if (nextProfile?.role === "agent") {
+            await recordMobileStaffAuthEvent();
           }
         } catch (error) {
           const message = getErrorMessage(error, "We could not sign you in.");

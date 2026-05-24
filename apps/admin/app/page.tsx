@@ -6,7 +6,7 @@ import { AdminTableEmptyRow, AdminTableFrame } from "../components/admin-table";
 import {
   BranchPerformanceChart,
   PortfolioTrendChart,
-} from "../components/chart-bars";
+} from "../components/charts/admin-dashboard-charts";
 import { ActionBar } from "../components/action-bar";
 import { SectionCard } from "../components/section-card";
 import { StatCard } from "../components/stat-card";
@@ -28,11 +28,14 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table";
-import { getAdminDashboardData } from "../lib/dashboard-data";
+import { getAdminDashboardPageData } from "../lib/dashboard-data";
 import { compactCurrency, prettyCurrency } from "../lib/format";
 
 export default async function AdminDashboardPage() {
-  const { alerts, charts, isLive, profile, summary } = await getAdminDashboardData();
+  const {
+    dashboard: { alerts, charts, isLive, profile, summary },
+    fraud,
+  } = await getAdminDashboardPageData();
 
   return (
     <AdminShell
@@ -177,6 +180,43 @@ export default async function AdminDashboardPage() {
           </AdminDetailList>
         </SectionCard>
       </div>
+
+      <SectionCard
+        description="A direct view of suspicious activity, device trust drift, and approval-speed anomalies."
+        title="Fraud Snapshot"
+      >
+        <div className="grid gap-4 md:grid-cols-4">
+          <StatCard
+            description="Open and investigating fraud alerts."
+            label="Alert Load"
+            tone={fraud.summary.openAlerts > 0 ? "warning" : "default"}
+            value={String(fraud.summary.openAlerts)}
+          />
+          <StatCard
+            description="High-score transaction-linked cases."
+            label="High Risk"
+            tone={fraud.summary.highRiskTransactions > 0 ? "danger" : "default"}
+            value={String(fraud.summary.highRiskTransactions)}
+          />
+          <StatCard
+            description="Active offline burst clusters."
+            label="Offline Bursts"
+            tone={fraud.summary.offlineBurstCases > 0 ? "warning" : "default"}
+            value={String(fraud.summary.offlineBurstCases)}
+          />
+          <StatCard
+            description="Average approval time across the recent visible scope."
+            label="Avg Approval"
+            tone="success"
+            value={`${fraud.summary.averageApprovalSeconds}s`}
+          />
+        </div>
+        <ActionBar>
+          <Button asChild>
+            <Link href="/fraud">Open Fraud Center</Link>
+          </Button>
+        </ActionBar>
+      </SectionCard>
 
       <SectionCard
         description="Each branch row carries consolidated savings, deposits, loans, and outstanding principal."

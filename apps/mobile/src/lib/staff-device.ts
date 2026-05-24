@@ -2,6 +2,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Device from "expo-device";
 import { toStaffDeviceRpcError } from "@credit-union/shared";
 
+import { getCurrentMobileProfile } from "./mobile-auth";
+import { evaluateMobileFraudEvent } from "./fraud";
 import { getSupabaseClient } from "./supabase/client";
 
 const MOBILE_DEVICE_ID_STORAGE_KEY = "credit-union/staff-device-id/v1";
@@ -120,7 +122,24 @@ export async function assertMobileStaffDeviceAccess() {
     throw toStaffDeviceRpcError(error, "We could not verify staff device access.");
   }
 
-  return toAssertion(data);
+  const assertion = toAssertion(data);
+  const profile = await getCurrentMobileProfile().catch(() => null);
+
+  if (profile?.role === "agent") {
+    await evaluateMobileFraudEvent({
+      actorId: profile.id,
+      branchId: profile.branchId,
+      eventType: "device_asserted",
+      metadata: {
+        access: assertion.access,
+        active_device_id: assertion.activeDeviceId,
+        active_device_kind: assertion.activeDeviceKind,
+        device_id: identity.id,
+      },
+    });
+  }
+
+  return assertion;
 }
 
 export async function registerMobileStaffDevice() {
@@ -134,6 +153,21 @@ export async function registerMobileStaffDevice() {
 
   if (error) {
     throw toStaffDeviceRpcError(error, "We could not trust this phone yet.");
+  }
+
+  const profile = await getCurrentMobileProfile().catch(() => null);
+
+  if (profile?.role === "agent") {
+    await evaluateMobileFraudEvent({
+      actorId: profile.id,
+      branchId: profile.branchId,
+      eventType: "device_registered",
+      metadata: {
+        device_id: identity.id,
+        device_kind: identity.kind,
+        device_name: identity.name,
+      },
+    });
   }
 
   return data;
