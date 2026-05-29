@@ -1,7 +1,9 @@
 import {
   calculateMonthlyInterest,
+  calculateNextLoanPaymentDueAt,
   DEFAULT_APP_CONTENT_PAGES,
   PASSWORD_POLICY,
+  resolveLoanRepaymentStatus,
   type AppContentPage,
   type AppContentPageKey,
   type LoanStatus,
@@ -35,6 +37,7 @@ import {
 import { queueEntryToTransactionRequest } from "./offline-sync-core";
 import { evaluateMobileFraudEvent, recordFailedTransactionPin } from "./fraud";
 import { requireCurrentMobileProfile } from "./mobile-auth";
+import { getSeenNotificationIds, markNotificationsSeen } from "./notification-state";
 import {
   registerMobileStaffDevice,
   requireAllowedMobileStaffDevice,
@@ -186,7 +189,6 @@ export interface AgentMemberDetail {
   withdrawalTarget: AgentTransactionTarget | null;
 }
 
-const DAYS_IN_MONTH = 30;
 const MEMBER_ACCOUNT_TYPES = ["savings", "deposit"] as const;
 
 function toNumber(value: number | string | null | undefined) {
@@ -563,16 +565,28 @@ function toLoanStatusLabel(status: LoanStatus) {
   return "APPROVED";
 }
 
-function buildNextDueLabel(loan: LoanRow, latestRepayment?: LoanRepaymentRow) {
-  const anchor = latestRepayment?.created_at ?? loan.disbursed_at ?? loan.created_at;
-  const nextDue = new Date(anchor);
-  nextDue.setDate(nextDue.getDate() + DAYS_IN_MONTH);
-
-  return formatDateLabel(nextDue.toISOString(), {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
+function buildLoanPaymentSummary(loan: LoanRow, repaymentCount = 0) {
+  const nextDue = calculateNextLoanPaymentDueAt({
+    createdAt: loan.created_at,
+    disbursedAt: loan.disbursed_at,
+    repaymentCount,
   });
+  const repaymentStatus = resolveLoanRepaymentStatus({
+    nextDueAt: nextDue,
+    remainingPrincipal: toNumber(loan.remaining_principal),
+    status: loan.status,
+  });
+
+  return {
+    effectiveStatus: repaymentStatus.effectiveStatus,
+    isOverdue: repaymentStatus.isOverdue,
+    nextDueAt: nextDue.toISOString(),
+    nextDueLabel: formatDateLabel(nextDue.toISOString(), {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }),
+  };
 }
 
 async function getBranch(branchId: string | null) {
@@ -776,7 +790,7 @@ export const mobileData = {
     const supabase = getSupabaseClient();
     const profile = await requireCurrentMobileProfile(["agent"]);
 
-    const [branch, transactionRows, cashDrawerResponse, offlineQueue] = await Promise.all([
+    const [branch, transactionRows, cashDrawerResponse, assignedMemberRows, offlineQueue] = await Promise.all([
       getBranch(profile.branchId),
       supabase
         .from("transaction_requests")
@@ -792,6 +806,10 @@ export const mobileData = {
         .order("business_date", { ascending: false })
         .limit(1)
         .maybeSingle(),
+      supabase
+        .from("member_profiles")
+        .select("profile_id, status")
+        .eq("assigned_agent_id", profile.id),
       getOfflineSyncQueue(),
     ]);
 
@@ -805,6 +823,11 @@ export const mobileData = {
       throw cashDrawerResponse.error;
     }
 
+    if (assignedMemberRows.error) {
+      throw assignedMemberRows.error;
+    }
+
+    const assignedMembers = (assignedMemberRows.data as Pick<MemberProfileRow, "profile_id" | "status">[] | null) ?? [];
     const queuedTransactionRows = offlineQueue
       .filter((entry) => entry.actorId === profile.id)
       .map((entry) =>
@@ -888,6 +911,8 @@ export const mobileData = {
         .filter((row) => row.type === "withdrawal")
         .reduce((sum, row) => sum + toNumber(row.amount), 0),
       pendingApprovals: hydratedTransactions.filter((row) => row.status === "pending_approval").length,
+      assignedMemberCount: assignedMembers.length,
+      activeMemberCount: assignedMembers.filter((member) => toMemberStatus(member.status) === "active").length,
       cashOnHand:
         cashDrawer?.counted_cash == null
           ? toNumber(cashDrawer?.expected_cash)
@@ -1705,16 +1730,17 @@ export const mobileData = {
             .select("id, loan_id, created_at, repayment_mode, interest_component, principal_component")
             .eq("loan_id", activeLoan.id)
             .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle()
-        : Promise.resolve({ data: null, error: null })
+        : Promise.resolve({ data: [] as LoanRepaymentRow[], error: null })
     );
 
     if (repaymentResponse.error) {
       throw repaymentResponse.error;
     }
 
-    const latestRepayment = (repaymentResponse.data as LoanRepaymentRow | null) ?? null;
+    const activeLoanRepayments = (repaymentResponse.data as LoanRepaymentRow[] | null) ?? [];
+    const activeLoanPaymentSummary = activeLoan
+      ? buildLoanPaymentSummary(activeLoan, activeLoanRepayments.length)
+      : null;
 
     return {
       syncState: getSyncState(transactionRows),
@@ -1726,7 +1752,7 @@ export const mobileData = {
       availableBalance: balances.depositBalance,
       outstandingLoan,
       nextDueLabel: activeLoan
-        ? buildNextDueLabel(activeLoan, latestRepayment ?? undefined)
+        ? `${activeLoanPaymentSummary?.isOverdue ? "Overdue since" : "Next due"} ${activeLoanPaymentSummary?.nextDueLabel}`
         : "No active loan",
       branchContact: buildBranchContact(branch?.name ?? "Branch", branch?.phone ?? null),
       flowTrend: buildMemberTrend(transactionRows),
@@ -1888,13 +1914,14 @@ export const mobileData = {
   },
 
   async getMemberNotifications(): Promise<MobileNotificationItem[]> {
+    const profile = await requireCurrentMobileProfile(["member"]);
     const [dashboard, transactions, loans] = await Promise.all([
       mobileData.getMemberDashboard(),
       mobileData.getMemberTransactions(),
       mobileData.getLoans(),
     ]);
     const transactionNotices = transactions.slice(0, 8).map((transaction) => ({
-      id: transaction.id,
+      id: `transaction-${transaction.id}-${transaction.status}`,
       amount: transaction.amount,
       createdAt: transaction.createdAt,
       status: buildActivityStatus({
@@ -1915,7 +1942,7 @@ export const mobileData = {
           : "Deposit status updated",
     }));
     const loanNotices = loans.slice(0, 4).map((loan) => ({
-      id: `loan-${loan.id}`,
+      id: `loan-${loan.id}-${loan.status}-${loan.nextDueAt}`,
       amount: loan.remainingPrincipal,
       createdAt: new Date().toISOString(),
       status: toLoanStatusLabel(loan.status),
@@ -1926,7 +1953,7 @@ export const mobileData = {
       dashboard.syncState !== "ONLINE"
         ? [
             {
-              id: "member-sync-state",
+              id: `member-sync-state-${dashboard.syncState}`,
               createdAt: new Date().toISOString(),
               status: dashboard.syncState,
               subtitle: "Some account states may still be refreshing.",
@@ -1935,10 +1962,20 @@ export const mobileData = {
           ]
         : [];
 
-    return [...syncNotice, ...transactionNotices, ...loanNotices].sort(
-      (left, right) =>
-        new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
-    );
+    const seenIds = await getSeenNotificationIds(profile.id);
+
+    return [...syncNotice, ...transactionNotices, ...loanNotices]
+      .filter((notification) => !seenIds.has(notification.id))
+      .sort(
+        (left, right) =>
+          new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+      );
+  },
+
+  async markMemberNotificationsSeen(ids: string[]) {
+    const profile = await requireCurrentMobileProfile(["member"]);
+
+    await markNotificationsSeen(profile.id, ids);
   },
 
   async getLoans(): Promise<LoanCard[]> {
@@ -2003,6 +2040,7 @@ export const mobileData = {
       const latestRepayment = loanRepayments[0];
       const remainingPrincipal = toNumber(loan.remaining_principal);
       const monthlyInterestRate = toNumber(loan.monthly_interest_rate);
+      const paymentSummary = buildLoanPaymentSummary(loan, loanRepayments.length);
 
       return {
         id: loan.id,
@@ -2016,18 +2054,23 @@ export const mobileData = {
         approvedPrincipal: toNumber(loan.approved_principal),
         remainingPrincipal,
         monthlyInterestRate,
-        status: loan.status,
+        status: paymentSummary.effectiveStatus,
         nextInterestDue: calculateMonthlyInterest(
           remainingPrincipal,
           monthlyInterestRate,
         ),
         collateralRequired: application?.collateral_required ?? false,
-        nextDueLabel: buildNextDueLabel(loan, latestRepayment),
+        isOverdue: paymentSummary.isOverdue,
+        nextDueAt: paymentSummary.nextDueAt,
+        nextDueLabel: paymentSummary.nextDueLabel,
+        statusLabel: paymentSummary.isOverdue
+          ? "OVERDUE"
+          : toLoanStatusLabel(paymentSummary.effectiveStatus),
         repaymentModeLabel:
           latestRepayment?.repayment_mode === "interest_only"
             ? "Interest only"
             : "Interest plus principal",
-        recentPayments: loanRepayments.slice(0, 5).map((repayment) => ({
+        recentPayments: loanRepayments.map((repayment) => ({
           id: repayment.id,
           dateLabel: formatDateLabel(repayment.created_at),
           principalPaid: toNumber(repayment.principal_component),
@@ -2059,12 +2102,14 @@ export const mobileData = {
             : []),
           {
             id: `${loan.id}-status`,
-            label: titleCase(loan.status),
+            label: paymentSummary.isOverdue
+              ? "Payment overdue"
+              : titleCase(paymentSummary.effectiveStatus),
             date: formatDateLabel(latestRepayment?.created_at ?? loan.created_at),
             state:
-              loan.status === "defaulted"
+              paymentSummary.effectiveStatus === "defaulted"
                 ? "RECONCILIATION REQUIRED"
-                : loan.status === "rejected"
+                : paymentSummary.effectiveStatus === "rejected"
                   ? "REJECTED"
                   : "APPROVED",
           },

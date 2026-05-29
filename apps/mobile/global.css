@@ -5,10 +5,32 @@
 @import "nativewind/theme";
 
 @theme {
+  --font-sans: "SpaceGrotesk-Regular";
+  --font-display: "SpaceGrotesk-Bold";
+  --font-medium: "SpaceGrotesk-Medium";
+
+  --color-unity-blue: #0046B8;
+  --color-unity-blue-dark: #003586;
+  --color-unity-blue-deep: #052D77;
+  --color-unity-teal: #08BFA9;
+  --color-unity-teal-dark: #079E91;
+  --color-unity-mint: #1FD6B1;
+  --color-unity-green: #0AA35D;
+  --color-unity-green-soft: #DDF8E9;
+  --color-unity-orange: #FF8A1F;
+  --color-unity-orange-soft: #FFF0DA;
+  --color-unity-purple: #8D5CF6;
+  --color-unity-purple-soft: #EEE5FF;
+  --color-unity-red: #EF233C;
+  --color-unity-red-soft: #FFE1E5;
+  --color-unity-ink: #071229;
+  --color-unity-muted: #63708A;
+  --color-unity-line: #D9E1EE;
+  --color-unity-panel: #F5F8FC;
+  --color-unity-card: #FFFFFF;
+  --color-unity-tab: #FDFEFF;
   --color-mint-500: oklch(0.72 0.11 178);
   --color-yellow-500: oklch(90.7% 0.1962 108.5);
   --color-bar: #00992B;
   --color-lime: #DBEEDA;
-
-  
 }

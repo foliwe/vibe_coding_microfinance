@@ -1,7 +1,7 @@
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useFonts } from "expo-font";
 import { Asset } from "expo-asset";
 import {
@@ -18,32 +18,41 @@ SplashScreen.preventAutoHideAsync().catch(() => undefined);
 const preloadAssets = [
   require("../assets/images/icon.png"),
   require("../assets/images/logo-glow.png"),
+  require("../assets/images/unity-credit-logo.png"),
 ];
 
 export default function RootLayout() {
-  const [fontsLoaded] = useFonts({
+  const [fontFallbackReady, setFontFallbackReady] = useState(false);
+  const [fontsLoaded, fontError] = useFonts({
     "SpaceGrotesk-Regular": SpaceGrotesk_400Regular,
     "SpaceGrotesk-Medium": SpaceGrotesk_500Medium,
     "SpaceGrotesk-Bold": SpaceGrotesk_700Bold,
   });
 
+  const appReady = fontsLoaded || !!fontError || fontFallbackReady;
   const assetsPromise = useMemo(() => Asset.loadAsync(preloadAssets), []);
 
   useEffect(() => {
     let active = true;
+    const fallbackTimer = setTimeout(() => {
+      if (active) {
+        setFontFallbackReady(true);
+      }
+    }, 2500);
 
     Promise.all([assetsPromise]).finally(() => {
-      if (active && fontsLoaded) {
+      if (active && appReady) {
         SplashScreen.hideAsync().catch(() => undefined);
       }
     });
 
     return () => {
       active = false;
+      clearTimeout(fallbackTimer);
     };
-  }, [assetsPromise, fontsLoaded]);
+  }, [appReady, assetsPromise]);
 
-  if (!fontsLoaded) {
+  if (!appReady) {
     return null;
   }
 

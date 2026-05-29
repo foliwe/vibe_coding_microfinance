@@ -1,6 +1,7 @@
 import { Redirect } from "expo-router";
 
 import { SessionLoadingScreen } from "@/features/session-status-screen";
+import { WelcomeScreen } from "@/features/welcome-screen";
 import { useAppSession } from "@/lib/app-session";
 
 export default function IndexRoute() {
@@ -16,7 +17,7 @@ export default function IndexRoute() {
   }
 
   if (!session || !profile) {
-    return <Redirect href="/welcome" />;
+    return <WelcomeScreen />;
   }
 
   if (profile.role === "agent") {

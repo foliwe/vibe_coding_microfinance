@@ -1,0 +1,12 @@
+[    8326ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:8083/apps/mobile/index.bundle?platform=web&dev=true&hot=false&lazy=true&transform.routerRoot=app:165271
+[    8354ms] [LOG] Running application "main" with appParams:
+ {rootTag: #root, hydrate: undefined} 
+Development-level warnings: ON.
+Performance optimizations: OFF. @ http://localhost:8083/apps/mobile/index.bundle?platform=web&dev=true&hot=false&lazy=true&transform.routerRoot=app:138298
+[    8396ms] [WARNING] "shadow*" style props are deprecated. Use "boxShadow". @ http://localhost:8083/apps/mobile/index.bundle?platform=web&dev=true&hot=false&lazy=true&transform.routerRoot=app:122963
+[    8722ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:8083/welcome:0
+[ 3013366ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:8083/welcome:0
+[ 3949298ms] [WARNING] Disconnected from Metro (1006)
+To reconnect:
+- Ensure that Metro is running and available on the same network
+- Reload this app (will trigger further help if Metro cannot be connected to) @ http://localhost:8083/apps/mobile/index.bundle?platform=web&dev=true&hot=false&lazy=true&transform.routerRoot=app:4371

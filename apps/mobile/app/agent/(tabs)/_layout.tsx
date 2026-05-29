@@ -1,25 +1,21 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Tabs } from "expo-router";
-import { View } from "react-native";
+import { router, Tabs } from "expo-router";
+import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { colors, radii, spacing } from "@/theme/tokens";
+import { colors, typography } from "@/theme/tokens";
+
+const tabs = {
+  collect: ["add-circle-outline", "Collect"],
+  history: ["time-outline", "History"],
+  index: ["home", "Home"],
+  members: ["people-outline", "Members"],
+  more: ["person-outline", "Profile"],
+} as const;
 
 export default function AgentTabsLayout() {
   const insets = useSafeAreaInsets();
-  const bottomInset = Math.max(insets.bottom, spacing.xs);
-  const tabBarHeight = 54 + bottomInset;
-
-  const tabBubbleStyle = (focused: boolean) => ({
-    alignItems: "center" as const,
-    backgroundColor: focused ? colors.brand : "transparent",
-    borderColor: focused ? colors.brand : "transparent",
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    height: 42,
-    justifyContent: "center" as const,
-    width: 42,
-  });
+  const bottomInset = Math.max(insets.bottom, 10);
 
   return (
     <Tabs
@@ -28,55 +24,92 @@ export default function AgentTabsLayout() {
         tabBarActiveTintColor: colors.brand,
         tabBarInactiveTintColor: colors.inkMuted,
         tabBarShowLabel: false,
-        tabBarIcon: ({ color, focused }) => {
-          const icons = {
-            index: focused ? "home" : "home-outline",
-            transactions: focused ? "swap-horizontal" : "swap-horizontal-outline",
-            members: focused ? "people" : "people-outline",
-            more: focused ? "settings" : "settings-outline",
-          } as const;
+        tabBarIcon: ({ focused }) => {
+          const [icon, label] = tabs[route.name as keyof typeof tabs] ?? ["ellipse-outline", route.name];
 
           return (
-            <View style={tabBubbleStyle(focused)}>
+            <View style={styles.item}>
+              <View style={[styles.indicator, focused && styles.indicatorActive]} />
               <Ionicons
-                color={focused ? colors.white : colors.ink}
-                name={icons[route.name as keyof typeof icons] ?? "ellipse-outline"}
-                size={27}
+                color={focused ? colors.brand : colors.inkMuted}
+                name={icon as keyof typeof Ionicons.glyphMap}
+                size={24}
               />
+              <Text style={[styles.label, focused && styles.labelActive]}>{label}</Text>
             </View>
           );
         },
-        tabBarItemStyle: {
-          alignItems: "center",
-          flex: 1,
-          justifyContent: "center",
-          paddingBottom: Math.round(bottomInset * 0.45),
-          paddingTop: 4,
-          paddingHorizontal: 0,
-        },
-        tabBarStyle: {
-          alignSelf: "center",
-          backgroundColor: colors.foliwe,
-          borderColor: colors.foliwe,
-          borderTopWidth: 0,
-          bottom: spacing.sm,
-          elevation: 0,
-          height: tabBarHeight,
-          left: 16,
-          paddingHorizontal: spacing.xs,
-          paddingTop: spacing.xs,
-          paddingBottom: bottomInset,
-          position: "absolute",
-          right: 16,
-          borderRadius: radii.lg,
-          shadowOpacity: 0,
-        },
+        tabBarItemStyle: styles.tabItem,
+        tabBarStyle: [
+          styles.tabBar,
+          {
+            height: 66 + bottomInset,
+            paddingBottom: bottomInset,
+          },
+        ],
       })}
     >
       <Tabs.Screen name="index" options={{ title: "Home" }} />
-      <Tabs.Screen name="transactions" options={{ title: "Transactions" }} />
       <Tabs.Screen name="members" options={{ title: "Members" }} />
-      <Tabs.Screen name="more" options={{ title: "More" }} />
+      <Tabs.Screen
+        name="collect"
+        listeners={{
+          tabPress: (event) => {
+            event.preventDefault();
+            router.push("/agent/members");
+          },
+        }}
+        options={{ title: "Collect" }}
+      />
+      <Tabs.Screen name="history" options={{ title: "History" }} />
+      <Tabs.Screen name="more" options={{ title: "Profile" }} />
+      <Tabs.Screen name="transactions" options={{ href: null }} />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  indicator: {
+    backgroundColor: "transparent",
+    borderRadius: 999,
+    height: 3,
+    marginBottom: 8,
+    width: 56,
+  },
+  indicatorActive: {
+    backgroundColor: colors.brand,
+  },
+  item: {
+    alignItems: "center",
+    height: 58,
+    justifyContent: "flex-start",
+    minWidth: 72,
+  },
+  label: {
+    color: colors.inkMuted,
+    fontFamily: typography.body,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 3,
+  },
+  labelActive: {
+    color: colors.brand,
+    fontFamily: typography.medium,
+  },
+  tabBar: {
+    backgroundColor: "rgba(255,255,255,0.96)",
+    borderTopColor: "#E5EAF2",
+    borderTopWidth: 1,
+    elevation: 0,
+    left: 0,
+    paddingHorizontal: 8,
+    paddingTop: 0,
+    position: "absolute",
+    right: 0,
+    boxShadow: "0 -8px 18px rgba(7, 18, 41, 0.06)",
+  },
+  tabItem: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+});

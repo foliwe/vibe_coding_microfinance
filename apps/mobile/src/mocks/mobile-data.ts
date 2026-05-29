@@ -46,6 +46,8 @@ export const demoAgentDashboard: AgentDashboard = {
   collectionsToday: 45000,
   withdrawalsToday: 12000,
   pendingApprovals: 8,
+  assignedMemberCount: 3,
+  activeMemberCount: 2,
   cashOnHand: 33000,
   expectedCash: 35000,
   activity: [
@@ -205,8 +207,11 @@ export const demoLoans: LoanCard[] = [
     status: "active",
     nextInterestDue: 12000,
     collateralRequired: false,
+    isOverdue: false,
+    nextDueAt: "2026-05-12T00:00:00.000Z",
     nextDueLabel: "12 May 2026",
     repaymentModeLabel: "Interest plus principal",
+    statusLabel: "APPROVED",
     recentPayments: [
       { id: "loan-payment-1", dateLabel: "12 May", principalPaid: 6000, interestPaid: 3200 },
       { id: "loan-payment-2", dateLabel: "12 Apr", principalPaid: 5500, interestPaid: 3400 },

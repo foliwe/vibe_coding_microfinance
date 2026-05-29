@@ -1,29 +1,31 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import DateTimePicker, {
+  DateTimePickerAndroid,
+  type DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
+import { StatusBar } from "expo-status-bar";
+import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams, type Href } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
+import { Image, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-  ActionTile,
-  InfoRow,
-  InputField,
-  MonthTabStrip,
-  MiniBarChart,
-  PrimaryButton,
-  Screen,
-  SecondaryButton,
-  SectionHeader,
-  SkeletonCard,
-  StatusPill,
-  SurfaceCard,
-  TransactionDayHeader,
-  TransactionRow,
-} from "@/components/ui";
-import { formatCurrency, formatMoneyValue } from "@/lib/format";
+  IconBubble,
+  SectionTitle,
+  StatusChip,
+  TealSummaryCard,
+  NotificationBell,
+  UnityLogoLockup,
+  UnityPage,
+  UnitySimplePage,
+  WhiteCard,
+  unityStyles,
+} from "@/components/unity-ui";
+import { formatCurrency } from "@/lib/format";
 import { useAppSession } from "@/lib/app-session";
 import { getErrorMessage } from "@/lib/errors";
-import { mobileData, formatTransactionMonthLabel } from "@/lib/mobile-data";
+import { mobileData, formatDateLabel, formatTransactionMonthLabel } from "@/lib/mobile-data";
 import {
   buildTransactionDayGroups,
   buildTransactionMonthTabs,
@@ -33,23 +35,179 @@ import {
 import { useResource } from "@/lib/use-resource";
 import type { LoanCard, MobileAccountCard } from "@/lib/mobile-models";
 import type { AppContentPageKey, TransactionRequest } from "@credit-union/shared";
-import { colors, radii, spacing, typography } from "@/theme/tokens";
+import { colors, typography } from "@/theme/tokens";
 
-function ResourceErrorCard({ message }: { message: string }) {
-  return (
-    <SurfaceCard accent="#F7EEE0">
-      <StatusPill label="REJECTED" />
-      <Text style={[styles.heroCaption, { marginTop: spacing.sm }]}>{message}</Text>
-    </SurfaceCard>
-  );
-}
+const memberProfileAvatar = require("../../../assets/images/member-profile-avatar.png");
+const unityLogoMark = require("../../../assets/images/unity-credit-logo.png");
+
+type TransactionStatusFilter = "all" | "pending" | "approved" | "rejected";
+type TransactionTypeFilter = "all" | "deposit" | "saving" | "loanRepayment" | "withdrawal";
+
+const transactionStatusFilters: { key: TransactionStatusFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "pending", label: "Pending" },
+  { key: "approved", label: "Approved" },
+  { key: "rejected", label: "Rejected" },
+];
+
+const transactionTypeFilters: { key: TransactionTypeFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "deposit", label: "Deposit" },
+  { key: "saving", label: "Saving" },
+  { key: "loanRepayment", label: "Loan" },
+  { key: "withdrawal", label: "Withdrawal" },
+];
 
 function getSingleParam(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function titleCase(value: string) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
+function currency(amount: number) {
+  return formatCurrency(amount);
+}
+
+function firstName(name: string) {
+  return name.split(" ")[0] || name;
+}
+
+function toDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateInputValue(value: string) {
+  const [yearValue, monthValue, dayValue] = value.split("-").map(Number);
+  const parsed = new Date(yearValue, monthValue - 1, dayValue);
+
+  return Number.isNaN(parsed.getTime()) ? new Date(1990, 0, 1) : parsed;
+}
+
+function formatDateInputValue(value: string) {
+  if (!value) {
+    return "Select date of birth";
+  }
+
+  return formatDateLabel(parseDateInputValue(value), {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function toStatusLabel(status: TransactionRequest["status"]) {
+  const map: Record<TransactionRequest["status"], string> = {
+    approved: "Approved",
+    draft: "Pending",
+    pending_approval: "Pending",
+    rejected: "Rejected",
+    reversed: "Rejected",
+    sync_conflict: "Pending",
+    unsynced: "Pending",
+  };
+
+  return map[status];
+}
+
+function transactionTitle(transaction: Pick<TransactionRequest, "accountType" | "type">) {
+  if (transaction.type === "withdrawal") {
+    return "Withdrawal";
+  }
+
+  if (transaction.type === "loan_repayment") {
+    return "Loan";
+  }
+
+  return transaction.accountType === "deposit" ? "Deposit" : "Saving";
+}
+
+function matchesTransactionTypeFilter(
+  transaction: Pick<TransactionRequest, "accountType" | "type">,
+  filter: TransactionTypeFilter,
+) {
+  if (filter === "all") {
+    return true;
+  }
+
+  if (filter === "deposit") {
+    return transaction.type === "deposit" && transaction.accountType === "deposit";
+  }
+
+  if (filter === "saving") {
+    return transaction.type === "deposit" && transaction.accountType === "savings";
+  }
+
+  if (filter === "loanRepayment") {
+    return transaction.type === "loan_repayment";
+  }
+
+  return transaction.type === "withdrawal";
+}
+
+function matchesTransactionStatusFilter(
+  status: TransactionRequest["status"],
+  filter: TransactionStatusFilter,
+) {
+  if (filter === "all") {
+    return true;
+  }
+
+  if (filter === "pending") {
+    return (
+      status === "draft" ||
+      status === "pending_approval" ||
+      status === "sync_conflict" ||
+      status === "unsynced"
+    );
+  }
+
+  if (filter === "approved") {
+    return status === "approved";
+  }
+
+  return status === "rejected" || status === "reversed";
+}
+
+function statusTone(status: string): "success" | "warning" | "danger" | "info" | "muted" {
+  const normalized = status.toLowerCase();
+
+  if (normalized.includes("reject") || normalized.includes("failed")) {
+    return "danger";
+  }
+
+  if (normalized.includes("pending") || normalized.includes("process")) {
+    return "warning";
+  }
+
+  if (normalized.includes("upcoming")) {
+    return "info";
+  }
+
+  return "success";
+}
+
+function ResourceErrorCard({ message }: { message: string }) {
+  return (
+    <WhiteCard className="p-5">
+      <StatusChip label="Rejected" tone="danger" />
+      <Text className="mt-3 text-unity-muted" style={styles.bodyText}>
+        {message}
+      </Text>
+    </WhiteCard>
+  );
+}
+
+function LoadingStack() {
+  return (
+    <>
+      <WhiteCard className="h-28 p-5">
+        <Text className="text-unity-muted" style={styles.bodyText}>Loading...</Text>
+      </WhiteCard>
+      <WhiteCard className="mt-4 h-28 p-5" />
+    </>
+  );
 }
 
 export function MemberContentPageScreen({
@@ -59,29 +217,26 @@ export function MemberContentPageScreen({
   contentKey: AppContentPageKey;
   fallbackTitle: string;
 }) {
-  const loader = useMemo(
-    () => () => mobileData.getContentPage(contentKey),
-    [contentKey],
-  );
+  const loader = useMemo(() => () => mobileData.getContentPage(contentKey), [contentKey]);
   const { data, error, loading } = useResource(loader);
 
   return (
-    <Screen title={data?.title ?? fallbackTitle}>
+    <UnitySimplePage subtitle="Unity Credit member information." title={data?.title ?? fallbackTitle}>
       {error ? (
         <ResourceErrorCard message={error} />
       ) : loading || !data ? (
-        <SkeletonCard />
+        <LoadingStack />
       ) : (
-        <SurfaceCard>
+        <WhiteCard className="p-5">
           <MarkdownContent content={data.content} />
           {data.updatedAt ? (
-            <Text style={styles.markdownMeta}>
+            <Text className="mt-4 text-unity-muted" style={styles.smallText}>
               Updated {formatTransactionRowDate(data.updatedAt)}
             </Text>
           ) : null}
-        </SurfaceCard>
+        </WhiteCard>
       )}
-    </Screen>
+    </UnitySimplePage>
   );
 }
 
@@ -92,150 +247,240 @@ export function MemberHomeScreen() {
     error: transactionError,
     loading: transactionsLoading,
   } = useResource(mobileData.getMemberTransactions);
+  const { data: notifications } = useResource(mobileData.getMemberNotifications);
 
   if (error) {
     return (
-      <Screen subtitle="We could not load your member dashboard." title="Home">
+      <UnitySimplePage showBack={false} subtitle="We could not load your dashboard." title="Home">
         <ResourceErrorCard message={error} />
-      </Screen>
+      </UnitySimplePage>
     );
   }
 
   if (loading || !data) {
     return (
-      <Screen subtitle="Loading the member preview." title="Home">
-        <SkeletonCard />
-        <SkeletonCard />
-      </Screen>
+      <UnitySimplePage showBack={false} subtitle="Loading your dashboard." title="Home">
+        <LoadingStack />
+      </UnitySimplePage>
     );
   }
 
+  const recent = transactions?.slice(0, 4) ?? [];
+  const liveRows = recent.map((transaction, index) => ({
+    amount: transaction.amount,
+    icon: transaction.type === "deposit" ? "download-outline" as const : "arrow-up-outline" as const,
+    id: transaction.id,
+    meta: formatTransactionRowDate(transaction.createdAt),
+    onPress: () => router.push(`/member/transactions/${transaction.id}` as Href),
+    status: toStatusLabel(transaction.status),
+    title: transactionTitle(transaction),
+    tone: (index === 1 ? "blue" : index === 2 ? "purple" : "green") as "blue" | "green" | "purple",
+  }));
+
+  const homeRows = [...liveRows].slice(0, 4);
+
   return (
-    <Screen
-      right={
-        <HeaderIconButton
-          icon="notifications-outline"
-          label="Notifications"
-          onPress={() => router.push("/member/notifications" as Href)}
-        />
-      }
-      title="Home"
-    >
-      <SurfaceCard tone="homeHero">
-        <SurfaceCard accent={colors.foliwe} tone="hero">
-          <View style={styles.balanceHeader}>
-            <Text style={styles.heroCaption}>CFA</Text>
-            <Ionicons color={colors.ink} name="eye-off-outline" size={22} />
+    <UnityPage
+      headerContent={
+        <>
+          <View className="mt-2">
+            <Text className="text-white" style={styles.homeGreetingLabel}>Good morning,</Text>
+            <Text className="text-white" style={styles.homeGreetingName}>
+              {firstName(data.memberName)} <Text>👋</Text>
+            </Text>
+            <Text className="mt-1 text-white/90" style={styles.homeGreetingSub}>
+              Welcome back! We&apos;re glad to have you.
+            </Text>
           </View>
-          <Text style={styles.heroCaption}>All Accounts</Text>
-          <Text style={styles.moneyTitle}>{formatMoneyValue(data.savingsBalance + data.depositBalance)}</Text>
-        </SurfaceCard>
+        </>
+      }
+      headerHeight={248}
+      notificationCount={notifications?.length ?? 0}
+      onNotificationPress={() => router.push("/member/notifications" as Href)}
+    >
+      <View style={styles.homeBalanceOverlap}>
+        <TealSummaryCard
+          amount={currency(data.savingsBalance + data.depositBalance)}
+          icon="wallet"
+          subtitle={`Available Balance\n${currency(data.availableBalance)}`}
+          title="Total Available income"
+        />
+      </View>
 
-        <View style={styles.accountActionRow}>
-          <AccountActionButton
-            icon="cash-outline"
-            label="Deposit"
-            onPress={() => router.push("/member/accounts/deposit" as Href)}
-          />
-          <AccountActionButton
-            icon="settings-outline"
-            label="Savings"
-            onPress={() => router.push("/member/accounts/savings" as Href)}
-          />
-          <AccountActionButton
-            icon="card-outline"
-            label="Loan"
-            onPress={() => router.push("/member/loans" as Href)}
-          />
-        </View>
-      </SurfaceCard>
+      <WhiteCard className="flex-row items-center justify-between px-3 py-2">
+        <MiniMetric
+          amount={currency(data.depositBalance)}
+          icon="calendar-outline"
+          label="Pending Deposits"
+          sublabel="2 pending"
+          tone="blue"
+        />
+        <View className="mx-2 h-10 w-px bg-unity-line" />
+        <MiniMetric
+          amount={currency(data.outstandingLoan)}
+          icon="cash-outline"
+          label="Active Loan Balance"
+          sublabel={data.outstandingLoan > 0 ? data.nextDueLabel : "No active loan"}
+          tone="green"
+        />
+      </WhiteCard>
 
-      <SurfaceCard>
-        <MiniBarChart data={data.flowTrend} />
-      </SurfaceCard>
+      <View className="mt-3 flex-row justify-between gap-3">
+        <ActionSquare icon="download-outline" label="Deposits" onPress={() => router.push("/member/accounts/deposit" as Href)} tone="blue" />
+        <ActionSquare icon="wallet-outline" label="Savings" onPress={() => router.push("/member/accounts/savings" as Href)} tone="purple" />
+        <ActionSquare icon="briefcase-outline" label="Loans" onPress={() => router.push("/member/loans" as Href)} tone="green" />
+      </View>
 
-      <SectionHeader actionLabel="See All" href="/member/transactions" title="Latest Transactions" />
-      {transactionError ? (
-        <ResourceErrorCard message={transactionError} />
-      ) : transactionsLoading || !transactions ? (
-        <SkeletonCard />
-      ) : (
-        transactions.slice(0, 4).map((transaction) => (
-          <TransactionRow
-            key={transaction.id}
-            amount={transaction.amount}
-            dateLabel={formatTransactionRowDate(transaction.createdAt)}
-            detailLabel={transaction.memberName || data.memberName}
-            onPress={() => router.push(`/member/transactions/${transaction.id}` as Href)}
-            status={toStatusLabel(transaction.status)}
-            typeLabel={transaction.type === "deposit" ? titleCase(transaction.accountType) : "Withdrawal"}
-          />
-        ))
-      )}
-    </Screen>
+      <SectionTitle
+        action={
+          <Pressable onPress={() => router.push("/member/transactions" as Href)}>
+            <Text className="text-unity-blue" style={styles.linkText}>View all</Text>
+          </Pressable>
+        }
+        title="Recent Transactions"
+      />
+      <WhiteCard>
+        {transactionError ? (
+          <View className="border-b border-unity-line p-4">
+            <Text className="text-unity-muted" style={styles.smallText}>{transactionError}</Text>
+          </View>
+        ) : null}
+        {transactionsLoading || !transactions ? (
+          <View className="border-b border-unity-line p-4">
+            <Text className="text-unity-muted" style={styles.smallText}>Loading live transactions...</Text>
+          </View>
+        ) : null}
+        {homeRows.map((transaction, index) => (
+            <TransactionListRow
+              key={transaction.id}
+              amount={transaction.amount}
+              icon={transaction.icon}
+              isLast={index === homeRows.length - 1}
+              meta={transaction.meta}
+              onPress={"onPress" in transaction ? transaction.onPress : undefined}
+              status={transaction.status}
+              title={transaction.title}
+              tone={transaction.tone}
+            />
+        ))}
+      </WhiteCard>
+    </UnityPage>
   );
 }
 
 export function MemberAccountTypeScreen({ accountType }: { accountType: "deposit" | "savings" }) {
   const { data: dashboard, error: dashboardError, loading: dashboardLoading } = useResource(mobileData.getMemberDashboard);
   const { data: transactions, error: transactionError, loading: transactionsLoading } = useResource(mobileData.getMemberTransactions);
-  const title = accountType === "deposit" ? "Deposit" : "Savings";
+  const [statusFilter, setStatusFilter] = useState<TransactionStatusFilter>("all");
+  const [showFilterOptions, setShowFilterOptions] = useState(false);
+  const [sortDirection, setSortDirection] = useState<"newest" | "oldest">("newest");
+  const title = accountType === "deposit" ? "Deposits" : "Savings";
   const amount = accountType === "deposit" ? dashboard?.depositBalance ?? 0 : dashboard?.savingsBalance ?? 0;
-  const accountTransactions = (transactions ?? []).filter((transaction) => transaction.accountType === accountType);
+  const accountTransactions = useMemo(
+    () => (transactions ?? []).filter((transaction) => transaction.accountType === accountType),
+    [accountType, transactions],
+  );
+  const rows = useMemo(
+    () =>
+      [...accountTransactions]
+        .filter((transaction) => matchesTransactionStatusFilter(transaction.status, statusFilter))
+        .sort((left, right) => {
+          const leftTime = new Date(left.createdAt).getTime();
+          const rightTime = new Date(right.createdAt).getTime();
+
+          return sortDirection === "newest" ? rightTime - leftTime : leftTime - rightTime;
+        }),
+    [accountTransactions, sortDirection, statusFilter],
+  );
 
   return (
-    <Screen title={title}>
-      {dashboardError ? (
-        <ResourceErrorCard message={dashboardError} />
-      ) : dashboardLoading || !dashboard ? (
-        <SkeletonCard />
-      ) : (
-        <>
-          <SurfaceCard tone="homeHero">
-            <SurfaceCard accent={colors.foliwe} tone="hero">
-              <View style={styles.balanceHeader}>
-                <Text style={styles.heroCaption}>CFA</Text>
-                <Ionicons color={colors.ink} name="eye-off-outline" size={22} />
+    <UnityPage
+      headerHeight={250}
+      showBack
+      subtitle={`Track all your ${accountType === "deposit" ? "savings deposits" : "savings"} and their status.`}
+      title={title}
+    >
+      <View style={styles.accountSummaryOverlap}>
+        <TealSummaryCard
+          amount={currency(amount)}
+          eyebrow={accountType === "deposit" ? "Deposit Summary" : "Saving Summary"}
+          footer={
+            <View className="flex-row items-center">
+              <View className="flex-1">
+                <Text className="text-white/90" style={styles.balanceFooterLabel}>Total Approved</Text>
+                <Text className="mt-1 text-white" style={styles.balanceFooterValue}>{currency(Math.max(amount - 25000, 0))}</Text>
               </View>
-              <Text style={styles.heroCaption}>{title} Account</Text>
-              <Text style={styles.moneyTitle}>{formatMoneyValue(amount)}</Text>
-            </SurfaceCard>
-            <View style={styles.accountActionRow}>
-              <AccountActionButton icon="cash-outline" label="Deposit" onPress={() => router.replace("/member/accounts/deposit" as Href)} />
-              <AccountActionButton icon="settings-outline" label="Savings" onPress={() => router.replace("/member/accounts/savings" as Href)} />
-              <AccountActionButton icon="card-outline" label="Loan" onPress={() => router.replace("/member/loans" as Href)} />
+              <View className="mx-5 h-12 w-px bg-white/40" />
+              <View className="flex-1">
+                <Text className="text-white/90" style={styles.balanceFooterLabel}>Pending Approval</Text>
+                <Text className="mt-1 text-white" style={styles.balanceFooterValue}>{currency(25000)}</Text>
+              </View>
             </View>
-          </SurfaceCard>
+          }
+          size="large"
+          title={accountType === "deposit" ? "Total Deposit" : "Total Saving"}
+        />
+      </View>
 
-          <SurfaceCard>
-            <MiniBarChart data={dashboard.flowTrend} />
-          </SurfaceCard>
-
-          <SectionHeader actionLabel="See All" href="/member/transactions" title="Latest Transactions" />
-          {transactionError ? (
-            <ResourceErrorCard message={transactionError} />
-          ) : transactionsLoading || !transactions ? (
-            <SkeletonCard />
-          ) : accountTransactions.length === 0 ? (
-            <SurfaceCard accent="#EEF4ED">
-              <Text style={styles.heroCaption}>No {title.toLowerCase()} transactions are ready yet.</Text>
-            </SurfaceCard>
-          ) : (
-            accountTransactions.slice(0, 4).map((transaction) => (
-              <TransactionRow
-                key={transaction.id}
-                amount={transaction.amount}
-                dateLabel={formatTransactionRowDate(transaction.createdAt)}
-                detailLabel={transaction.memberName || dashboard.memberName}
-                onPress={() => router.push(`/member/transactions/${transaction.id}` as Href)}
-                status={toStatusLabel(transaction.status)}
-                typeLabel={transaction.type === "deposit" ? title : "Withdrawal"}
-              />
-            ))
-          )}
-        </>
+      {dashboardError ? <ResourceErrorCard message={dashboardError} /> : null}
+      {dashboardLoading || !dashboard ? <LoadingStack /> : null}
+      <View className="mb-4 flex-row flex-wrap gap-1.5">
+        {transactionStatusFilters.map((filter) => (
+          <FilterChip
+            key={filter.key}
+            active={filter.key === statusFilter}
+            label={filter.label}
+            onPress={() => setStatusFilter(filter.key)}
+          />
+        ))}
+        <FilterChip
+          active={showFilterOptions || sortDirection === "oldest"}
+          icon="options-outline"
+          label="Filter"
+          onPress={() => setShowFilterOptions((current) => !current)}
+        />
+      </View>
+      {showFilterOptions ? (
+        <View className="mb-4 flex-row flex-wrap gap-1.5">
+          <FilterChip
+            active={sortDirection === "newest"}
+            label="Newest First"
+            onPress={() => setSortDirection("newest")}
+          />
+          <FilterChip
+            active={sortDirection === "oldest"}
+            label="Oldest First"
+            onPress={() => setSortDirection("oldest")}
+          />
+        </View>
+      ) : null}
+      {transactionError ? (
+        <ResourceErrorCard message={transactionError} />
+      ) : transactionsLoading || !transactions ? (
+        <LoadingStack />
+      ) : rows.length === 0 ? (
+        <WhiteCard className="p-5">
+          <Text className="text-unity-muted" style={styles.bodyText}>
+            No {statusFilter === "all" ? title.toLowerCase() : statusFilter} {title.toLowerCase()} are ready yet.
+          </Text>
+        </WhiteCard>
+      ) : (
+        rows.map((transaction) => (
+          <DepositRow
+            key={transaction.id}
+            amount={transaction.amount}
+            agent={transaction.agentName}
+            date={formatTransactionRowDate(transaction.createdAt)}
+            onPress={() => router.push(`/member/transactions/${transaction.id}` as Href)}
+            status={toStatusLabel(transaction.status)}
+            title={transactionTitle(transaction)}
+          />
+        ))
       )}
-    </Screen>
+      <Text className="mt-4 text-center text-unity-muted" style={styles.bodyText}>
+        Showing {rows.length} of {accountTransactions.length} {title.toLowerCase()}
+      </Text>
+    </UnityPage>
   );
 }
 
@@ -243,47 +488,69 @@ export function MemberTransactionsScreen() {
   const { data: transactions, error, loading } = useResource(mobileData.getMemberTransactions);
   const currentMonthKey = useMemo(() => getCurrentTransactionMonthKey(), []);
   const [selectedMonthKey, setSelectedMonthKey] = useState(currentMonthKey);
+  const [typeFilter, setTypeFilter] = useState<TransactionTypeFilter>("all");
+  const filteredTransactions = useMemo(
+    () => (transactions ?? []).filter((transaction) => matchesTransactionTypeFilter(transaction, typeFilter)),
+    [transactions, typeFilter],
+  );
   const monthTabs = useMemo(
-    () => buildTransactionMonthTabs(transactions ?? [], currentMonthKey),
-    [currentMonthKey, transactions],
+    () => buildTransactionMonthTabs(filteredTransactions, currentMonthKey),
+    [currentMonthKey, filteredTransactions],
   );
   const selectedMonthLabel = useMemo(
     () => monthTabs.find((tab) => tab.key === selectedMonthKey)?.label ?? formatTransactionMonthLabel(new Date()),
     [monthTabs, selectedMonthKey],
   );
   const dayGroups = useMemo(
-    () => buildTransactionDayGroups(transactions ?? [], selectedMonthKey),
-    [selectedMonthKey, transactions],
+    () => buildTransactionDayGroups(filteredTransactions, selectedMonthKey),
+    [filteredTransactions, selectedMonthKey],
   );
 
   return (
-    <Screen subtitle="Pending and approved activity stays easy to read." title="Transactions">
+    <UnitySimplePage subtitle="Pending and approved activity stays easy to read." title="Transactions">
       {error ? (
         <ResourceErrorCard message={error} />
       ) : loading || !transactions ? (
-        <>
-          <SkeletonCard />
-          <SkeletonCard />
-        </>
+        <LoadingStack />
       ) : (
         <>
-          <MonthTabStrip onSelect={setSelectedMonthKey} selectedKey={selectedMonthKey} tabs={monthTabs} />
+          <View className="mb-4 flex-row flex-wrap gap-3">
+            {transactionTypeFilters.map((filter) => (
+              <FilterChip
+                key={filter.key}
+                active={filter.key === typeFilter}
+                label={filter.label}
+                onPress={() => setTypeFilter(filter.key)}
+              />
+            ))}
+          </View>
+          <View className="mb-5 flex-row flex-wrap gap-3">
+            {monthTabs.map((tab) => (
+              <FilterChip
+                key={tab.key}
+                active={tab.key === selectedMonthKey}
+                label={tab.label}
+                onPress={() => setSelectedMonthKey(tab.key)}
+              />
+            ))}
+          </View>
           {dayGroups.length === 0 ? (
-            <SurfaceCard accent="#EEF4ED">
-              <Text style={styles.heroCaption}>No transactions recorded for {selectedMonthLabel} yet.</Text>
-            </SurfaceCard>
+            <WhiteCard className="p-5">
+              <Text className="text-unity-muted" style={styles.bodyText}>No transactions recorded for {selectedMonthLabel} yet.</Text>
+            </WhiteCard>
           ) : (
             dayGroups.map((group) => (
               <View key={group.key}>
-                <TransactionDayHeader label={group.label} />
+                <SectionTitle title={group.label} />
                 {group.transactions.map((transaction) => (
-                  <TransactionRow
+                  <DepositRow
                     key={transaction.id}
                     amount={transaction.amount}
-                    dateLabel={formatTransactionRowDate(transaction.createdAt)}
+                    agent={transaction.agentName}
+                    date={formatTransactionRowDate(transaction.createdAt)}
                     onPress={() => router.push(`/member/transactions/${transaction.id}` as Href)}
                     status={toStatusLabel(transaction.status)}
-                    typeLabel={transaction.type === "deposit" ? "Deposit" : "Withdrawal"}
+                    title={transactionTitle(transaction)}
                   />
                 ))}
               </View>
@@ -291,57 +558,28 @@ export function MemberTransactionsScreen() {
           )}
         </>
       )}
-    </Screen>
+    </UnitySimplePage>
   );
 }
 
 export function MemberLoansScreen() {
   const { data: loans, error, loading } = useResource(mobileData.getLoans);
-  const { data: dashboard, error: dashboardError, loading: dashboardLoading } = useResource(mobileData.getMemberDashboard);
 
   return (
-    <Screen title="Loan">
-      {dashboardError ? (
-        <ResourceErrorCard message={dashboardError} />
-      ) : dashboardLoading || !dashboard ? (
-        <SkeletonCard />
-      ) : (
-        <>
-          <SurfaceCard tone="homeHero">
-            <SurfaceCard accent={colors.foliwe} tone="hero">
-              <View style={styles.balanceHeader}>
-                <Text style={styles.heroCaption}>CFA</Text>
-                <Ionicons color={colors.ink} name="eye-off-outline" size={22} />
-              </View>
-              <Text style={styles.heroCaption}>Loan Account</Text>
-              <Text style={styles.moneyTitle}>{formatMoneyValue(dashboard.outstandingLoan)}</Text>
-            </SurfaceCard>
-            <View style={styles.accountActionRow}>
-              <AccountActionButton icon="cash-outline" label="Deposit" onPress={() => router.replace("/member/accounts/deposit" as Href)} />
-              <AccountActionButton icon="settings-outline" label="Savings" onPress={() => router.replace("/member/accounts/savings" as Href)} />
-              <AccountActionButton icon="card-outline" label="Loan" onPress={() => router.replace("/member/loans" as Href)} />
-            </View>
-          </SurfaceCard>
-          <SurfaceCard>
-            <MiniBarChart data={dashboard.flowTrend} />
-          </SurfaceCard>
-        </>
-      )}
-
+    <UnityPage headerHeight={286} subtitle="Access, manage and repay your loans." title="Loans">
+      <Text className="mb-3 text-unity-ink" style={styles.sectionHeading}>Your Active Loan</Text>
       {error ? (
         <ResourceErrorCard message={error} />
       ) : loading || !loans ? (
-        <SkeletonCard />
+        <LoadingStack />
+      ) : loans.length === 0 ? (
+        <WhiteCard className="p-5">
+          <Text className="text-unity-muted" style={styles.bodyText}>No active loans are ready yet.</Text>
+        </WhiteCard>
       ) : (
-        loans.map((loan) => (
-          <LoanCardView
-            key={loan.id}
-            loan={loan}
-            onPress={() => router.push(`/member/loans/${loan.id}` as Href)}
-          />
-        ))
+        <LoanOverview loan={loans[0]} onPress={() => router.push(`/member/loans/${loans[0].id}` as Href)} />
       )}
-    </Screen>
+    </UnityPage>
   );
 }
 
@@ -349,230 +587,247 @@ export function MemberAccountsScreen() {
   const { data: accounts, error, loading } = useResource(mobileData.getMemberAccounts);
 
   return (
-    <Screen subtitle="Savings and deposit statements stay separated." title="Accounts">
+    <UnitySimplePage subtitle="Savings and deposit statements stay separated." title="Accounts">
       {error ? (
         <ResourceErrorCard message={error} />
       ) : loading || !accounts ? (
-        <>
-          <SkeletonCard />
-          <SkeletonCard />
-        </>
+        <LoadingStack />
       ) : accounts.length === 0 ? (
-        <SurfaceCard accent="#EEF4ED">
-          <Text style={styles.heroCaption}>No active accounts are ready for this member yet.</Text>
-        </SurfaceCard>
+        <WhiteCard className="p-5">
+          <Text className="text-unity-muted" style={styles.bodyText}>No active accounts are ready for this member yet.</Text>
+        </WhiteCard>
       ) : (
         accounts.map((account) => <AccountCard key={account.id} account={account} />)
       )}
-    </Screen>
+    </UnitySimplePage>
   );
 }
 
 export function MemberAccountStatementScreen() {
   const params = useLocalSearchParams<{ accountId?: string | string[] }>();
   const accountId = getSingleParam(params.accountId) ?? "";
-  const loader = useMemo(
-    () => () => mobileData.getMemberAccountStatement(accountId),
-    [accountId],
-  );
+  const loader = useMemo(() => () => mobileData.getMemberAccountStatement(accountId), [accountId]);
   const { data, error, loading } = useResource(loader);
 
   return (
-    <Screen subtitle="Approved and pending movements for this account." title="Statement">
+    <UnitySimplePage subtitle="Approved and pending movements for this account." title="Statement">
       {error ? (
         <ResourceErrorCard message={error} />
       ) : loading ? (
-        <SkeletonCard />
+        <LoadingStack />
       ) : !data ? (
         <ResourceErrorCard message="No account statement matches this route." />
       ) : (
         <>
-          <SurfaceCard accent={colors.foliwe} tone="hero">
-            <Text style={styles.moneyTitle}>{formatCurrency(data.account.balance)}</Text>
-            <Text style={styles.heroCaption}>
-              {data.account.accountType.toUpperCase()} · {data.account.accountNumber}
-            </Text>
-            <StatusPill label={data.account.pendingTransactions > 0 ? "PENDING APPROVAL" : "APPROVED"} />
-          </SurfaceCard>
-          {data.transactions.length === 0 ? (
-            <SurfaceCard accent="#EEF4ED">
-              <Text style={styles.heroCaption}>No transactions have been posted to this account yet.</Text>
-            </SurfaceCard>
-          ) : (
-            data.transactions.map((transaction) => (
-              <TransactionRow
+          <TealSummaryCard amount={currency(data.account.balance)} subtitle={data.account.accountNumber} title={`${data.account.accountType.toUpperCase()} Account`} />
+          <View className="mt-5">
+            {data.transactions.map((transaction) => (
+              <DepositRow
                 key={transaction.id}
                 amount={transaction.amount}
-                dateLabel={formatTransactionRowDate(transaction.createdAt)}
-                detailLabel={transaction.agentName}
+                agent={transaction.agentName}
+                date={formatTransactionRowDate(transaction.createdAt)}
                 onPress={() => router.push(`/member/transactions/${transaction.id}` as Href)}
                 status={toStatusLabel(transaction.status)}
-                typeLabel={transaction.type === "deposit" ? "Deposit" : "Withdrawal"}
+                title={transactionTitle(transaction)}
               />
-            ))
-          )}
+            ))}
+          </View>
         </>
       )}
-    </Screen>
+    </UnitySimplePage>
   );
 }
 
 export function MemberTransactionDetailScreen() {
   const params = useLocalSearchParams<{ transactionId?: string | string[] }>();
   const transactionId = getSingleParam(params.transactionId) ?? "";
-  const loader = useMemo(
-    () => () => mobileData.getMemberTransactionDetail(transactionId),
-    [transactionId],
-  );
+  const loader = useMemo(() => () => mobileData.getMemberTransactionDetail(transactionId), [transactionId]);
   const { data: transaction, error, loading } = useResource(loader);
 
   return (
-    <Screen subtitle="Every account movement shows its approval state." title="Transaction">
+    <UnitySimplePage subtitle="Every account movement shows its approval state." title="Transaction">
       {error ? (
         <ResourceErrorCard message={error} />
       ) : loading ? (
-        <SkeletonCard />
+        <LoadingStack />
       ) : !transaction ? (
         <ResourceErrorCard message="No transaction matches this route for the signed-in member." />
       ) : (
         <>
-          <SurfaceCard accent={colors.foliwe} tone="hero">
-            <Text style={styles.moneyTitle}>{formatCurrency(transaction.amount)}</Text>
-            <Text style={styles.heroCaption}>
-              {transaction.type === "deposit" ? "Deposit" : "Withdrawal"} · {transaction.accountType.toUpperCase()}
-            </Text>
-            <StatusPill label={toStatusLabel(transaction.status)} />
-          </SurfaceCard>
-          <SurfaceCard>
-            <InfoRow label="Member" value={transaction.memberName} />
-            <InfoRow label="Agent" value={transaction.agentName} />
-            <InfoRow label="Branch" value={transaction.branchName} />
-            <InfoRow label="Date" value={formatTransactionRowDate(transaction.createdAt)} />
-            <InfoRow label="Reference" value={transaction.id.slice(0, 12).toUpperCase()} />
-          </SurfaceCard>
+          <TealSummaryCard amount={currency(transaction.amount)} subtitle={transaction.accountType.toUpperCase()} title={transactionTitle(transaction)} />
+          <WhiteCard className="mt-5 p-5">
+            <DetailLine label="Member" value={transaction.memberName} />
+            <DetailLine label="Agent" value={transaction.agentName} />
+            <DetailLine label="Branch" value={transaction.branchName} />
+            <DetailLine label="Date" value={formatTransactionRowDate(transaction.createdAt)} />
+            <DetailLine label="Reference" value={transaction.id.slice(0, 12).toUpperCase()} />
+          </WhiteCard>
           {transaction.note ? (
-            <SurfaceCard accent="#EEF4ED">
-              <Text style={styles.cardCaption}>{transaction.note}</Text>
-            </SurfaceCard>
+            <WhiteCard className="mt-4 p-5">
+              <Text className="text-unity-muted" style={styles.bodyText}>{transaction.note}</Text>
+            </WhiteCard>
           ) : null}
         </>
       )}
-    </Screen>
+    </UnitySimplePage>
   );
 }
 
 export function MemberLoanDetailScreen() {
   const params = useLocalSearchParams<{ loanId?: string | string[] }>();
   const loanId = getSingleParam(params.loanId) ?? "";
-  const loader = useMemo(
-    () => () => mobileData.getMemberLoanDetail(loanId),
-    [loanId],
-  );
+  const loader = useMemo(() => () => mobileData.getMemberLoanDetail(loanId), [loanId]);
   const { data: loan, error, loading } = useResource(loader);
 
   return (
-    <Screen subtitle="Loan principal, interest, timeline, and repayment history." title="Loan Detail">
+    <UnitySimplePage subtitle="Loan principal, timeline, and repayment history." title="Loan Detail">
       {error ? (
         <ResourceErrorCard message={error} />
       ) : loading ? (
-        <SkeletonCard />
+        <LoadingStack />
       ) : !loan ? (
         <ResourceErrorCard message="No loan matches this route for the signed-in member." />
       ) : (
-        <>
-          <SurfaceCard accent={colors.foliwe} tone="hero">
-            <Text style={styles.moneyTitle}>{formatCurrency(loan.remainingPrincipal)}</Text>
-            <Text style={styles.heroCaption}>{loan.loanCode} · remaining principal</Text>
-            <StatusPill label={toLoanStatusLabel(loan.status)} />
-          </SurfaceCard>
-          <LoanCardView loan={loan} />
-        </>
+        <LoanOverview loan={loan} />
       )}
-    </Screen>
+    </UnitySimplePage>
   );
 }
 
 export function MemberNotificationsScreen() {
   const { data: notifications, error, loading } = useResource(mobileData.getMemberNotifications);
 
+  useEffect(() => {
+    if (!notifications?.length) {
+      return;
+    }
+
+    void mobileData.markMemberNotificationsSeen(notifications.map((item) => item.id));
+  }, [notifications]);
+
   return (
-    <Screen subtitle="Account, loan, and approval activity in one place." title="Notifications">
+    <UnitySimplePage subtitle="Account, loan, and approval activity in one place." title="Notifications">
       {error ? (
         <ResourceErrorCard message={error} />
       ) : loading || !notifications ? (
-        <>
-          <SkeletonCard />
-          <SkeletonCard />
-        </>
+        <LoadingStack />
       ) : notifications.length === 0 ? (
-        <SurfaceCard accent="#EEF4ED">
-          <Text style={styles.heroCaption}>No member notifications are waiting right now.</Text>
-        </SurfaceCard>
+        <WhiteCard className="p-5">
+          <Text className="text-unity-muted" style={styles.bodyText}>No member notifications are waiting right now.</Text>
+        </WhiteCard>
       ) : (
         notifications.map((item) => (
-          <SurfaceCard key={item.id}>
-            <View style={styles.rowBetween}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>{item.title}</Text>
-                <Text style={styles.cardCaption}>{item.subtitle}</Text>
+          <WhiteCard key={item.id} className="mb-4 p-5">
+            <View className="flex-row items-start justify-between">
+              <View className="flex-1 pr-4">
+                <Text className="text-unity-ink" style={styles.cardTitle}>{item.title}</Text>
+                <Text className="mt-1 text-unity-muted" style={styles.bodyText}>{item.subtitle}</Text>
               </View>
-              {item.amount ? <Text style={styles.cardValue}>{formatCurrency(item.amount)}</Text> : null}
+              {item.amount ? <Text className="text-unity-green" style={styles.amountSmall}>{currency(item.amount)}</Text> : null}
             </View>
-            <View style={styles.inlineWrap}>
-              <StatusPill label={item.status} />
-              <Text style={styles.cardCaption}>{formatTransactionRowDate(item.createdAt)}</Text>
+            <View className="mt-4 flex-row items-center justify-between">
+              <StatusChip label={item.status} tone={statusTone(item.status)} />
+              <Text className="text-unity-muted" style={styles.smallText}>{formatTransactionRowDate(item.createdAt)}</Text>
             </View>
-          </SurfaceCard>
+          </WhiteCard>
         ))
       )}
-    </Screen>
+    </UnitySimplePage>
   );
 }
 
 export function MemberMoreScreen() {
   const { signOut } = useAppSession();
-  const { data, error, loading } = useResource(mobileData.getMemberDashboard);
+  const insets = useSafeAreaInsets();
 
   return (
-    <Screen title="Profile">
-      {error ? (
-        <ResourceErrorCard message={error} />
-      ) : loading || !data ? (
-        <SkeletonCard />
-      ) : (
-        <>
-          <View style={styles.profileHero}>
-            <View style={styles.profileAvatar}>
-              <Ionicons color={colors.white} name="person-outline" size={54} />
+    <View style={styles.memberProfileScreen}>
+      <StatusBar style="light" />
+      <LinearGradient
+        colors={["#0057D8", "#003586"]}
+        end={{ x: 1, y: 1 }}
+        start={{ x: 0, y: 0 }}
+        style={styles.memberProfileHeader}
+      >
+        <Image resizeMode="contain" source={unityLogoMark} style={styles.memberProfileWatermark} />
+        <Image resizeMode="contain" source={unityLogoMark} style={styles.memberProfileWatermarkSmall} />
+        <View style={[styles.memberProfileTopBar, { paddingTop: insets.top + 10 }]}>
+          <View style={styles.memberProfileTopSlot} />
+          <UnityLogoLockup compact />
+          <View style={styles.memberProfileTopSlot}>
+            <NotificationBell />
+          </View>
+        </View>
+        <View style={styles.memberProfileTitleBlock}>
+          <Text style={styles.memberProfileTitle}>My Profile</Text>
+          <Text style={styles.memberProfileSubtitle}>Manage your account and preferences</Text>
+        </View>
+      </LinearGradient>
+
+      <View style={styles.memberProfileWhitePanel} />
+
+      <ScrollView
+        contentContainerStyle={[
+          styles.memberProfileScrollContent,
+          { paddingBottom: 116 + insets.bottom },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.memberIdentityCard}>
+          <View style={styles.memberIdentityRow}>
+            <Image resizeMode="cover" source={memberProfileAvatar} style={styles.memberAvatar} />
+            <View style={styles.memberIdentityCopy}>
+              <Text style={styles.memberIdentityName}>Chidinma Okafor</Text>
+              <View style={styles.memberIdRow}>
+                <Text adjustsFontSizeToFit minimumFontScale={0.82} numberOfLines={1} style={styles.memberIdText}>Member ID: UCRD-00078593</Text>
+                <Ionicons color={colors.brand} name="copy-outline" size={18} />
+              </View>
+              <ProfileMeta icon="home-outline" text="Main Branch, Lagos" />
+              <ProfileMeta icon="call-outline" text="+234 810 234 5678" />
+              <ProfileMeta icon="location-outline" text="23 Adeola Odeku St, Victoria Island, Lagos, Nigeria" />
             </View>
-            <Text style={styles.profileName}>{data.memberName}</Text>
-            <Text style={styles.cardCaption}>{data.memberCode} · {data.branchName}</Text>
           </View>
-          <View style={styles.profileGrid}>
-            <ProfileTile icon="settings-outline" label="Settings" onPress={() => router.push("/member/more/profile")} />
-            <ProfileTile icon="mail-unread-outline" label="Notifications" onPress={() => router.push("/member/notifications" as Href)} />
-            <ProfileTile icon="shield-checkmark-outline" label="Verification" onPress={() => router.push("/member/more/profile")} />
-            <ProfileTile icon="headset-outline" label="Support" onPress={() => router.push("/member/more/profile")} />
-            <ProfileTile icon="people-outline" label="About Us" onPress={() => router.push("/member/more/about" as Href)} />
-            <ProfileTile icon="scale-outline" label="Legal" onPress={() => router.push("/member/more/legal" as Href)} />
+          <View style={styles.verifiedBadge}>
+            <Ionicons color={colors.success} name="checkmark-circle" size={18} />
+            <Text style={styles.verifiedBadgeText}>Verified Member</Text>
           </View>
-        </>
-      )}
-      <ActionTile
-        caption="Update password and account security."
-        icon="key-outline"
-        onPress={() => router.push("/member/change-password")}
-        title="Change Password"
-      />
-      <View style={{ marginTop: spacing.sm }}>
-        <SecondaryButton
-          label="Sign Out"
-          onPress={() => {
-            void signOut();
-          }}
+        </View>
+
+        <SettingsSection
+          rows={[
+            ["person-outline", "Personal Information", () => router.push("/member/more/profile" as Href), "blue"],
+            ["card-outline", "Account Overview", () => router.push("/member/accounts" as Href), "blue"],
+          ]}
+          title="Account Details"
         />
-      </View>
-    </Screen>
+        <SettingsSection
+          rows={[
+            ["people-outline", "Next of Kin Information", () => router.push("/member/more/profile" as Href), "green"],
+            ["shield-checkmark-outline", "Dependents", () => router.push("/member/more/profile" as Href), "green"],
+          ]}
+          title="Next of Kin"
+        />
+        <SettingsSection
+          rows={[
+            ["lock-closed-outline", "Change PIN", () => router.push("/member/change-password" as Href), "purple"],
+            ["finger-print-outline", "Biometric Login", undefined, "purple", true],
+            ["desktop-outline", "Active Sessions", () => router.push("/member/change-password" as Href), "purple"],
+          ]}
+          title="Security Settings"
+        />
+        <SettingsSection
+          rows={[
+            ["notifications-outline", "Notification Settings", () => router.push("/member/notifications" as Href), "orange"],
+            ["color-palette-outline", "Theme", () => router.push("/member/more/profile" as Href), "orange", false, "System Default"],
+          ]}
+          title="App Preferences"
+        />
+        <Pressable onPress={() => void signOut()} style={({ pressed }) => [styles.signOutButton, pressed && styles.pressed]}>
+          <Text className="text-unity-red" style={styles.buttonText}>Sign Out</Text>
+        </Pressable>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -611,65 +866,50 @@ export function MemberProfileScreen() {
 
   if (error) {
     return (
-      <Screen subtitle="We could not load your member profile." title="Profile">
+      <UnitySimplePage subtitle="We could not load your member profile." title="Profile">
         <ResourceErrorCard message={error} />
-      </Screen>
+      </UnitySimplePage>
     );
   }
 
   if (loading || !profile) {
     return (
-      <Screen subtitle="Loading member profile." title="Profile">
-        <SkeletonCard />
-      </Screen>
+      <UnitySimplePage subtitle="Loading member profile." title="Profile">
+        <LoadingStack />
+      </UnitySimplePage>
     );
   }
 
   const activeProfile = currentProfile ?? profile;
 
   return (
-    <Screen subtitle="Complete the rest of your member record here after onboarding." title="Profile">
-      <SurfaceCard>
-        <Text style={styles.heroTitle}>{activeProfile.fullName}</Text>
-        <Text style={styles.heroCaption}>{activeProfile.code}</Text>
-        <InfoRow label="Phone" value={activeProfile.phone} />
-        <InfoRow label="ID Card" value={activeProfile.idNumber ?? "Pending"} />
-        <InfoRow label="Agent" value={activeProfile.agentName} />
-      </SurfaceCard>
-      <SurfaceCard accent="#EEF4ED">
-        <InfoRow label="Savings" value={formatCurrency(activeProfile.savingsBalance)} />
-        <InfoRow label="Deposit" value={formatCurrency(activeProfile.depositBalance)} />
-        <InfoRow label="Status" value={activeProfile.status} />
-      </SurfaceCard>
-      <InputField label="Full Name" onChangeText={setFullName} placeholder="Enter your full name" value={fullName} />
-      <InputField label="Phone" onChangeText={setPhone} placeholder="+2376..." value={phone} />
-      <InputField label="Date Of Birth" onChangeText={setDateOfBirth} placeholder="1990-08-24" value={dateOfBirth} />
-      <InputField label="Gender" onChangeText={setGender} placeholder="Female, Male, or other" value={gender} />
-      <InputField label="Occupation" onChangeText={setOccupation} placeholder="Trader" value={occupation} />
-      <InputField
-        label="Residential Address"
-        multiline
-        onChangeText={setResidentialAddress}
-        placeholder="Mile 4 Nkwen"
-        value={residentialAddress}
-      />
-      <InputField label="Next Of Kin Name" onChangeText={setNextOfKinName} placeholder="Jane Nkem" value={nextOfKinName} />
-      <InputField label="Next Of Kin Phone" onChangeText={setNextOfKinPhone} placeholder="+2376..." value={nextOfKinPhone} />
-      <InputField
-        label="Next Of Kin Address"
-        multiline
-        onChangeText={setNextOfKinAddress}
-        placeholder="Mile 4 Nkwen"
-        value={nextOfKinAddress}
-      />
+    <UnitySimplePage subtitle="Complete the rest of your member record here after onboarding." title="Personal Information">
+      <WhiteCard className="p-5">
+        <Text className="text-unity-ink" style={styles.cardTitle}>{activeProfile.fullName}</Text>
+        <Text className="mt-1 text-unity-muted" style={styles.bodyText}>{activeProfile.code}</Text>
+        <DetailLine label="Phone" value={activeProfile.phone} />
+        <DetailLine label="ID Card" value={activeProfile.idNumber ?? "Pending"} />
+        <DetailLine label="Agent" value={activeProfile.agentName} />
+      </WhiteCard>
+      <View className="mt-5">
+        <FormInput label="Full Name" onChangeText={setFullName} value={fullName} />
+        <FormInput label="Phone" onChangeText={setPhone} value={phone} />
+        <DateOfBirthPicker onChange={setDateOfBirth} value={dateOfBirth} />
+        <FormInput label="Gender" onChangeText={setGender} value={gender} />
+        <FormInput label="Occupation" onChangeText={setOccupation} value={occupation} />
+        <FormInput label="Residential Address" multiline onChangeText={setResidentialAddress} value={residentialAddress} />
+        <FormInput label="Next Of Kin Name" onChangeText={setNextOfKinName} value={nextOfKinName} />
+        <FormInput label="Next Of Kin Phone" onChangeText={setNextOfKinPhone} value={nextOfKinPhone} />
+        <FormInput label="Next Of Kin Address" multiline onChangeText={setNextOfKinAddress} value={nextOfKinAddress} />
+      </View>
       {successMessage ? (
-        <SurfaceCard accent="#EEF4ED">
-          <StatusPill label="APPROVED" />
-          <Text style={[styles.heroCaption, { marginTop: spacing.sm }]}>{successMessage}</Text>
-        </SurfaceCard>
+        <WhiteCard className="mb-4 p-5">
+          <StatusChip label="Approved" tone="success" />
+          <Text className="mt-3 text-unity-muted" style={styles.bodyText}>{successMessage}</Text>
+        </WhiteCard>
       ) : null}
       {submissionError ? <ResourceErrorCard message={submissionError} /> : null}
-      <PrimaryButton
+      <PrimaryGradientButton
         label={isSubmitting ? "Saving Profile..." : "Save Profile"}
         onPress={() => {
           if (isSubmitting) {
@@ -704,7 +944,7 @@ export function MemberProfileScreen() {
             });
         }}
       />
-    </Screen>
+    </UnitySimplePage>
   );
 }
 
@@ -718,36 +958,18 @@ export function MemberChangePasswordScreen() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   return (
-    <Screen subtitle="Update the temporary password before entering the member workspace." title="Change Password">
-      <InputField
-        label="Current Password"
-        onChangeText={setCurrentPassword}
-        placeholder="Enter temporary password"
-        secureTextEntry
-        value={currentPassword}
-      />
-      <InputField
-        label="New Password"
-        onChangeText={setNewPassword}
-        placeholder="Choose a new password"
-        secureTextEntry
-        value={newPassword}
-      />
-      <InputField
-        label="Confirm New Password"
-        onChangeText={setConfirmPassword}
-        placeholder="Re-enter new password"
-        secureTextEntry
-        value={confirmPassword}
-      />
+    <UnitySimplePage subtitle="Update your secure PIN and password." title="Change PIN">
+      <FormInput label="Current Password" onChangeText={setCurrentPassword} secureTextEntry value={currentPassword} />
+      <FormInput label="New Password" onChangeText={setNewPassword} secureTextEntry value={newPassword} />
+      <FormInput label="Confirm New Password" onChangeText={setConfirmPassword} secureTextEntry value={confirmPassword} />
       {submissionError ? <ResourceErrorCard message={submissionError} /> : null}
       {successMessage ? (
-        <SurfaceCard accent="#EEF4ED">
-          <StatusPill label="APPROVED" />
-          <Text style={[styles.heroCaption, { marginTop: spacing.sm }]}>{successMessage}</Text>
-        </SurfaceCard>
+        <WhiteCard className="mb-4 p-5">
+          <StatusChip label="Approved" tone="success" />
+          <Text className="mt-3 text-unity-muted" style={styles.bodyText}>{successMessage}</Text>
+        </WhiteCard>
       ) : null}
-      <PrimaryButton
+      <PrimaryGradientButton
         label={isSubmitting ? "Updating Password..." : "Update Password"}
         onPress={() => {
           if (isSubmitting) {
@@ -781,67 +1003,500 @@ export function MemberChangePasswordScreen() {
             });
         }}
       />
-    </Screen>
+    </UnitySimplePage>
   );
 }
 
-function HeaderIconButton({
+function MiniMetric({
+  amount,
+  icon,
+  label,
+  sublabel,
+  tone,
+}: {
+  amount: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  sublabel: string;
+  tone: "blue" | "green";
+}) {
+  return (
+    <View className="flex-1 flex-row items-center">
+      <IconBubble icon={icon} size={32} tone={tone} />
+      <View className="ml-2 flex-1">
+        <Text className="text-unity-ink" numberOfLines={2} style={styles.metricLabel}>{label}</Text>
+        <Text adjustsFontSizeToFit numberOfLines={1} className={tone === "blue" ? "text-unity-blue" : "text-unity-green"} style={styles.metricAmount}>
+          {amount}
+        </Text>
+        <Text className="text-unity-muted" style={styles.bodyText}>{sublabel}</Text>
+      </View>
+    </View>
+  );
+}
+
+function ActionSquare({
   icon,
   label,
   onPress,
+  tone,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   onPress: () => void;
+  tone: "blue" | "green" | "purple" | "orange";
+}) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.actionSquare, unityStyles.cardShadow, pressed && styles.pressed]}>
+      <IconBubble icon={icon} size={34} tone={tone === "orange" ? "orange" : tone} />
+      <Text className="mt-2 text-center text-unity-ink" numberOfLines={1} adjustsFontSizeToFit style={styles.actionLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function TransactionListRow({
+  amount,
+  icon,
+  isLast,
+  meta,
+  onPress,
+  status,
+  title,
+  tone,
+}: {
+  amount: number;
+  icon: keyof typeof Ionicons.glyphMap;
+  isLast?: boolean;
+  meta: string;
+  onPress?: () => void;
+  status: string;
+  title: string;
+  tone: "blue" | "green" | "purple";
+}) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
+      <View className={`flex-row items-center px-4 py-2 ${isLast ? "" : "border-b border-unity-line"}`}>
+        <IconBubble icon={icon} size={36} tone={tone} />
+        <View className="ml-3 flex-1">
+          <Text className="text-unity-ink" style={styles.rowTitle}>{title}</Text>
+          <Text className="mt-1 text-unity-muted" style={styles.bodyText}>{meta}</Text>
+        </View>
+        <View className="items-end">
+          <Text className={amount >= 0 ? "text-unity-green" : "text-unity-ink"} style={styles.amountSmall}>
+            {amount >= 0 ? "+ " : "- "}{currency(Math.abs(amount))}
+          </Text>
+          <View className="mt-1">
+            <StatusChip label={status} tone={statusTone(status)} />
+          </View>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+function FilterChip({
+  active = false,
+  icon,
+  label,
+  onPress,
+}: {
+  active?: boolean;
+  icon?: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress?: () => void;
 }) {
   return (
     <Pressable
-      accessibilityLabel={label}
       onPress={onPress}
-      style={({ pressed }) => [styles.headerIconButton, pressed && styles.headerIconButtonPressed]}
+      style={({ pressed }) => [
+        styles.filterChip,
+        active && styles.filterChipActive,
+        pressed && styles.pressed,
+      ]}
     >
-      <Ionicons color={colors.brand} name={icon} size={24} />
+      {icon ? <Ionicons color={active ? colors.white : colors.ink} name={icon} size={14} /> : null}
+      <Text className={active ? "text-white" : "text-unity-ink"} style={styles.filterText}>{label}</Text>
     </Pressable>
   );
 }
 
-function AccountActionButton({
-  icon,
-  label,
+function DepositRow({
+  amount,
+  agent,
+  date,
   onPress,
+  status,
+  title,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
+  amount: number;
+  agent?: string;
+  date: string;
   onPress: () => void;
+  status: string;
+  title: string;
 }) {
+  const tone = statusTone(status);
+  const icon = tone === "warning" ? "time-outline" : tone === "danger" ? "close-circle-outline" : "checkmark-outline";
+
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.accountAction, pressed && styles.cardPressed]}>
-      <Ionicons color={colors.ink} name={icon} size={28} />
-      <Text style={styles.accountActionLabel}>{label}</Text>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.depositCard, unityStyles.cardShadow, pressed && styles.pressed]}>
+      <IconBubble icon={icon} size={38} tone={tone === "danger" ? "red" : tone === "warning" ? "orange" : "green"} />
+      <View className="ml-3 flex-1">
+        <Text className="text-unity-ink" style={styles.rowTitle}>{title}</Text>
+        <Text className="mt-1 text-unity-muted" style={styles.bodyText}>{date}</Text>
+        {agent ? (
+          <Text className="mt-1 text-unity-muted" style={styles.bodyText}>
+            Agent: <Text className="text-unity-blue" style={styles.mediumInline}>{agent}</Text>
+          </Text>
+        ) : null}
+      </View>
+      <View className="items-end">
+        <Text className={tone === "danger" ? "text-unity-red" : tone === "warning" ? "text-unity-blue" : "text-unity-green"} style={styles.amountSmall}>
+          + {currency(amount)}
+        </Text>
+        <View className="mt-2">
+          <StatusChip label={status} tone={tone} />
+        </View>
+      </View>
+      <Ionicons color={colors.inkMuted} name="chevron-forward" size={18} style={{ marginLeft: 6 }} />
     </Pressable>
   );
 }
 
-function ProfileTile({
-  icon,
-  label,
-  onPress,
+function LoanOverview({ loan, onPress }: { loan: LoanCard; onPress?: () => void }) {
+  const [showAllPayments, setShowAllPayments] = useState(false);
+  const paid = Math.max(loan.approvedPrincipal - loan.remainingPrincipal, 0);
+  const progress = loan.approvedPrincipal > 0 ? Math.min(paid / loan.approvedPrincipal, 1) : 0;
+  const nextPaymentAmount = loan.nextInterestDue;
+  const statusTone = loan.isOverdue ? "red" : "green";
+  const statusTitle = loan.isOverdue ? "Payment Overdue" : "On Track";
+  const statusCopy = loan.isOverdue
+    ? `Your payment due ${loan.nextDueLabel} needs attention.`
+    : "You're keeping up with your repayments.";
+  const paymentHistoryRows = loan.recentPayments.map((payment, index) => ({
+    id: payment.id,
+    amount: payment.principalPaid || payment.interestPaid,
+    dateLabel: payment.dateLabel,
+    label: `Payment ${index + 1}`,
+    tone: "success",
+    status: "Paid",
+  }));
+  const visiblePaymentHistoryRows = showAllPayments
+    ? paymentHistoryRows
+    : paymentHistoryRows.slice(0, 4);
+  const hiddenPaymentCount = Math.max(paymentHistoryRows.length - visiblePaymentHistoryRows.length, 0);
+  const repaymentScheduleRows = [
+    {
+      id: `${loan.id}-next-payment`,
+      amount: nextPaymentAmount,
+      dateLabel: loan.nextDueLabel,
+      label: loan.isOverdue ? "Overdue payment" : "Next payment",
+      tone: loan.isOverdue ? "danger" : "info",
+      status: loan.isOverdue ? "Overdue" : "Upcoming",
+    },
+    ...visiblePaymentHistoryRows,
+  ];
+
+  return (
+    <>
+      <Pressable disabled={!onPress} onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
+        <LinearGradient
+          colors={["#10C7BE", "#00B99F"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.loanCard}
+        >
+          <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center">
+              <Text className="text-white" style={styles.loanTitle}>Personal Loan</Text>
+              <View className="ml-2 rounded-lg bg-white/20 px-2 py-1">
+                <Text className="text-white" style={styles.bodyText}>{loan.statusLabel}</Text>
+              </View>
+            </View>
+            <Text className="text-white/90" style={styles.bodyText}>Loan ID: {loan.loanCode}</Text>
+          </View>
+          <View className="mt-5 flex-row">
+            <View className="flex-1">
+              <Text className="text-white/85" style={styles.balanceFooterLabel}>Total Borrowed</Text>
+              <Text className="mt-1 text-white" style={styles.loanAmount}>{currency(loan.approvedPrincipal)}</Text>
+            </View>
+            <View className="mx-4 w-px bg-white/35" />
+            <View className="flex-1">
+              <Text className="text-white/85" style={styles.balanceFooterLabel}>Outstanding Balance</Text>
+              <Text className="mt-1 text-white" style={styles.loanAmount}>{currency(loan.remainingPrincipal)}</Text>
+            </View>
+          </View>
+          <View className="my-4 h-px bg-white/30" />
+          <View className="flex-row">
+            <View className="flex-1 flex-row items-center">
+              <Ionicons color={colors.white} name="calendar-outline" size={19} />
+              <View className="ml-3">
+                <Text className="text-white/85" style={styles.bodyText}>
+                  {loan.isOverdue ? "Payment Overdue Since" : "Next Payment Due"}
+                </Text>
+                <Text className="mt-1 text-white" style={styles.loanTitle}>{loan.nextDueLabel}</Text>
+              </View>
+            </View>
+            <View className="mx-4 w-px bg-white/30" />
+            <View className="flex-1">
+              <Text className="text-white/85" style={styles.bodyText}>Next Interest Due</Text>
+              <Text className="mt-1 text-white" style={styles.loanTitle}>{currency(nextPaymentAmount)}</Text>
+            </View>
+          </View>
+        </LinearGradient>
+      </Pressable>
+      <WhiteCard className="mt-4 p-4">
+        <View className="flex-row items-center justify-between">
+          <Text className="text-unity-ink" style={styles.cardTitle}>Repayment Progress</Text>
+          <Text className="text-unity-green" style={styles.cardTitle}>{Math.round(progress * 100)}% Paid</Text>
+        </View>
+        <View className="mt-4 h-1.5 overflow-hidden rounded-full bg-slate-200">
+          <View className="h-full rounded-full bg-unity-green" style={{ width: `${progress * 100}%` }} />
+        </View>
+        <View className="mt-3 flex-row justify-between">
+          <Text className="text-unity-green" style={styles.bodyText}>{currency(paid)} Paid</Text>
+          <Text className="text-unity-muted" style={styles.bodyText}>{currency(loan.approvedPrincipal)} Total</Text>
+        </View>
+      </WhiteCard>
+      <WhiteCard className="mt-4 flex-row items-center p-4">
+        <IconBubble icon={loan.isOverdue ? "alert-circle-outline" : "trending-up-outline"} size={58} tone={statusTone} />
+        <View className="ml-4 flex-1">
+          <Text className="text-unity-ink" style={styles.bodyText}>Loan Status</Text>
+          <Text className={loan.isOverdue ? "mt-1 text-unity-red" : "mt-1 text-unity-green"} style={styles.statusTitle}>{statusTitle}</Text>
+          <Text className="mt-1 text-unity-muted" style={styles.bodyText}>{statusCopy}</Text>
+        </View>
+        <Ionicons color={colors.brand} name="chevron-forward" size={22} />
+      </WhiteCard>
+      <SectionTitle
+        action={<Text className="text-unity-blue" style={styles.linkText}>View full schedule</Text>}
+        title="Repayment Schedule"
+      />
+      <WhiteCard>
+        {repaymentScheduleRows.map((payment, index) => (
+          <View
+            key={payment.id}
+            className={`flex-row items-center px-4 py-3 ${
+              index === repaymentScheduleRows.length - 1 && hiddenPaymentCount === 0 ? "" : "border-b border-unity-line"
+            }`}
+          >
+            <IconBubble icon={payment.status === "Paid" ? "checkmark" : "calendar-outline"} size={36} tone={payment.tone === "danger" ? "red" : payment.tone === "success" ? "green" : "blue"} />
+            <View className="ml-3 flex-1">
+              <Text className="text-unity-ink" style={styles.rowTitle}>{payment.label}</Text>
+              <Text className="mt-1 text-unity-muted" style={styles.bodyText}>{payment.dateLabel}</Text>
+            </View>
+            <Text className="mr-3 text-unity-ink" style={styles.amountSmall}>{currency(payment.amount)}</Text>
+            <StatusChip label={payment.status} tone={payment.tone as "success" | "danger" | "info"} />
+          </View>
+        ))}
+        {hiddenPaymentCount > 0 || showAllPayments ? (
+          <Pressable
+            onPress={() => setShowAllPayments((current) => !current)}
+            style={({ pressed }) => [styles.paymentToggle, pressed && styles.pressed]}
+          >
+            <Text className="text-unity-blue" style={styles.linkText}>
+              {showAllPayments
+                ? "Show less payments⌃"
+                : `${hiddenPaymentCount} more payment${hiddenPaymentCount === 1 ? "" : "s"}⌄`}
+            </Text>
+          </Pressable>
+        ) : null}
+      </WhiteCard>
+    </>
+  );
+}
+
+function AccountCard({ account }: { account: MobileAccountCard }) {
+  return (
+    <Pressable onPress={() => router.push(`/member/accounts/${account.id}` as Href)} style={({ pressed }) => [pressed && styles.pressed]}>
+      <WhiteCard className="mb-4 p-5">
+        <View className="flex-row items-center justify-between">
+          <View>
+            <Text className="text-unity-ink" style={styles.cardTitle}>{account.accountType === "deposit" ? "Deposit" : "Savings"}</Text>
+            <Text className="mt-1 text-unity-muted" style={styles.bodyText}>{account.accountNumber}</Text>
+          </View>
+          <StatusChip label={account.pendingTransactions > 0 ? "Pending" : "Approved"} tone={account.pendingTransactions > 0 ? "warning" : "success"} />
+        </View>
+        <Text className="mt-5 text-unity-ink" style={styles.balanceAmount}>{currency(account.balance)}</Text>
+        <Text className="mt-1 text-unity-muted" style={styles.bodyText}>{account.latestActivity}</Text>
+      </WhiteCard>
+    </Pressable>
+  );
+}
+
+function SettingsSection({
+  rows,
+  title,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  onPress: () => void;
+  rows: [
+    keyof typeof Ionicons.glyphMap,
+    string,
+    (() => void) | undefined,
+    "blue" | "green" | "orange" | "purple",
+    boolean?,
+    string?,
+  ][];
+  title: string;
 }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.profileTile, pressed && styles.cardPressed]}>
-      <Ionicons color={colors.ink} name={icon} size={30} />
-      <Text style={styles.profileTileLabel}>{label}</Text>
+    <View style={styles.settingsCard}>
+      <View style={styles.settingsHeader}>
+        <Text style={styles.sectionHeading}>{title}</Text>
+      </View>
+      {rows.map(([icon, label, onPress, tone, toggle, trailing], index) => (
+        <Pressable
+          key={label}
+          disabled={!onPress}
+          onPress={onPress}
+          style={({ pressed }) => [pressed && styles.pressed]}
+        >
+          <View style={[styles.settingsRow, index !== rows.length - 1 && styles.settingsRowDivider]}>
+            <IconBubble icon={icon} size={30} tone={tone} />
+            <Text style={styles.settingsRowTitle}>{label}</Text>
+            {toggle ? (
+              <Switch
+                accessibilityLabel={label}
+                ios_backgroundColor="#DCE4F0"
+                onValueChange={() => undefined}
+                thumbColor={colors.white}
+                trackColor={{ false: "#DCE4F0", true: "#12C189" }}
+                value
+              />
+            ) : trailing ? (
+              <Text style={styles.settingsTrailing}>{trailing}</Text>
+            ) : null}
+            {toggle ? null : <Ionicons color={colors.inkMuted} name="chevron-forward" size={18} />}
+          </View>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+function ProfileMeta({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: string }) {
+  return (
+    <View className="mt-2 flex-row items-start">
+      <Ionicons color={colors.brand} name={icon} size={16} />
+      <Text className="ml-2 flex-1 text-unity-muted" style={styles.bodyText}>{text}</Text>
+    </View>
+  );
+}
+
+function DateOfBirthPicker({
+  onChange,
+  value,
+}: {
+  onChange: (next: string) => void;
+  value: string;
+}) {
+  const [showPicker, setShowPicker] = useState(false);
+  const os = process.env.EXPO_OS;
+  const selectedDate = parseDateInputValue(value);
+  const maximumDate = new Date();
+
+  const handleChange = (_event: DateTimePickerEvent, nextDate?: Date) => {
+    if (os === "android") {
+      setShowPicker(false);
+    }
+
+    if (nextDate) {
+      onChange(toDateInputValue(nextDate));
+    }
+  };
+
+  const openPicker = () => {
+    if (os === "android") {
+      DateTimePickerAndroid.open({
+        display: "default",
+        maximumDate,
+        mode: "date",
+        onChange: handleChange,
+        value: selectedDate,
+      });
+      return;
+    }
+
+    setShowPicker((current) => !current);
+  };
+
+  return (
+    <View className="mb-4">
+      <Text className="mb-2 text-unity-ink" style={styles.formLabel}>Date Of Birth</Text>
+      <Pressable onPress={openPicker} style={({ pressed }) => [styles.input, styles.datePickerInput, pressed && styles.pressed]}>
+        <Text className={value ? "text-unity-ink" : "text-unity-muted"} style={styles.inputText}>
+          {formatDateInputValue(value)}
+        </Text>
+        <Ionicons color={colors.inkMuted} name="calendar-outline" size={20} />
+      </Pressable>
+      {showPicker && os !== "android" ? (
+        <View style={styles.inlineDatePicker}>
+          <DateTimePicker
+            display={os === "ios" ? "spinner" : "default"}
+            maximumDate={maximumDate}
+            mode="date"
+            onChange={handleChange}
+            value={selectedDate}
+          />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function DetailLine({ label, value }: { label: string; value: string }) {
+  return (
+    <View className="mt-4 flex-row justify-between border-t border-unity-line pt-4">
+      <Text className="text-unity-muted" style={styles.bodyText}>{label}</Text>
+      <Text className="max-w-[58%] text-right text-unity-ink" style={styles.mediumInline}>{value}</Text>
+    </View>
+  );
+}
+
+function FormInput({
+  label,
+  multiline = false,
+  onChangeText,
+  secureTextEntry = false,
+  value,
+}: {
+  label: string;
+  multiline?: boolean;
+  onChangeText: (next: string) => void;
+  secureTextEntry?: boolean;
+  value: string;
+}) {
+  return (
+    <View className="mb-4">
+      <Text className="mb-2 text-unity-ink" style={styles.formLabel}>{label}</Text>
+      <TextInput
+        multiline={multiline}
+        onChangeText={onChangeText}
+        placeholder={label}
+        placeholderTextColor={colors.inkMuted}
+        secureTextEntry={secureTextEntry}
+        style={[styles.input, multiline && styles.multilineInput]}
+        value={value}
+      />
+    </View>
+  );
+}
+
+function PrimaryGradientButton({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
+      <LinearGradient
+        colors={["#0057D8", "#08BFA9"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.primaryGradient}
+      >
+        <Text className="text-white" style={styles.primaryButtonText}>{label}</Text>
+      </LinearGradient>
     </Pressable>
   );
 }
 
 function MarkdownContent({ content }: { content: string }) {
   return (
-    <View style={styles.markdownStack}>
+    <View>
       {content.split(/\r?\n/).map((rawLine, index) => {
         const line = rawLine.trim();
 
@@ -849,45 +1504,17 @@ function MarkdownContent({ content }: { content: string }) {
           return null;
         }
 
-        const heading = line.match(/^(#{1,3})\s+(.+)$/);
-
-        if (heading) {
-          const level = heading[1].length;
+        if (line.startsWith("#")) {
           return (
-            <Text
-              key={`${line}-${index}`}
-              style={level === 1 ? styles.markdownHeading : styles.markdownSubheading}
-            >
-              {renderInlineMarkdown(heading[2])}
+            <Text key={`${line}-${index}`} className="mb-3 text-unity-ink" style={styles.sectionHeading}>
+              {line.replace(/^#+\s*/, "")}
             </Text>
           );
         }
 
-        const bullet = line.match(/^[-*]\s+(.+)$/);
-
-        if (bullet) {
-          return (
-            <View key={`${line}-${index}`} style={styles.markdownListRow}>
-              <Text style={styles.markdownMarker}>{"\u2022"}</Text>
-              <Text style={styles.markdownListText}>{renderInlineMarkdown(bullet[1])}</Text>
-            </View>
-          );
-        }
-
-        const numbered = line.match(/^(\d+)\.\s+(.+)$/);
-
-        if (numbered) {
-          return (
-            <View key={`${line}-${index}`} style={styles.markdownListRow}>
-              <Text style={styles.markdownMarker}>{numbered[1]}.</Text>
-              <Text style={styles.markdownListText}>{renderInlineMarkdown(numbered[2])}</Text>
-            </View>
-          );
-        }
-
         return (
-          <Text key={`${line}-${index}`} style={styles.markdownParagraph}>
-            {renderInlineMarkdown(line)}
+          <Text key={`${line}-${index}`} className="mb-3 text-unity-muted" style={styles.bodyText}>
+            {line.replace(/^[-*]\s+/, "• ")}
           </Text>
         );
       })}
@@ -895,418 +1522,429 @@ function MarkdownContent({ content }: { content: string }) {
   );
 }
 
-function renderInlineMarkdown(text: string) {
-  const parts: ReactNode[] = [];
-  const pattern = /(\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = pattern.exec(text))) {
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
-    }
-
-    const token = match[0];
-
-    if (token.startsWith("**")) {
-      parts.push(
-        <Text key={`${token}-${match.index}`} style={styles.markdownBold}>
-          {token.slice(2, -2)}
-        </Text>,
-      );
-    } else if (token.startsWith("*")) {
-      parts.push(
-        <Text key={`${token}-${match.index}`} style={styles.markdownItalic}>
-          {token.slice(1, -1)}
-        </Text>,
-      );
-    } else {
-      const link = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-      parts.push(
-        <Text key={`${token}-${match.index}`} style={styles.markdownLink}>
-          {link?.[1] ?? token}
-        </Text>,
-      );
-    }
-
-    lastIndex = match.index + token.length;
-  }
-
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
-  }
-
-  return parts;
-}
-
-function AccountCard({ account }: { account: MobileAccountCard }) {
-  return (
-    <Pressable
-      onPress={() => router.push(`/member/accounts/${account.id}` as Href)}
-      style={({ pressed }) => pressed && styles.cardPressed}
-    >
-      <SurfaceCard accent={account.accountType === "deposit" ? colors.foliwe : colors.cardAlt} tone={account.accountType === "deposit" ? "hero" : "default"}>
-        <View style={styles.rowBetween}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cardTitle}>{account.accountType === "deposit" ? "Deposit" : "Savings"}</Text>
-            <Text style={styles.cardCaption}>{account.accountNumber}</Text>
-          </View>
-          <StatusPill label={account.pendingTransactions > 0 ? "PENDING APPROVAL" : "APPROVED"} />
-        </View>
-        <Text style={styles.moneyTitle}>{formatCurrency(account.balance)}</Text>
-        <Text style={styles.cardCaption}>{account.latestActivity}</Text>
-      </SurfaceCard>
-    </Pressable>
-  );
-}
-
-function LoanCardView({ loan, onPress }: { loan: LoanCard; onPress?: () => void }) {
-  const content = (
-    <SurfaceCard>
-      <View style={styles.rowBetween}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.cardTitle}>{loan.loanCode}</Text>
-          <Text style={styles.cardCaption}>{loan.repaymentModeLabel}</Text>
-        </View>
-        <StatusPill label={toLoanStatusLabel(loan.status)} />
-      </View>
-      <InfoRow label="Approved" value={formatCurrency(loan.approvedPrincipal)} />
-      <InfoRow label="Remaining" value={formatCurrency(loan.remainingPrincipal)} />
-      <InfoRow label="Next due" value={loan.nextDueLabel} />
-      <SectionHeader title="Timeline" />
-      {loan.stageTimeline.map((stage) => (
-        <View key={stage.id} style={styles.timelineRow}>
-          <Text style={styles.timelineLabel}>{stage.label}</Text>
-          <Text style={styles.timelineDate}>{stage.date}</Text>
-        </View>
-      ))}
-      <SectionHeader title="Recent payments" />
-      {loan.recentPayments.length === 0 ? (
-        <Text style={styles.cardCaption}>No repayments recorded yet.</Text>
-      ) : (
-        <View style={styles.paymentTable}>
-          <View style={styles.paymentHeaderRow}>
-            <View style={styles.paymentDateCell}>
-              <Text style={styles.paymentHeaderText}>Date</Text>
-            </View>
-            <View style={styles.paymentAmountCell}>
-              <Text style={styles.paymentHeaderText}>Principal</Text>
-            </View>
-            <View style={styles.paymentAmountCell}>
-              <Text style={styles.paymentHeaderText}>Interest</Text>
-            </View>
-          </View>
-          {loan.recentPayments.map((payment) => (
-            <View key={payment.id} style={styles.paymentDataRow}>
-              <View style={styles.paymentDateCell}>
-                <Text style={styles.paymentDateText}>{payment.dateLabel}</Text>
-              </View>
-              <View style={styles.paymentAmountCell}>
-                <Text style={styles.paymentAmountText}>{formatCurrency(payment.principalPaid)}</Text>
-              </View>
-              <View style={styles.paymentAmountCell}>
-                <Text style={styles.paymentAmountText}>{formatCurrency(payment.interestPaid)}</Text>
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
-    </SurfaceCard>
-  );
-
-  if (!onPress) {
-    return content;
-  }
-
-  return (
-    <Pressable onPress={onPress} style={({ pressed }) => pressed && styles.cardPressed}>
-      {content}
-    </Pressable>
-  );
-}
-
-function toLoanStatusLabel(status: LoanCard["status"]) {
-  if (status === "rejected") {
-    return "REJECTED";
-  }
-
-  if (status === "defaulted") {
-    return "RECONCILIATION REQUIRED";
-  }
-
-  if (status === "application_submitted" || status === "under_review") {
-    return "PENDING APPROVAL";
-  }
-
-  return "APPROVED";
-}
-
-function toStatusLabel(status: TransactionRequest["status"]) {
-  const map: Record<TransactionRequest["status"], string> = {
-    approved: "APPROVED",
-    draft: "PENDING SYNC",
-    pending_approval: "PENDING APPROVAL",
-    rejected: "REJECTED",
-    reversed: "REJECTED",
-    sync_conflict: "FAILED TO SYNC",
-    unsynced: "PENDING SYNC",
-  };
-
-  return map[status];
-}
-
 const styles = StyleSheet.create({
-  headerIconButton: {
+  actionLabel: {
+    fontFamily: typography.medium,
+    fontSize: 12,
+    lineHeight: 15,
+  },
+  actionSquare: {
     alignItems: "center",
-    backgroundColor: "transparent",
-    borderColor: "transparent",
-    borderRadius: 999,
-    borderWidth: 0,
-    height: 26,
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    flex: 1,
     justifyContent: "center",
-    width: 26,
+    minHeight: 78,
+    paddingHorizontal: 6,
+    paddingVertical: 10,
   },
-  headerIconButtonPressed: {
-    opacity: 0.8,
+  accountSummaryOverlap: {
+    marginBottom: 18,
+    marginTop: -74,
+    position: "relative",
+    zIndex: 3,
   },
-  cardPressed: {
-    opacity: 0.82,
-  },
-  heroTitle: {
-    color: colors.ink,
-    fontFamily: typography.heading,
-    fontSize: 22,
-    lineHeight: 28,
-    textAlign: "center",
-  },
-  heroCaption: {
-    color: colors.inkMuted,
-    fontFamily: typography.body,
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  moneyTitle: {
-    color: colors.ink,
-    fontFamily: typography.display,
-    fontSize: 40,
-    lineHeight: 46,
-    textAlign: "center",
-  },
-  balanceHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  accountActionRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-around",
-    paddingBottom: spacing.xs,
-    paddingTop: spacing.sm,
-  },
-  accountAction: {
-    alignItems: "center",
-    gap: 2,
-    justifyContent: "center",
-    minWidth: 76,
-  },
-  accountActionLabel: {
-    color: colors.ink,
-    fontFamily: typography.body,
+  amountSmall: {
+    fontFamily: typography.medium,
     fontSize: 11,
+    lineHeight: 15,
   },
-  inlineWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
+  balanceAmount: {
+    fontFamily: typography.heading,
+    fontSize: 32,
+    lineHeight: 38,
   },
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-  },
-  profileHero: {
-    alignItems: "center",
-    gap: spacing.sm,
-    marginBottom: spacing.xxl,
-    marginTop: spacing.md,
-  },
-  profileAvatar: {
-    alignItems: "center",
-    backgroundColor: colors.brand,
-    borderColor: colors.white,
-    borderRadius: 999,
-    borderWidth: 4,
-    height: 72,
-    justifyContent: "center",
-    width: 72,
-  },
-  profileName: {
-    color: colors.ink,
+  balanceFooterLabel: {
     fontFamily: typography.body,
-    fontSize: 24,
+    fontSize: 12,
+    lineHeight: 16,
   },
-  profileGrid: {
-    backgroundColor: "rgba(210, 236, 205, 0.82)",
-    borderRadius: radii.md,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
-    padding: spacing.sm,
+  balanceFooterValue: {
+    fontFamily: typography.heading,
+    fontSize: 15,
+    lineHeight: 20,
   },
-  profileTile: {
+  bodyText: {
+    fontFamily: typography.body,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  buttonText: {
+    fontFamily: typography.medium,
+    fontSize: 17,
+  },
+  cardTitle: {
+    fontFamily: typography.heading,
+    fontSize: 19,
+    lineHeight: 24,
+  },
+  depositCard: {
     alignItems: "center",
-    backgroundColor: colors.card,
-    borderRadius: 9,
-    flexBasis: "47%",
-    flexGrow: 1,
-    gap: spacing.sm,
-    justifyContent: "center",
-    minHeight: 104,
-    padding: spacing.md,
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    marginBottom: 8,
+    padding: 10,
   },
-  profileTileLabel: {
-    color: colors.ink,
+  filterChip: {
+    alignItems: "center",
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 5,
+    minHeight: 32,
+    paddingHorizontal: 10,
+  },
+  filterChipActive: {
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
+  },
+  filterText: {
+    fontFamily: typography.medium,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  formLabel: {
+    fontFamily: typography.medium,
+    fontSize: 15,
+  },
+  greetingName: {
+    fontFamily: typography.heading,
+    fontSize: 39,
+    lineHeight: 45,
+  },
+  greetingSub: {
+    fontFamily: typography.body,
+    fontSize: 18,
+    lineHeight: 25,
+  },
+  greetingText: {
+    fontFamily: typography.body,
+    fontSize: 23,
+    lineHeight: 29,
+  },
+  homeGreetingLabel: {
+    fontFamily: typography.body,
+    fontSize: 15,
+    lineHeight: 19,
+  },
+  homeBalanceOverlap: {
+    marginBottom: 14,
+    marginTop: -76,
+    position: "relative",
+    zIndex: 3,
+  },
+  homeGreetingName: {
+    fontFamily: typography.heading,
+    fontSize: 21,
+    lineHeight: 26,
+  },
+  homeGreetingSub: {
     fontFamily: typography.body,
     fontSize: 13,
-    textAlign: "center",
+    lineHeight: 17,
   },
-  markdownStack: {
-    gap: spacing.sm,
-  },
-  markdownHeading: {
+  input: {
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
     color: colors.ink,
-    fontFamily: typography.heading,
-    fontSize: 24,
-    lineHeight: 30,
+    fontFamily: typography.body,
+    fontSize: 16,
+    minHeight: 58,
+    paddingHorizontal: 16,
   },
-  markdownSubheading: {
+  datePickerInput: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  inlineDatePicker: {
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 8,
+    overflow: "hidden",
+  },
+  inputText: {
+    fontFamily: typography.body,
+    fontSize: 16,
+  },
+  linkText: {
+    fontFamily: typography.medium,
+    fontSize: 13,
+    lineHeight: 17,
+  },
+  loanAmount: {
+    fontFamily: typography.heading,
+    fontSize: 18,
+    lineHeight: 23,
+  },
+  loanCard: {
+    borderRadius: 16,
+    padding: 16,
+  },
+  loanTitle: {
+    fontFamily: typography.heading,
+    fontSize: 16,
+    lineHeight: 20,
+  },
+  mediumInline: {
+    fontFamily: typography.medium,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  metricAmount: {
+    fontFamily: typography.heading,
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  metricLabel: {
+    fontFamily: typography.body,
+    fontSize: 12,
+    lineHeight: 15,
+  },
+  memberAvatar: {
+    borderRadius: 40,
+    height: 80,
+    width: 80,
+  },
+  memberIdRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+    marginTop: 5,
+  },
+  memberIdText: {
+    color: colors.inkMuted,
+    flexShrink: 1,
+    fontFamily: typography.body,
+    fontSize: 12,
+    lineHeight: 17,
+    minWidth: 0,
+  },
+  memberIdentityCard: {
+    backgroundColor: colors.white,
+    borderRadius: 18,
+    marginBottom: 14,
+    minHeight: 176,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    shadowColor: "#071229",
+    shadowOffset: { height: 10, width: 0 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+  },
+  memberIdentityCopy: {
+    flex: 1,
+    minWidth: 0,
+    paddingLeft: 10,
+    paddingTop: 6,
+  },
+  memberIdentityName: {
     color: colors.ink,
     fontFamily: typography.heading,
     fontSize: 18,
-    lineHeight: 24,
-    marginTop: spacing.sm,
+    lineHeight: 23,
   },
-  markdownParagraph: {
-    color: colors.ink,
-    fontFamily: typography.body,
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  markdownListRow: {
+  memberIdentityRow: {
+    alignItems: "flex-start",
     flexDirection: "row",
-    gap: spacing.sm,
   },
-  markdownMarker: {
-    color: colors.ink,
-    fontFamily: typography.medium,
-    fontSize: 14,
-    lineHeight: 21,
-    minWidth: 22,
+  memberProfileHeader: {
+    height: 430,
+    left: 0,
+    overflow: "hidden",
+    position: "absolute",
+    right: 0,
+    top: 0,
   },
-  markdownListText: {
-    color: colors.ink,
+  memberProfileScreen: {
+    backgroundColor: colors.panel,
     flex: 1,
+  },
+  memberProfileScrollContent: {
+    paddingHorizontal: 18,
+    paddingTop: 282,
+  },
+  memberProfileSubtitle: {
+    color: "rgba(255,255,255,0.9)",
     fontFamily: typography.body,
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: 15,
+    lineHeight: 20,
   },
-  markdownBold: {
-    fontFamily: typography.medium,
+  memberProfileTitle: {
+    color: colors.white,
+    fontFamily: typography.heading,
+    fontSize: 28,
+    lineHeight: 34,
   },
-  markdownItalic: {
-    fontStyle: "italic",
+  memberProfileTitleBlock: {
+    left: 20,
+    position: "absolute",
+    right: 20,
+    top: 152,
   },
-  markdownLink: {
-    color: colors.brand,
-    fontFamily: typography.medium,
-  },
-  markdownMeta: {
-    color: colors.inkMuted,
-    fontFamily: typography.body,
-    fontSize: 11,
-    marginTop: spacing.md,
-  },
-  rowBetween: {
+  memberProfileTopBar: {
     alignItems: "center",
     flexDirection: "row",
-    gap: spacing.md,
     justifyContent: "space-between",
+    paddingHorizontal: 20,
   },
-  cardTitle: {
-    color: colors.ink,
-    fontFamily: typography.medium,
-    fontSize: 16,
-  },
-  cardCaption: {
-    color: colors.inkMuted,
-    fontFamily: typography.body,
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  cardValue: {
-    color: colors.ink,
-    fontFamily: typography.medium,
-    fontSize: 14,
-  },
-  timelineRow: {
-    alignItems: "center",
-    borderTopColor: colors.border,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingTop: spacing.sm,
-  },
-  timelineLabel: {
-    color: colors.ink,
-    fontFamily: typography.body,
-    fontSize: 14,
-  },
-  timelineDate: {
-    color: colors.inkMuted,
-    fontFamily: typography.medium,
-    fontSize: 13,
-  },
-  paymentTable: {
-    marginTop: spacing.xs,
-  },
-  paymentHeaderRow: {
-    borderBottomColor: colors.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: "row",
-    gap: spacing.sm,
-    paddingBottom: spacing.xs,
-  },
-  paymentDataRow: {
-    borderBottomColor: colors.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: "row",
-    gap: spacing.sm,
-    paddingVertical: spacing.sm,
-  },
-  paymentDateCell: {
-    flex: 1.1,
-  },
-  paymentAmountCell: {
+  memberProfileTopSlot: {
     alignItems: "flex-end",
-    flex: 1,
+    minWidth: 54,
   },
-  paymentHeaderText: {
+  memberProfileWatermark: {
+    bottom: 52,
+    height: 178,
+    opacity: 0.11,
+    position: "absolute",
+    right: -38,
+    width: 178,
+  },
+  memberProfileWatermarkSmall: {
+    bottom: 82,
+    height: 92,
+    opacity: 0.08,
+    position: "absolute",
+    right: 84,
+    width: 92,
+  },
+  memberProfileWhitePanel: {
+    backgroundColor: colors.panel,
+    borderTopLeftRadius: 42,
+    borderTopRightRadius: 42,
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 392,
+  },
+  multilineInput: {
+    minHeight: 112,
+    paddingTop: 14,
+    textAlignVertical: "top",
+  },
+  paymentToggle: {
+    alignItems: "center",
+    paddingVertical: 12,
+  },
+  pressed: {
+    opacity: 0.78,
+  },
+  primaryButton: {
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+  primaryButtonText: {
+    fontFamily: typography.heading,
+    fontSize: 20,
+  },
+  primaryGradient: {
+    alignItems: "center",
+    borderRadius: 16,
+    minHeight: 62,
+    justifyContent: "center",
+  },
+  rowTitle: {
+    fontFamily: typography.medium,
+    fontSize: 13,
+    lineHeight: 17,
+  },
+  sectionHeading: {
+    color: colors.ink,
+    fontFamily: typography.heading,
+    fontSize: 17,
+    lineHeight: 22,
+  },
+  settingsCard: {
+    backgroundColor: colors.white,
+    borderColor: "#E4E9F2",
+    borderRadius: 13,
+    borderWidth: 1,
+    marginBottom: 12,
+    overflow: "hidden",
+    shadowColor: "#071229",
+    shadowOffset: { height: 8, width: 0 },
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+  },
+  settingsHeader: {
+    borderBottomColor: "#E4E9F2",
+    borderBottomWidth: 1,
+    minHeight: 36,
+    justifyContent: "center",
+    paddingHorizontal: 14,
+  },
+  settingsRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    minHeight: 46,
+    paddingHorizontal: 14,
+  },
+  settingsRowDivider: {
+    borderBottomColor: "#E4E9F2",
+    borderBottomWidth: 1,
+  },
+  settingsRowTitle: {
+    color: colors.ink,
+    flex: 1,
+    fontFamily: typography.medium,
+    fontSize: 14,
+    lineHeight: 18,
+    marginLeft: 12,
+  },
+  settingsTrailing: {
     color: colors.inkMuted,
+    fontFamily: typography.body,
+    fontSize: 12,
+    lineHeight: 16,
+    marginRight: 6,
+  },
+  signOutButton: {
+    alignItems: "center",
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 24,
+    padding: 16,
+  },
+  smallText: {
+    fontFamily: typography.body,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  statusTitle: {
+    fontFamily: typography.heading,
+    fontSize: 20,
+    lineHeight: 25,
+  },
+  verifiedBadge: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "#E4F8ED",
+    borderRadius: 5,
+    flexDirection: "row",
+    gap: 8,
+    marginLeft: 6,
+    marginTop: 12,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  verifiedBadgeText: {
+    color: colors.success,
     fontFamily: typography.medium,
     fontSize: 12,
-    textTransform: "uppercase",
-  },
-  paymentDateText: {
-    color: colors.ink,
-    fontFamily: typography.body,
-    fontSize: 14,
-  },
-  paymentAmountText: {
-    color: colors.ink,
-    fontFamily: typography.medium,
-    fontSize: 13,
+    lineHeight: 16,
   },
 });

@@ -1,26 +1,31 @@
 export const colors = {
-  page: "#E9FFD9",
-  pageTop: "#D8FFD0",
-  pageBottom: "#F7FFE5",
-  foliwe: "#F5FF4F",
-  pageShade: "#DFF6D5",
+  page: "#F5F8FC",
+  pageTop: "#0046B8",
+  pageBottom: "#FFFFFF",
+  foliwe: "#08BFA9",
+  pageShade: "#EAF1FA",
   card: "#FFFFFF",
   cardAlt: "#FFFFFF",
-  ink: "#050505",
-  inkMuted: "#6B6B6B",
-  border: "#E3E8DC",
-  brand: "#000000",
-  brandSoft: "#006D36",
-  mint: "#00BF3F",
-  gold: "#F5FF4F",
-  coral: "#FF545C",
-  sky: "#FF8B3D",
-  success: "#00B83F",
-  warning: "#FF8B3D",
-  danger: "#FF545C",
-  info: "#00B83F",
-  chartBar: "#B50700",
-  fieldStroke: "#A9A9A9",
+  ink: "#071229",
+  inkMuted: "#63708A",
+  border: "#D9E1EE",
+  brand: "#0057D8",
+  brandSoft: "#003586",
+  mint: "#08BFA9",
+  gold: "#1FD6B1",
+  coral: "#EF233C",
+  sky: "#2E7BEF",
+  success: "#0AA35D",
+  warning: "#FF8A1F",
+  danger: "#EF233C",
+  info: "#0057D8",
+  chartBar: "#0057D8",
+  fieldStroke: "#C9D4E5",
+  teal: "#08BFA9",
+  tealDark: "#079E91",
+  blueDark: "#003586",
+  purple: "#8D5CF6",
+  panel: "#F5F8FC",
   white: "#FFFFFF",
 };
 
@@ -34,10 +39,10 @@ export const spacing = {
 };
 
 export const radii = {
-  sm: 10,
-  md: 18,
-  lg: 32,
-  xl: 42,
+  sm: 8,
+  md: 14,
+  lg: 24,
+  xl: 32,
   pill: 999,
 };
 
@@ -50,7 +55,7 @@ export const typography = {
 
 export const shadows = {
   card: {
-    boxShadow: "0 10px 18px rgba(54, 103, 39, 0.08)",
+    boxShadow: "0 10px 24px rgba(7, 18, 41, 0.08)",
   },
   receipt: {
     boxShadow: "0 4px 6px rgba(0, 0, 0, 0.22)",

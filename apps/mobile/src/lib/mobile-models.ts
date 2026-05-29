@@ -77,6 +77,8 @@ export interface AgentDashboard {
   collectionsToday: number;
   withdrawalsToday: number;
   pendingApprovals: number;
+  assignedMemberCount: number;
+  activeMemberCount: number;
   cashOnHand: number;
   expectedCash: number;
   activity: AgentActivityItem[];
@@ -98,9 +100,12 @@ export interface MemberDashboard {
 }
 
 export interface LoanCard extends LoanDetailSummary {
+  isOverdue: boolean;
   loanCode: string;
+  nextDueAt: string;
   nextDueLabel: string;
   repaymentModeLabel: string;
+  statusLabel: string;
   stageTimeline: { id: string; label: string; date: string; state: string }[];
   recentPayments: {
     id: string;

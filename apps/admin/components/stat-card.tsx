@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/
 
 type MetricCardProps = {
   description?: string;
-  icon?: ComponentType<{ "data-icon"?: string }>;
+  icon?: ComponentType<{ "data-icon"?: string; className?: string }>;
   label: string;
   tone?: "default" | "success" | "warning" | "danger";
   value: string;
