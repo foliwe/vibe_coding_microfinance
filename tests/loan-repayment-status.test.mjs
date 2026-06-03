@@ -6,6 +6,7 @@ import {
   isLoanPaymentOverdue,
   resolveLoanRepaymentStatus,
 } from "../packages/shared/src/finance.ts";
+import { getLoanScheduleRows } from "../apps/admin/lib/loan-schedule.ts";
 
 test("loan next payment due date follows the approval-date schedule", () => {
   const dueAt = calculateNextLoanPaymentDueAt({
@@ -58,4 +59,30 @@ test("approved but undisbursed loans do not become overdue", () => {
       isOverdue: false,
     },
   );
+});
+
+test("loan repayment schedule counts the first recorded repayment", () => {
+  const schedule = getLoanScheduleRows(
+    {
+      created_at: "2099-04-24T18:37:54.957Z",
+      status: "active",
+    },
+    [
+      {
+        amount: 50,
+        branch_id: "branch-1",
+        created_at: "2099-05-24T18:37:54.957Z",
+        interest_component: 30,
+        loan_id: "loan-1",
+        principal_component: 20,
+      },
+    ],
+    6,
+  );
+
+  assert.equal(schedule[0].id, "payment-1");
+  assert.equal(schedule[0].state, "Paid");
+  assert.equal(schedule[0].paidAt, "2099-05-24T18:37:54.957Z");
+  assert.equal(schedule[1].id, "payment-2");
+  assert.equal(schedule[1].state, "Upcoming");
 });
