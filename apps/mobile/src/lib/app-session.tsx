@@ -13,6 +13,7 @@ import { getErrorMessage } from "./errors";
 import { recordMobileStaffAuthEvent } from "./fraud";
 import {
   ensureMobileStaffDeviceAccess,
+  getMobileStaffDeviceIdentity,
   type StaffDeviceAssertion,
 } from "./staff-device";
 import { getSupabaseClient } from "./supabase/client";
@@ -23,6 +24,8 @@ type Credentials = {
   password: string;
 };
 
+const SESSION_RESTORE_TIMEOUT_MS = 3000;
+
 function normalizeSignInIdentifier(identifier: string) {
   const trimmed = identifier.trim();
 
@@ -31,6 +34,15 @@ function normalizeSignInIdentifier(identifier: string) {
   }
 
   return buildMemberLoginEmail(trimmed);
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T) {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => {
+      setTimeout(() => resolve(fallback), timeoutMs);
+    }),
+  ]);
 }
 
 interface AppSessionValue {
@@ -68,7 +80,7 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const hydrateSession = useCallback(
-    async (nextSession?: Session | null) => {
+    async (nextSession: Session | null = null) => {
       const requestId = ++hydrateRequestIdRef.current;
 
       if (!envReady) {
@@ -89,7 +101,11 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
 
       const sessionToUse =
         nextSession ??
-        (await supabase.auth.getSession()).data.session;
+        (await withTimeout(
+          supabase.auth.getSession().then(({ data }) => data.session),
+          SESSION_RESTORE_TIMEOUT_MS,
+          null,
+        ));
 
       if (!isMountedRef.current || hydrateRequestIdRef.current !== requestId) {
         return null;
@@ -216,7 +232,7 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
           const nextProfile = await getCurrentMobileProfile();
 
           if (nextProfile?.role === "agent") {
-            await recordMobileStaffAuthEvent();
+            await recordMobileStaffAuthEvent(await getMobileStaffDeviceIdentity());
           }
         } catch (error) {
           const message = getErrorMessage(error, "We could not sign you in.");

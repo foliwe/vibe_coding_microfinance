@@ -87,16 +87,16 @@ export default async function CreateMemberPage({
         <form action={createMemberAction}>
           <AdminFieldGrid className="mb-5">
             <AdminFormField htmlFor="fullName" label="Full Name">
-              <Input id="fullName" name="fullName" placeholder="John Nkem" required />
+              <Input id="fullName" name="fullName" placeholder="Enter member full name" required />
             </AdminFormField>
             <AdminFormField htmlFor="phone" label="Phone Number">
-              <Input id="phone" name="phone" placeholder="+2376..." required />
+              <Input id="phone" name="phone" placeholder="Enter phone number" required />
             </AdminFormField>
             <AdminFormField htmlFor="idNumber" label="ID Card Number">
               <Input
                 id="idNumber"
                 name="idNumber"
-                placeholder="CM123456789"
+                placeholder="Enter ID card number"
                 required
               />
             </AdminFormField>

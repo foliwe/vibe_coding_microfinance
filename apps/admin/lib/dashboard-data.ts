@@ -1,6 +1,9 @@
 import {
   calculateMonthlyInterest,
+  calculateNextLoanPaymentDueAt,
   FRAUD_RULES,
+  isLoanPaymentOverdue,
+  resolveLoanRepaymentStatus,
   type AdminDashboardSummary,
   type AgentPerformance,
   type BranchSummary,
@@ -217,11 +220,18 @@ export type LoanRegistryRow = {
   id: string;
   applicationId: string;
   branchId: string;
+  branchName: string;
+  memberId: string;
   memberName: string;
   approvedPrincipal: number;
   remainingPrincipal: number;
   monthlyInterestRate: number;
+  isOverdue: boolean;
+  nextDueAt: string;
+  nextDueLabel: string;
   nextInterestDue: number;
+  repaymentCount: number;
+  riskLabel: "Low" | "Medium" | "High";
   status: LoanStatus;
   disbursedAt: string | null;
   createdAt: string;
@@ -230,6 +240,7 @@ export type LoanRegistryRow = {
 export type LoanApplicationRegistryRow = {
   id: string;
   branchId: string;
+  branchName: string;
   memberName: string;
   requestedAmount: number;
   monthlyInterestRate: number;
@@ -244,6 +255,57 @@ export type LoansPageData = {
   profile: AdminProfile;
   applications: LoanApplicationRegistryRow[];
   loans: LoanRegistryRow[];
+  summary: {
+    dueThisWeek: number;
+    interestDue: number;
+    outstandingPrincipal: number;
+    overdueLoans: number;
+    totalPortfolio: number;
+  };
+  isLive: boolean;
+};
+
+export type LoanRepaymentHistoryRow = {
+  id: string;
+  amount: number;
+  createdAt: string;
+  dateLabel: string;
+  interestComponent: number;
+  principalComponent: number;
+  recordedBy: string;
+  repaymentMode: string;
+};
+
+export type LoanScheduleRow = {
+  id: string;
+  dueAt: string;
+  dueLabel: string;
+  paidAt: string | null;
+  paidLabel: string | null;
+  state: "Paid" | "Paid late" | "Upcoming" | "Overdue" | "Pending";
+};
+
+export type LoanAuditEventRow = {
+  action: string;
+  actor: string;
+  id: string;
+  time: string;
+};
+
+export type LoanDetailPageData = {
+  currentBranchLabel: string;
+  profile: AdminProfile;
+  loan: (LoanRegistryRow & {
+    applicationStatus: LoanStatus | null;
+    collateralNotes: string | null;
+    collateralRequired: boolean;
+    requestedAmount: number;
+    signInCode: string | null;
+    termMonths: number;
+  }) | null;
+  repayments: LoanRepaymentHistoryRow[];
+  schedule: LoanScheduleRow[];
+  auditEvents: LoanAuditEventRow[];
   isLive: boolean;
 };
 
@@ -374,8 +436,16 @@ type LoanApplicationRow = {
 };
 
 type RepaymentRow = {
+  amount?: number | string | null;
+  approved_by?: string | null;
   branch_id: string;
+  created_at?: string | null;
+  created_by?: string | null;
+  id?: string;
   interest_component: number | string | null;
+  loan_id?: string | null;
+  principal_component?: number | string | null;
+  repayment_mode?: string | null;
 };
 
 type CashDrawerRow = {
@@ -545,6 +615,114 @@ function toNumber(value: number | string | null | undefined) {
   if (typeof value === "number") return value;
   if (typeof value === "string") return Number(value);
   return 0;
+}
+
+function formatShortDate(value: string | Date) {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function getRepaymentCountsByLoanId(rows: RepaymentRow[]) {
+  const countsByLoanId = new Map<string, number>();
+
+  for (const row of rows) {
+    if (!row.loan_id) {
+      continue;
+    }
+
+    countsByLoanId.set(row.loan_id, (countsByLoanId.get(row.loan_id) ?? 0) + 1);
+  }
+
+  return countsByLoanId;
+}
+
+function getLoanPaymentSummary(
+  loan: Pick<LoanRow, "created_at" | "disbursed_at" | "remaining_principal" | "status">,
+  repaymentCount = 0,
+) {
+  const nextDue = calculateNextLoanPaymentDueAt({
+    createdAt: loan.created_at,
+    disbursedAt: loan.disbursed_at,
+    repaymentCount,
+  });
+  const repaymentStatus = resolveLoanRepaymentStatus({
+    nextDueAt: nextDue,
+    remainingPrincipal: toNumber(loan.remaining_principal),
+    status: loan.status,
+  });
+
+  return {
+    effectiveStatus: repaymentStatus.effectiveStatus,
+    isOverdue: repaymentStatus.isOverdue,
+    nextDueAt: nextDue.toISOString(),
+    nextDueLabel: formatShortDate(nextDue),
+  };
+}
+
+function getLoanRiskLabel(isOverdue: boolean, nextDueAt: string): "Low" | "Medium" | "High" {
+  if (isOverdue) {
+    return "High";
+  }
+
+  const dueTime = new Date(nextDueAt).getTime();
+  const now = new Date();
+  const weekFromNow = now.getTime() + 7 * 24 * 60 * 60 * 1000;
+
+  return dueTime <= weekFromNow ? "Medium" : "Low";
+}
+
+function getLoanScheduleRows(
+  loan: Pick<LoanRow, "created_at" | "status">,
+  repayments: RepaymentRow[],
+  termMonths: number,
+): LoanScheduleRow[] {
+  const rowCount = Math.max(3, Math.min(Math.max(termMonths, repayments.length + 3), 12));
+  const sortedRepayments = [...repayments].sort(
+    (left, right) =>
+      new Date(left.created_at ?? "").getTime() -
+      new Date(right.created_at ?? "").getTime(),
+  );
+  const paidInstallmentCount = Math.max(0, sortedRepayments.length - 1);
+
+  return Array.from({ length: rowCount }, (_, index) => {
+    const dueAt = calculateNextLoanPaymentDueAt({
+      createdAt: loan.created_at,
+      repaymentCount: index + 1,
+    });
+    const repayment = index < paidInstallmentCount ? sortedRepayments[index] : undefined;
+    const paidAt = repayment?.created_at ?? null;
+    const paidLate = paidAt
+      ? startOfDay(paidAt).getTime() > startOfDay(dueAt).getTime()
+      : false;
+    const overdue = !paidAt && isLoanPaymentOverdue(dueAt);
+    const state = paidAt
+      ? paidLate
+        ? "Paid late"
+        : "Paid"
+      : overdue
+        ? "Overdue"
+        : index === paidInstallmentCount
+          ? "Upcoming"
+          : "Pending";
+
+    return {
+      id: `payment-${index + 1}`,
+      dueAt: dueAt.toISOString(),
+      dueLabel: formatShortDate(dueAt),
+      paidAt,
+      paidLabel: paidAt ? formatShortDate(paidAt) : null,
+      state,
+    };
+  });
+}
+
+function startOfDay(value: string | Date) {
+  const date = new Date(value);
+
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
 function formatSupabaseError(error: SupabaseErrorLike) {
@@ -1049,8 +1227,8 @@ export async function getAdminDashboardData(context?: DashboardAuthContext) {
     await Promise.all([
       supabase.from("branch_dashboard_summary").select("*"),
       getBranchMappings(supabase),
-      supabase.from("loans").select("branch_id, approved_principal, remaining_principal, status"),
-      supabase.from("loan_repayments").select("branch_id, interest_component"),
+      supabase.from("loans").select("id, branch_id, approved_principal, remaining_principal, status, disbursed_at, created_at"),
+      supabase.from("loan_repayments").select("branch_id, loan_id, interest_component, created_at"),
       supabase.from("cash_drawers").select("branch_id, expected_cash, variance, agent_profile_id"),
     ]);
 
@@ -1067,6 +1245,7 @@ export async function getAdminDashboardData(context?: DashboardAuthContext) {
     cashRowsResult,
     "Load admin cash drawer totals",
   );
+  const repaymentCountsByLoanId = getRepaymentCountsByLoanId(repaymentRows);
   const branchesById = new Map(branches.map((branch) => [branch.id, branch]));
   const loanRowsByBranchId = groupRowsBy(loanRows, (loan) => loan.branch_id);
   const cashRowsByBranchId = groupRowsBy(cashRows, (cash) => cash.branch_id);
@@ -1113,7 +1292,9 @@ export async function getAdminDashboardData(context?: DashboardAuthContext) {
       (sum, repayment) => sum + toNumber(repayment.interest_component),
       0,
     ),
-    overdueLoans: loanRows.filter((loan) => loan.status === "defaulted").length,
+    overdueLoans: loanRows.filter((loan) =>
+      getLoanPaymentSummary(loan, repaymentCountsByLoanId.get(loan.id ?? "") ?? 0).isOverdue,
+    ).length,
     pendingApprovals: branchPerformance.reduce(
       (sum, branch) => sum + branch.pendingApprovals,
       0,
@@ -1152,11 +1333,11 @@ async function getBranchDashboardSnapshot(
     supabase.from("branches").select("id, name").eq("id", branchId).single(),
     supabase
       .from("loans")
-      .select("branch_id, approved_principal, remaining_principal, status")
+      .select("id, branch_id, approved_principal, remaining_principal, status, disbursed_at, created_at")
       .eq("branch_id", branchId),
     supabase
       .from("loan_repayments")
-      .select("branch_id, interest_component")
+      .select("branch_id, loan_id, interest_component, created_at")
       .eq("branch_id", branchId),
     supabase
       .from("cash_drawers")
@@ -1222,6 +1403,7 @@ async function getBranchDashboardSnapshot(
     transactionRowsResult,
     "Load branch daily transactions",
   );
+  const repaymentCountsByLoanId = getRepaymentCountsByLoanId(repaymentRows);
   const transactionRowsByAgentId = groupRowsBy(
     transactionRows,
     (transaction) => transaction.agent_profile_id,
@@ -1266,7 +1448,9 @@ async function getBranchDashboardSnapshot(
       (sum, repayment) => sum + toNumber(repayment.interest_component),
       0,
     ),
-    overdueLoans: loanRows.filter((loan) => loan.status === "defaulted").length,
+    overdueLoans: loanRows.filter((loan) =>
+      getLoanPaymentSummary(loan, repaymentCountsByLoanId.get(loan.id ?? "") ?? 0).isOverdue,
+    ).length,
     pendingApprovals: toNumber(row.pending_approvals),
     expectedCashToday: cashRows.reduce((sum, cash) => sum + toNumber(cash.expected_cash), 0),
     cashVariance: cashRows.reduce((sum, cash) => sum + toNumber(cash.variance), 0),
@@ -2188,6 +2372,13 @@ export async function getLoansPageData(): Promise<LoansPageData> {
       profile: emptyProfile("branch_manager"),
       applications: [],
       loans: [],
+      summary: {
+        dueThisWeek: 0,
+        interestDue: 0,
+        outstandingPrincipal: 0,
+        overdueLoans: 0,
+        totalPortfolio: 0,
+      },
       isLive: false,
     };
   }
@@ -2219,6 +2410,17 @@ export async function getLoansPageData(): Promise<LoansPageData> {
   ]);
   const loans = (loanData as LoanRow[] | null) ?? [];
   const applications = (applicationData as LoanApplicationRow[] | null) ?? [];
+  const loanIds = loans.map((loan) => loan.id).filter((value): value is string => Boolean(value));
+  const { data: repaymentData } = loanIds.length
+    ? await supabase
+        .from("loan_repayments")
+        .select("loan_id, created_at, branch_id, interest_component")
+        .in("loan_id", loanIds)
+        .order("created_at", { ascending: false })
+    : { data: [] as RepaymentRow[] };
+  const repaymentCountsByLoanId = getRepaymentCountsByLoanId(
+    (repaymentData as RepaymentRow[] | null) ?? [],
+  );
   const memberIds = Array.from(
     new Set(
       [...loans.map((loan) => loan.member_profile_id), ...applications.map((application) => application.member_profile_id)]
@@ -2231,12 +2433,54 @@ export async function getLoansPageData(): Promise<LoansPageData> {
   const memberMap = new Map(
     ((memberRows as ProfileRow[] | null) ?? []).map((row) => [row.id, row.full_name]),
   );
+  const branchIds = Array.from(
+    new Set(
+      [...loans.map((loan) => loan.branch_id), ...applications.map((application) => application.branch_id)]
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+  const { data: branchRows } = branchIds.length
+    ? await supabase.from("branches").select("id, name").in("id", branchIds)
+    : { data: [] as BranchRow[] };
+  const branchMap = new Map(
+    ((branchRows as BranchRow[] | null) ?? []).map((row) => [row.id, row.name]),
+  );
+
+  const loanRows = loans.map((loan) => {
+    const remainingPrincipal = toNumber(loan.remaining_principal);
+    const monthlyInterestRate = toNumber(loan.monthly_interest_rate);
+    const repaymentCount = repaymentCountsByLoanId.get(loan.id ?? "") ?? 0;
+    const paymentSummary = getLoanPaymentSummary(loan, repaymentCount);
+    const nextInterestDue = calculateMonthlyInterest(remainingPrincipal, monthlyInterestRate);
+
+    return {
+      id: loan.id ?? "loan",
+      applicationId: loan.application_id,
+      branchId: loan.branch_id,
+      branchName: branchMap.get(loan.branch_id) ?? "Unknown branch",
+      memberId: loan.member_profile_id ?? "",
+      memberName: memberMap.get(loan.member_profile_id ?? "") ?? "Unknown member",
+      approvedPrincipal: toNumber(loan.approved_principal),
+      remainingPrincipal,
+      monthlyInterestRate,
+      nextInterestDue,
+      repaymentCount,
+      riskLabel: getLoanRiskLabel(paymentSummary.isOverdue, paymentSummary.nextDueAt),
+      isOverdue: paymentSummary.isOverdue,
+      nextDueAt: paymentSummary.nextDueAt,
+      nextDueLabel: paymentSummary.nextDueLabel,
+      status: paymentSummary.effectiveStatus,
+      disbursedAt: loan.disbursed_at,
+      createdAt: loan.created_at,
+    };
+  });
 
   return {
     profile,
     applications: applications.map((application) => ({
       id: application.id,
       branchId: application.branch_id,
+      branchName: branchMap.get(application.branch_id) ?? "Unknown branch",
       memberName: memberMap.get(application.member_profile_id) ?? "Unknown member",
       requestedAmount: toNumber(application.requested_amount),
       monthlyInterestRate: toNumber(application.monthly_interest_rate),
@@ -2246,24 +2490,184 @@ export async function getLoansPageData(): Promise<LoansPageData> {
       status: application.status,
       createdAt: application.created_at,
     })),
-    loans: loans.map((loan) => {
-      const remainingPrincipal = toNumber(loan.remaining_principal);
-      const monthlyInterestRate = toNumber(loan.monthly_interest_rate);
+    loans: loanRows,
+    summary: {
+      dueThisWeek: loanRows.filter((loan) => loan.riskLabel === "Medium").length,
+      interestDue: loanRows.reduce((sum, loan) => sum + loan.nextInterestDue, 0),
+      outstandingPrincipal: loanRows.reduce((sum, loan) => sum + loan.remainingPrincipal, 0),
+      overdueLoans: loanRows.filter((loan) => loan.isOverdue).length,
+      totalPortfolio: loanRows.reduce((sum, loan) => sum + loan.approvedPrincipal, 0),
+    },
+    isLive: true,
+  };
+}
 
-      return {
-        id: loan.id ?? "loan",
-        applicationId: loan.application_id,
-        branchId: loan.branch_id,
-        memberName: memberMap.get(loan.member_profile_id ?? "") ?? "Unknown member",
-        approvedPrincipal: toNumber(loan.approved_principal),
-        remainingPrincipal,
-        monthlyInterestRate,
-        nextInterestDue: calculateMonthlyInterest(remainingPrincipal, monthlyInterestRate),
-        status: loan.status,
-        disbursedAt: loan.disbursed_at,
-        createdAt: loan.created_at,
-      };
-    }),
+export async function getLoanDetailPageData(loanId: string): Promise<LoanDetailPageData> {
+  if (!hasSupabaseEnv()) {
+    return {
+      currentBranchLabel: "Branch",
+      profile: emptyProfile("branch_manager"),
+      loan: null,
+      repayments: [],
+      schedule: [],
+      auditEvents: [],
+      isLive: false,
+    };
+  }
+
+  const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
+  const branchId = profile.role === "branch_manager" ? profile.branch_id ?? undefined : undefined;
+
+  let loanQuery = supabase
+    .from("loans")
+    .select(
+      "id, application_id, branch_id, member_profile_id, approved_principal, remaining_principal, monthly_interest_rate, status, disbursed_at, created_at",
+    )
+    .eq("id", loanId);
+
+  if (branchId) {
+    loanQuery = loanQuery.eq("branch_id", branchId);
+  }
+
+  const { data: loanData } = await loanQuery.maybeSingle();
+  const loan = (loanData as LoanRow | null) ?? null;
+
+  if (!loan) {
+    return {
+      currentBranchLabel: profile.role === "admin" ? "All branches" : "Branch",
+      profile,
+      loan: null,
+      repayments: [],
+      schedule: [],
+      auditEvents: [],
+      isLive: true,
+    };
+  }
+
+  const [
+    { data: applicationData },
+    { data: repaymentData },
+    { data: memberData },
+    { data: memberProfileData },
+    { data: branchData },
+    { data: auditData },
+  ] = await Promise.all([
+    supabase
+      .from("loan_applications")
+      .select("id, branch_id, member_profile_id, requested_amount, monthly_interest_rate, term_months, collateral_required, collateral_notes, status, created_at")
+      .eq("id", loan.application_id)
+      .maybeSingle(),
+    supabase
+      .from("loan_repayments")
+      .select("id, loan_id, branch_id, amount, repayment_mode, interest_component, principal_component, created_by, approved_by, created_at")
+      .eq("loan_id", loan.id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("profiles")
+      .select("id, full_name")
+      .eq("id", loan.member_profile_id ?? "")
+      .maybeSingle(),
+    supabase
+      .from("member_profiles")
+      .select("profile_id, sign_in_code")
+      .eq("profile_id", loan.member_profile_id ?? "")
+      .maybeSingle(),
+    supabase
+      .from("branches")
+      .select("id, name")
+      .eq("id", loan.branch_id)
+      .maybeSingle(),
+    supabase
+      .from("audit_logs")
+      .select("id, actor_id, action, created_at")
+      .eq("entity_id", loan.id)
+      .order("created_at", { ascending: false })
+      .limit(8),
+  ]);
+
+  const application = (applicationData as LoanApplicationRow | null) ?? null;
+  const repayments = (repaymentData as RepaymentRow[] | null) ?? [];
+  const member = (memberData as Pick<ProfileRow, "id" | "full_name"> | null) ?? null;
+  const memberProfile = (memberProfileData as { sign_in_code: string | null } | null) ?? null;
+  const branch = (branchData as Pick<BranchRow, "id" | "name"> | null) ?? null;
+  const actorIds = Array.from(
+    new Set(
+      [
+        ...repayments.flatMap((row) => [row.created_by, row.approved_by]),
+        ...(((auditData as { actor_id: string | null }[] | null) ?? []).map((row) => row.actor_id)),
+      ].filter((value): value is string => Boolean(value)),
+    ),
+  );
+  const { data: actorData } = actorIds.length
+    ? await supabase.from("profiles").select("id, full_name").in("id", actorIds)
+    : { data: [] as Pick<ProfileRow, "id" | "full_name">[] };
+  const actorMap = new Map(
+    ((actorData as Pick<ProfileRow, "id" | "full_name">[] | null) ?? []).map((row) => [
+      row.id,
+      row.full_name,
+    ]),
+  );
+  const repaymentCountsByLoanId = getRepaymentCountsByLoanId(repayments);
+  const paymentSummary = getLoanPaymentSummary(
+    loan,
+    repaymentCountsByLoanId.get(loan.id ?? "") ?? 0,
+  );
+  const remainingPrincipal = toNumber(loan.remaining_principal);
+  const monthlyInterestRate = toNumber(loan.monthly_interest_rate);
+  const loanRow: LoanDetailPageData["loan"] = {
+    id: loan.id ?? "loan",
+    applicationId: loan.application_id,
+    applicationStatus: application?.status ?? null,
+    branchId: loan.branch_id,
+    branchName: branch?.name ?? "Unknown branch",
+    collateralNotes: application?.collateral_notes ?? null,
+    collateralRequired: Boolean(application?.collateral_required),
+    createdAt: loan.created_at,
+    disbursedAt: loan.disbursed_at,
+    approvedPrincipal: toNumber(loan.approved_principal),
+    memberId: loan.member_profile_id ?? "",
+    memberName: member?.full_name ?? "Unknown member",
+    monthlyInterestRate,
+    nextDueAt: paymentSummary.nextDueAt,
+    nextDueLabel: paymentSummary.nextDueLabel,
+    nextInterestDue: calculateMonthlyInterest(remainingPrincipal, monthlyInterestRate),
+    remainingPrincipal,
+    repaymentCount: repayments.length,
+    requestedAmount: toNumber(application?.requested_amount),
+    riskLabel: getLoanRiskLabel(paymentSummary.isOverdue, paymentSummary.nextDueAt),
+    isOverdue: paymentSummary.isOverdue,
+    signInCode: memberProfile?.sign_in_code ?? null,
+    status: paymentSummary.effectiveStatus,
+    termMonths: Number(application?.term_months ?? 12),
+  };
+
+  return {
+    currentBranchLabel: profile.role === "admin" ? "All branches" : loanRow.branchName,
+    profile,
+    loan: loanRow,
+    repayments: repayments.map((repayment) => ({
+      id: repayment.id ?? `${loan.id}-${repayment.created_at}`,
+      amount: toNumber(repayment.amount),
+      createdAt: repayment.created_at ?? loan.created_at,
+      dateLabel: formatShortDate(repayment.created_at ?? loan.created_at),
+      interestComponent: toNumber(repayment.interest_component),
+      principalComponent: toNumber(repayment.principal_component),
+      recordedBy:
+        actorMap.get(repayment.approved_by ?? "") ??
+        actorMap.get(repayment.created_by ?? "") ??
+        "System",
+      repaymentMode: repayment.repayment_mode === "interest_only"
+        ? "Interest only"
+        : "Interest plus principal",
+    })),
+    schedule: getLoanScheduleRows(loan, repayments, loanRow.termMonths),
+    auditEvents: ((auditData as { id: string; action: string; actor_id: string | null; created_at: string }[] | null) ?? [])
+      .map((row) => ({
+        id: row.id,
+        action: row.action,
+        actor: row.actor_id ? actorMap.get(row.actor_id) ?? "Unknown actor" : "System",
+        time: formatDateTime(row.created_at),
+      })),
     isLive: true,
   };
 }

@@ -4,10 +4,14 @@ import { normalizeIdCardNumber, provisionMember } from "../../../packages/shared
 type CreateMemberPayload = {
   deviceId?: string;
   deviceName?: string;
+  dateOfBirth?: string;
   email?: string;
   firstName?: string;
   fullName?: string;
+  gender?: string;
   idCardNumber?: string;
+  idExpiryDate?: string;
+  idIssueDate?: string;
   lastName?: string;
   memberType?: string;
   nationalId?: string;
@@ -33,6 +37,26 @@ function jsonResponse(body: unknown, status = 200) {
 
 function errorResponse(message: string, status = 400) {
   return jsonResponse({ error: message }, status);
+}
+
+function parseDatePayload(value: string | undefined, label: string) {
+  const trimmed = value?.trim() ?? "";
+
+  if (!trimmed) {
+    return { error: `${label} is required.` };
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return { error: `${label} must be a valid date.` };
+  }
+
+  const parsed = new Date(`${trimmed}T00:00:00.000Z`);
+
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== trimmed) {
+    return { error: `${label} must be a valid date.` };
+  }
+
+  return { value: trimmed };
 }
 
 Deno.serve(async (request) => {
@@ -83,6 +107,10 @@ Deno.serve(async (request) => {
   const normalizedIdCardNumber = normalizeIdCardNumber(
     body?.idCardNumber?.trim() || body?.nationalId?.trim() || "",
   );
+  const gender = body?.gender?.trim() ?? "";
+  const dateOfBirth = parseDatePayload(body?.dateOfBirth, "Date of birth");
+  const idIssueDate = parseDatePayload(body?.idIssueDate, "National ID issue date");
+  const idExpiryDate = parseDatePayload(body?.idExpiryDate, "National ID expiry date");
   const memberType = body?.memberType?.trim().toLowerCase() || null;
 
   if (!fullName) {
@@ -95,6 +123,36 @@ Deno.serve(async (request) => {
 
   if (!normalizedIdCardNumber) {
     return errorResponse("ID card number is required.");
+  }
+
+  if (!gender) {
+    return errorResponse("Gender is required.");
+  }
+
+  if (dateOfBirth.error) {
+    return errorResponse(dateOfBirth.error);
+  }
+
+  if (idIssueDate.error) {
+    return errorResponse(idIssueDate.error);
+  }
+
+  if (idExpiryDate.error) {
+    return errorResponse(idExpiryDate.error);
+  }
+
+  const todayValue = new Date().toISOString().slice(0, 10);
+
+  if (dateOfBirth.value! > todayValue) {
+    return errorResponse("Date of birth cannot be in the future.");
+  }
+
+  if (idIssueDate.value! > todayValue) {
+    return errorResponse("National ID issue date cannot be in the future.");
+  }
+
+  if (idExpiryDate.value! <= idIssueDate.value!) {
+    return errorResponse("National ID expiry date must be after the issue date.");
   }
 
   const { data: userData, error: userError } = await authedClient.auth.getUser(accessToken);
@@ -167,7 +225,11 @@ Deno.serve(async (request) => {
       branch,
       createdById: actor.id,
       fallbackSeed: actor.id,
+      dateOfBirth: dateOfBirth.value!,
       fullName,
+      gender,
+      idExpiryDate: idExpiryDate.value!,
+      idIssueDate: idIssueDate.value!,
       idNumber: normalizedIdCardNumber,
       occupation: memberType,
       password: body?.password?.trim() || null,

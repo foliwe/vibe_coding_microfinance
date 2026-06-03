@@ -45,7 +45,7 @@ export default async function CreateBranchPage({
         <form action={createBranchAction}>
           <AdminFieldGrid className="mb-5">
             <AdminFormField htmlFor="name" label="Branch Name">
-              <Input id="name" name="name" placeholder="Bamenda Central" required />
+              <Input id="name" name="name" placeholder="Enter branch name" required />
             </AdminFormField>
             <AdminFormField htmlFor="code" label="Branch Code">
               <Input
@@ -53,18 +53,18 @@ export default async function CreateBranchPage({
                 maxLength={3}
                 name="code"
                 pattern="[A-Za-z0-9]{3}"
-                placeholder="BAM"
+                placeholder="Code"
                 required
               />
             </AdminFormField>
             <AdminFormField htmlFor="city" label="City">
-              <Input id="city" name="city" placeholder="Bamenda" />
+              <Input id="city" name="city" placeholder="Enter city" />
             </AdminFormField>
             <AdminFormField htmlFor="region" label="Region">
-              <Input id="region" name="region" placeholder="Northwest" />
+              <Input id="region" name="region" placeholder="Enter region" />
             </AdminFormField>
             <AdminFormField htmlFor="phone" label="Phone">
-              <Input id="phone" name="phone" placeholder="+2376..." />
+              <Input id="phone" name="phone" placeholder="Enter phone number" />
             </AdminFormField>
             <AdminFormField htmlFor="managerProfileId" label="Branch Manager">
               <NativeSelect defaultValue="" id="managerProfileId" name="managerProfileId">

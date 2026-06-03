@@ -107,7 +107,7 @@ export function listAgentTransactionTargets(input: {
 }) {
   const preferredAccountType =
     input.preferredAccountType ??
-    (input.transactionType === "withdrawal" ? "deposit" : "savings");
+    "deposit";
 
   return input.memberRows.flatMap((memberRow) => {
     const target = resolveAgentTransactionTarget({

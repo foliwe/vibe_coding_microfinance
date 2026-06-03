@@ -61,6 +61,7 @@ export function Screen({
   children: ReactNode;
   scroll?: boolean;
 }) {
+  const { height } = useWindowDimensions();
   const pathname = usePathname();
   const { profile } = useAppSession();
   const isAgent = pathname.startsWith("/agent");
@@ -83,7 +84,7 @@ export function Screen({
     <LinearGradient
       colors={[colors.pageTop, colors.page, colors.pageBottom]}
       locations={[0, 0.5, 1]}
-      style={styles.container}
+      style={[styles.container, { minHeight: height }]}
     >
       <View style={styles.glowOne} />
       <View style={styles.glowTwo} />
@@ -696,7 +697,6 @@ const styles = StyleSheet.create({
     paddingBottom: 112,
   },
   container: {
-    minHeight: "100%",
     overflow: "hidden",
   },
   frame: {

@@ -38,6 +38,8 @@ export type MemberProvisioningInput = {
   fallbackSeed?: string;
   fullName: string;
   gender?: string | null;
+  idExpiryDate?: string | null;
+  idIssueDate?: string | null;
   idNumber: string;
   idType?: string | null;
   nextOfKinAddress?: string | null;
@@ -282,6 +284,8 @@ export async function provisionMember(
         occupation: input.occupation ?? null,
         id_type: input.idType ?? "ID Card",
         id_number: normalizedIdNumber,
+        id_issue_date: input.idIssueDate ?? null,
+        id_expiry_date: input.idExpiryDate ?? null,
         sign_in_code: signInCode,
         next_of_kin_name: input.nextOfKinName ?? null,
         next_of_kin_phone: input.nextOfKinPhone ?? null,

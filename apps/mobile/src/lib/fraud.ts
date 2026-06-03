@@ -1,10 +1,12 @@
 import { getErrorMessage } from "./errors";
-import { getMobileStaffDeviceIdentity } from "./staff-device";
 import { getSupabaseClient } from "./supabase/client";
 
-export async function recordMobileStaffAuthEvent() {
+export async function recordMobileStaffAuthEvent(identity: {
+  id: string;
+  kind: "mobile";
+  name: string;
+}) {
   const supabase = getSupabaseClient();
-  const identity = await getMobileStaffDeviceIdentity();
   const { error } = await supabase.rpc("record_fraud_auth_event", {
     p_channel: "mobile_app",
     p_device_id: identity.id,

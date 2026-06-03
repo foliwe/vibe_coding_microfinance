@@ -338,6 +338,16 @@ function optionalValue(formData: FormData, key: string) {
   return value || null;
 }
 
+function loanReturnPath(formData: FormData) {
+  const returnTo = optionalValue(formData, "returnTo");
+
+  if (returnTo === "/loans" || returnTo?.startsWith("/loans/")) {
+    return returnTo;
+  }
+
+  return "/loans";
+}
+
 function booleanValue(formData: FormData, key: string) {
   const value = String(formData.get(key) ?? "").trim().toLowerCase();
   return value === "true" || value === "yes" || value === "on";
@@ -353,8 +363,11 @@ function requiredNumberValue(formData: FormData, key: string, label: string) {
   return value;
 }
 
-function revalidateLoanPaths() {
+function revalidateLoanPaths(loanId?: string) {
   revalidatePath("/loans");
+  if (loanId) {
+    revalidatePath(`/loans/${loanId}`);
+  }
   revalidatePath("/");
   revalidatePath("/branch");
 }
@@ -1250,13 +1263,16 @@ export async function rejectLoanApplicationAction(formData: FormData) {
 }
 
 export async function disburseLoanAction(formData: FormData) {
+  const redirectPath = loanReturnPath(formData);
+  let loanId: string | undefined;
+
   if (!hasSupabaseEnv()) {
-    redirect(buildRedirect("/loans", "error", "Supabase credentials are missing."));
+    redirect(buildRedirect(redirectPath, "error", "Supabase credentials are missing."));
   }
 
   try {
     const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
-    const loanId = requiredValue(formData, "loanId", "Loan");
+    loanId = requiredValue(formData, "loanId", "Loan");
     const cashAgentProfileId = requiredValue(formData, "cashAgentProfileId", "Cash drawer agent");
     const note = optionalValue(formData, "note");
 
@@ -1279,25 +1295,28 @@ export async function disburseLoanAction(formData: FormData) {
     });
     redirect(
       buildRedirect(
-        "/loans",
+        redirectPath,
         "error",
         safeMessage,
       ),
     );
   }
 
-  revalidateLoanPaths();
-  redirect(buildRedirect("/loans", "success", "Loan disbursed."));
+  revalidateLoanPaths(loanId);
+  redirect(buildRedirect(redirectPath, "success", "Loan disbursed."));
 }
 
 export async function recordLoanRepaymentAction(formData: FormData) {
+  const redirectPath = loanReturnPath(formData);
+  let loanId: string | undefined;
+
   if (!hasSupabaseEnv()) {
-    redirect(buildRedirect("/loans", "error", "Supabase credentials are missing."));
+    redirect(buildRedirect(redirectPath, "error", "Supabase credentials are missing."));
   }
 
   try {
     const { supabase, profile } = await requireRole(["admin", "branch_manager"]);
-    const loanId = requiredValue(formData, "loanId", "Loan");
+    loanId = requiredValue(formData, "loanId", "Loan");
     const cashAgentProfileId = requiredValue(formData, "cashAgentProfileId", "Cash drawer agent");
     const amount = requiredNumberValue(formData, "amount", "Repayment amount");
     const repaymentMode = requiredValue(
@@ -1335,15 +1354,15 @@ export async function recordLoanRepaymentAction(formData: FormData) {
     });
     redirect(
       buildRedirect(
-        "/loans",
+        redirectPath,
         "error",
         safeMessage,
       ),
     );
   }
 
-  revalidateLoanPaths();
-  redirect(buildRedirect("/loans", "success", "Loan repayment recorded."));
+  revalidateLoanPaths(loanId);
+  redirect(buildRedirect(redirectPath, "success", "Loan repayment recorded."));
 }
 
 export async function createBranchAction(formData: FormData) {

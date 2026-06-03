@@ -1,57 +1,187 @@
-import { useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { router, useLocalSearchParams, type Href } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import DateTimePicker, {
+  DateTimePickerAndroid,
+  type DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
+import { LinearGradient } from "expo-linear-gradient";
+import { router, useLocalSearchParams, type Href } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
+import { Pressable, StyleSheet, Text, TextInput, View, type KeyboardTypeOptions } from "react-native";
 
 import {
-  ActivityRow,
-  ActionTile,
-  InfoRow,
-  InputField,
-  MonthTabStrip,
-  MiniBarChart,
-  PrimaryButton,
-  Screen,
-  SecondaryButton,
-  SectionHeader,
-  SkeletonCard,
-  StatusPill,
-  SurfaceCard,
-  TransactionDayHeader,
-  TransactionRow,
-} from "@/components/ui";
+  IconBubble,
+  SectionTitle,
+  StatusChip,
+  TealSummaryCard,
+  UnityPage,
+  UnitySimplePage,
+  WhiteCard,
+  unityStyles,
+} from "@/components/unity-ui";
 import { formatCurrency } from "@/lib/format";
 import { useAppSession } from "@/lib/app-session";
 import { getErrorMessage } from "@/lib/errors";
-import { mobileData, formatTransactionMonthLabel } from "@/lib/mobile-data";
+import { formatDateLabel, mobileData } from "@/lib/mobile-data";
 import type { AgentTransactionTarget } from "@/lib/mobile-data";
-import {
-  buildTransactionDayGroups,
-  buildTransactionMonthTabs,
-  formatTransactionRowDate,
-  getCurrentTransactionMonthKey,
-} from "@/lib/transaction-history";
+import { formatTransactionRowDate } from "@/lib/transaction-history";
 import { useResource } from "@/lib/use-resource";
-import type { SyncQueueItem } from "@/lib/mobile-models";
+import type { AssignedMember, SyncQueueItem } from "@/lib/mobile-models";
 import type { TransactionRequest } from "@credit-union/shared";
-import { colors, radii, spacing, typography } from "@/theme/tokens";
+import { colors, typography } from "@/theme/tokens";
 
-function ResourceErrorCard({ message }: { message: string }) {
-  return (
-    <SurfaceCard accent="#F7EEE0">
-      <StatusPill label="REJECTED" />
-      <Text style={[styles.heroCaption, { marginTop: spacing.sm }]}>{message}</Text>
-    </SurfaceCard>
-  );
+type AgentTransactionStatusFilter = "all" | "pending" | "approved" | "rejected";
+type AgentMemberFilter = "all" | "active" | "overdue" | "dueToday" | "lastCollection";
+type RegistrationDateField = "dateOfBirth" | "idIssueDate" | "idExpiryDate";
+
+const agentTransactionStatusFilters: { key: AgentTransactionStatusFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "pending", label: "Pending" },
+  { key: "approved", label: "Approved" },
+  { key: "rejected", label: "Rejected" },
+];
+
+const agentMemberFilters: { key: AgentMemberFilter; label: string }[] = [
+  { key: "all", label: "All Members" },
+  { key: "active", label: "Active" },
+  { key: "overdue", label: "Overdue" },
+  { key: "dueToday", label: "Due Today" },
+  { key: "lastCollection", label: "Last Collection" },
+];
+
+function getSingleParam(value?: string | string[]) {
+  return Array.isArray(value) ? value[0] : value;
 }
 
-function SubmissionErrorCard({ message }: { message: string }) {
-  return (
-    <SurfaceCard accent="#F7EEE0">
-      <StatusPill label="REJECTED" />
-      <Text style={[styles.heroCaption, { marginTop: spacing.sm }]}>{message}</Text>
-    </SurfaceCard>
-  );
+function getTargetAccountType(value?: string | string[]) {
+  const normalized = getSingleParam(value);
+
+  return normalized === "savings" || normalized === "deposit" ? normalized : null;
+}
+
+function currency(amount: number) {
+  return formatCurrency(amount);
+}
+
+function toDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateInputValue(value: string, fallbackDate = new Date()) {
+  const [yearValue, monthValue, dayValue] = value.split("-").map(Number);
+  const parsed = new Date(yearValue, monthValue - 1, dayValue);
+
+  return Number.isNaN(parsed.getTime()) ? fallbackDate : parsed;
+}
+
+function formatDateInputValue(value: string, placeholder: string) {
+  if (!value) {
+    return placeholder;
+  }
+
+  return formatDateLabel(parseDateInputValue(value), {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function firstName(name: string) {
+  return name.split(" ")[0] || name;
+}
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+function statusTone(status: string): "success" | "warning" | "danger" | "info" | "muted" {
+  const normalized = status.toLowerCase();
+
+  if (normalized.includes("reject") || normalized.includes("failed") || normalized.includes("required")) {
+    return "danger";
+  }
+
+  if (normalized.includes("pending") || normalized.includes("sync")) {
+    return "warning";
+  }
+
+  return "success";
+}
+
+function toStatusLabel(status: TransactionRequest["status"]) {
+  const map: Record<TransactionRequest["status"], string> = {
+    approved: "Approved",
+    draft: "Pending",
+    pending_approval: "Pending",
+    rejected: "Rejected",
+    reversed: "Rejected",
+    sync_conflict: "Pending",
+    unsynced: "Pending",
+  };
+
+  return map[status];
+}
+
+function matchesTransactionStatusFilter(
+  status: TransactionRequest["status"],
+  filter: AgentTransactionStatusFilter,
+) {
+  if (filter === "all") {
+    return true;
+  }
+
+  if (filter === "pending") {
+    return (
+      status === "draft" ||
+      status === "pending_approval" ||
+      status === "sync_conflict" ||
+      status === "unsynced"
+    );
+  }
+
+  if (filter === "approved") {
+    return status === "approved";
+  }
+
+  return status === "rejected" || status === "reversed";
+}
+
+function matchesAgentMemberFilter(member: AssignedMember, filter: AgentMemberFilter) {
+  if (filter === "all" || filter === "lastCollection") {
+    return true;
+  }
+
+  if (filter === "active") {
+    return member.status === "active";
+  }
+
+  const activity = member.lastActivity.toLowerCase();
+
+  if (filter === "overdue") {
+    return activity.includes("overdue");
+  }
+
+  return activity.includes("due today") || activity.includes("today");
+}
+
+function matchesAgentMemberSearch(member: AssignedMember, query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  return [member.fullName, member.code, member.phone, member.village]
+    .filter(Boolean)
+    .some((value) => value.toLowerCase().includes(normalizedQuery));
 }
 
 async function submitTransaction(
@@ -61,7 +191,7 @@ async function submitTransaction(
   note: string,
   transactionPin?: string,
 ) {
-  const amount = Number(amountValue);
+  const amount = Number(amountValue.replace(/,/g, ""));
 
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new Error("Enter an amount greater than zero.");
@@ -83,14 +213,24 @@ async function submitTransaction(
   });
 }
 
-function getSingleParam(value?: string | string[]) {
-  return Array.isArray(value) ? value[0] : value;
+function ResourceErrorCard({ message }: { message: string }) {
+  return (
+    <WhiteCard className="p-5">
+      <StatusChip label="Rejected" tone="danger" />
+      <Text className="mt-3 text-unity-muted" style={styles.bodyText}>{message}</Text>
+    </WhiteCard>
+  );
 }
 
-function getTargetAccountType(value?: string | string[]) {
-  const normalized = getSingleParam(value);
-
-  return normalized === "savings" || normalized === "deposit" ? normalized : null;
+function LoadingStack() {
+  return (
+    <>
+      <WhiteCard className="h-28 p-5">
+        <Text className="text-unity-muted" style={styles.bodyText}>Loading...</Text>
+      </WhiteCard>
+      <WhiteCard className="mt-4 h-28 p-5" />
+    </>
+  );
 }
 
 export function AgentHomeScreen() {
@@ -98,1221 +238,749 @@ export function AgentHomeScreen() {
 
   if (error) {
     return (
-      <Screen title="Home" subtitle="We could not load the field dashboard.">
+      <UnitySimplePage showBack={false} subtitle="We could not load the field dashboard." title="Home">
         <ResourceErrorCard message={error} />
-      </Screen>
+      </UnitySimplePage>
     );
   }
 
   if (loading || !data) {
     return (
-      <Screen title="Agent Home" subtitle="Loading the field dashboard preview.">
-        <SkeletonCard />
-        <SkeletonCard />
-        <SkeletonCard />
-      </Screen>
+      <UnitySimplePage showBack={false} subtitle="Loading the field dashboard preview." title="Home">
+        <LoadingStack />
+      </UnitySimplePage>
     );
   }
 
-  const cashVariance = data.cashOnHand - data.expectedCash;
-  const hasVariance = Math.abs(cashVariance) > 0.009;
-  const varianceLabel = hasVariance
-    ? cashVariance > 0
-      ? "Over expected"
-      : "Short on hand"
-    : "Balanced";
-  const varianceValue = `${cashVariance > 0 ? "+" : cashVariance < 0 ? "-" : ""}${formatCurrency(Math.abs(cashVariance))}`;
-
   return (
-    <Screen
-      right={
-        <HeaderIconButton
-          icon="notifications-outline"
-          label="Notifications"
-          onPress={() => router.push("/agent/notifications" as Href)}
-        />
+    <UnityPage
+      headerContent={
+        <>
+          <View className="mt-6 flex-row items-center">
+            <View className="mr-4 h-14 w-14 items-center justify-center rounded-full border-2 border-unity-teal">
+              <Ionicons color={colors.mint} name="person" size={28} />
+            </View>
+            <View className="flex-1">
+              <Text className="text-white" style={styles.greetingText}>Good morning,</Text>
+              <Text className="text-white" style={styles.greetingName}>Agent {firstName(data.agentName)} <Text>👋</Text></Text>
+            </View>
+          </View>
+          <Text className="mt-5 text-white/90" style={styles.greetingSub}>Here&apos;s your dashboard for today.</Text>
+        </>
       }
-      title="Home"
-      subtitle={`${data.agentName} · ${data.branchName}`}
+      contentTopInset={18}
+      headerHeight={365}
+      notificationCount={data.pendingApprovals}
     >
-      <SurfaceCard accent={colors.foliwe} tone="hero">
-        <View style={styles.balanceHeader}>
-          <Text style={styles.heroCaption}>CFA</Text>
-          <Ionicons color={colors.ink} name="eye-off-outline" size={22} />
-        </View>
-        <Text style={styles.heroCaption}>Collected Today</Text>
-        <Text style={styles.moneyTitle}>{formatCurrency(data.collectionsToday)}</Text>
-        <View style={styles.inlineWrap}>
-          <StatusPill label={data.syncState} />
-          <StatusPill label={`${data.pendingSyncCount} Pending Sync`} />
-        </View>
-      </SurfaceCard>
-
-      <SectionHeader title="Quick Actions" />
-      <View style={styles.quickActionsGrid}>
-        <ActionTile
-          caption="Create a new member directly from the field workflow."
-          icon="person-add-outline"
-          iconBackgroundColor={colors.foliwe}
-          iconColor={colors.ink}
-          layout="grid"
-          onPress={() => router.push("/agent/members/add")}
-          title="Add Member"
-        />
-        <ActionTile
-          caption="Record deposits and withdrawals from the field shell."
-          icon="swap-horizontal-outline"
-          iconBackgroundColor={colors.foliwe}
-          iconColor={colors.ink}
-          layout="grid"
-          onPress={() => router.push("/agent/members")}
-          title="Record Transaction"
-        />
-        <ActionTile
-          caption="See what is waiting locally before sync comes back."
-          icon="cloud-upload-outline"
-          iconBackgroundColor={colors.foliwe}
-          iconColor={colors.ink}
-          layout="grid"
-          onPress={() => router.push("/agent/more/sync-queue")}
-          title="Sync Queue"
-        />
-        <ActionTile
-          caption="Compare expected cash against what is on hand."
-          icon="wallet-outline"
-          iconBackgroundColor={colors.foliwe}
-          iconColor={colors.ink}
-          layout="grid"
-          onPress={() => router.push("/agent/more/reconciliation")}
-          title="Reconcile Cash"
+      <View style={styles.agentHomeSummaryOverlap}>
+        <TealSummaryCard
+          amount={currency(data.collectionsToday)}
+          footer={
+            <View className="border-t border-white/30 pt-5">
+              <View className="flex-row">
+                <HeroStat icon="time-outline" label="Pending Approvals" tone="orange" value={String(data.pendingApprovals)} />
+                <View className="mx-3 h-12 w-px bg-white/30" />
+                <HeroStat icon="people-outline" label="Assigned Members" tone="purple" value={String(data.assignedMemberCount)} />
+                <View className="mx-3 h-12 w-px bg-white/30" />
+                <HeroStat icon="person-add-outline" label="Active Members" tone="green" value={String(data.activeMemberCount)} />
+              </View>
+            </View>
+          }
+          icon="wallet"
+          size="large"
+          subtitle="Total Collected"
+          title="Today's Collections"
         />
       </View>
-
-      <SectionHeader title="Today Summary" />
-      <SurfaceCard accent="rgba(255,255,255,0.74)" tone="soft">
-        <View style={styles.summaryHero}>
-          <View style={styles.summaryHeroTop}>
-            <View>
-              <View style={styles.summaryEyebrow}>
-                <Text style={styles.summaryEyebrowText}>Treasury Position</Text>
-              </View>
-              <Text style={styles.summaryHeroLabel}>Cash on hand</Text>
-            </View>
-            <View style={styles.summaryHeroIcon}>
-              <Ionicons color={colors.ink} name="wallet-outline" size={22} />
-            </View>
-          </View>
-          <Text adjustsFontSizeToFit numberOfLines={1} style={styles.summaryHeroValue}>
-            {formatCurrency(data.cashOnHand)}
-          </Text>
-          <View style={styles.summaryHeroFooter}>
-            <Text style={styles.summaryHeroHint}>Expected {formatCurrency(data.expectedCash)}</Text>
-            <View
-              style={[
-                styles.summaryVariancePill,
-                hasVariance
-                  ? cashVariance > 0
-                    ? styles.summaryVarianceWarning
-                    : styles.summaryVarianceDanger
-                  : styles.summaryVarianceBalanced,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.summaryVarianceText,
-                  hasVariance
-                    ? cashVariance > 0
-                      ? styles.summaryVarianceWarningText
-                      : styles.summaryVarianceDangerText
-                    : styles.summaryVarianceBalancedText,
-                ]}
-              >
-                {varianceLabel}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.summaryMetricGrid}>
-          <SummaryMetricCard
-            hint="Field collections"
-            icon="arrow-up-outline"
-            iconBackgroundColor="rgba(0, 184, 63, 0.12)"
-            iconColor={colors.success}
-            label="Collections"
-            value={formatCurrency(data.collectionsToday)}
+      <SectionTitle title="Quick Actions" />
+      <View className="flex-row justify-between gap-3">
+        <ActionSquare icon="download-outline" label="Collect Deposit" onPress={() => router.push("/agent/transactions/deposit" as Href)} tone="blue" />
+        <ActionSquare icon="person-add-outline" label="Register Member" onPress={() => router.push("/agent/members/add" as Href)} tone="green" />
+        <ActionSquare icon="people-outline" label="View Members" onPress={() => router.push("/agent/members" as Href)} tone="purple" />
+        <ActionSquare icon="clipboard-outline" label="Collection History" onPress={() => router.push("/agent/transactions" as Href)} tone="orange" />
+      </View>
+      <SectionTitle
+        action={
+          <Pressable onPress={() => router.push("/agent/transactions" as Href)}>
+            <Text className="text-unity-blue" style={styles.linkText}>View all</Text>
+          </Pressable>
+        }
+        title="Today's Recent Collections"
+      />
+      <WhiteCard>
+        {data.activity.slice(0, 5).map((item, index) => (
+          <CollectionRow
+            key={item.id}
+            amount={item.amount}
+            initials={initials(item.memberName)}
+            isLast={index === Math.min(data.activity.length, 5) - 1}
+            memberCode={`Member ID: ${item.id.slice(0, 7).toUpperCase()}`}
+            name={item.memberName}
+            status={item.status}
+            time={item.timeLabel}
           />
-          <SummaryMetricCard
-            hint="Cash requested"
-            icon="arrow-down-outline"
-            iconBackgroundColor="rgba(255, 139, 61, 0.14)"
-            iconColor={colors.warning}
-            label="Withdrawals"
-            value={formatCurrency(data.withdrawalsToday)}
-          />
-          <SummaryMetricCard
-            hint="Awaiting manager action"
-            icon="time-outline"
-            iconBackgroundColor="rgba(255, 84, 92, 0.12)"
-            iconColor={data.pendingApprovals > 0 ? colors.danger : colors.success}
-            label="Pending approvals"
-            value={String(data.pendingApprovals)}
-          />
-          <SummaryMetricCard
-            hint={varianceLabel}
-            icon="pulse-outline"
-            iconBackgroundColor={
-              hasVariance
-                ? cashVariance > 0
-                  ? "rgba(255, 139, 61, 0.14)"
-                  : "rgba(255, 84, 92, 0.12)"
-                : "rgba(0, 184, 63, 0.12)"
-            }
-            iconColor={
-              hasVariance
-                ? cashVariance > 0
-                  ? colors.warning
-                  : colors.danger
-                : colors.success
-            }
-            label="Variance"
-            value={varianceValue}
-          />
-        </View>
-      </SurfaceCard>
-
-      <SectionHeader title="Flow Trend" />
-      <SurfaceCard>
-        <Text style={styles.sectionCaption}>Collections vs withdrawals volume across the work week.</Text>
-        <MiniBarChart data={data.flowTrend} />
-      </SurfaceCard>
-
-      <SectionHeader title="Recent Activity" />
-      {data.activity.map((item) => (
-        <ActivityRow
-          key={item.id}
-          amount={item.amount}
-          status={item.status}
-          subtitle={`${item.memberName} · ${item.timeLabel}`}
-          title={item.title}
-        />
-      ))}
-    </Screen>
+        ))}
+      </WhiteCard>
+    </UnityPage>
   );
 }
 
 export function AgentMembersScreen() {
   const { data: members, error, loading } = useResource(mobileData.getAssignedMembers);
-  const memberCount = members?.length ?? 0;
-  const activeCount = members?.filter((member) => member.status === "active").length ?? 0;
-  const totalSavings = members?.reduce((sum, member) => sum + member.savingsBalance, 0) ?? 0;
-  const totalDeposits = members?.reduce((sum, member) => sum + member.depositBalance, 0) ?? 0;
+  const [memberFilter, setMemberFilter] = useState<AgentMemberFilter>("all");
+  const [memberQuery, setMemberQuery] = useState("");
+  const filteredMembers = useMemo(
+    () =>
+      (members ?? [])
+        .filter((member) => matchesAgentMemberFilter(member, memberFilter))
+        .filter((member) => matchesAgentMemberSearch(member, memberQuery))
+        .sort((left, right) => {
+          if (memberFilter !== "lastCollection") {
+            return left.fullName.localeCompare(right.fullName);
+          }
+
+          return right.lastActivity.localeCompare(left.lastActivity);
+        }),
+    [memberFilter, memberQuery, members],
+  );
 
   return (
-    <Screen
-      right={
-        <HeaderIconButton
-          icon="add-circle-outline"
-          label="Add member"
-          onPress={() => router.push("/agent/members/add")}
-        />
-      }
-      subtitle="Assigned member names with direct access to each member screen."
-      title="Members"
+    <UnityPage
+      contentOverlap={44}
+      contentTopInset={50}
+      headerHeight={300}
+      showBack
+      subtitle="Manage and support your assigned members."
+      title="My Members"
     >
+      <WhiteCard className="mb-4 p-4">
+        <View className="flex-row items-center">
+          <View className="h-16 flex-1 flex-row items-center rounded-xl border border-unity-line bg-white px-4">
+            <Ionicons color={colors.inkMuted} name="search-outline" size={22} />
+            <TextInput
+              className="ml-3 flex-1 text-unity-ink"
+              onChangeText={setMemberQuery}
+              placeholder="Search members by name or ID..."
+              placeholderTextColor={colors.inkMuted}
+              style={styles.bodyText}
+              value={memberQuery}
+            />
+          </View>
+          <Pressable
+            className="ml-4 h-16 w-16 items-center justify-center rounded-xl border border-unity-line bg-white"
+            onPress={() => {
+              setMemberQuery("");
+              setMemberFilter("all");
+            }}
+            style={({ pressed }) => [pressed && styles.pressed]}
+          >
+            <Ionicons
+              color={colors.ink}
+              name={memberFilter === "all" && !memberQuery ? "filter-outline" : "close-outline"}
+              size={22}
+            />
+          </Pressable>
+        </View>
+      </WhiteCard>
+      <View className="mb-5 flex-row flex-wrap gap-3">
+        {agentMemberFilters.map((filter) => (
+          <FilterChip
+            key={filter.key}
+            active={filter.key === memberFilter}
+            label={filter.label}
+            onPress={() => setMemberFilter(filter.key)}
+          />
+        ))}
+      </View>
+      <View className="mb-4 flex-row items-center justify-between">
+        <View className="flex-row items-center">
+          <Ionicons color={colors.inkMuted} name="people-outline" size={18} />
+          <Text className="ml-2 text-unity-muted" style={styles.bodyText}>Total Members</Text>
+          <StatusChip label={String(filteredMembers.length)} tone="success" />
+        </View>
+        <Text className="text-unity-muted" style={styles.bodyText}>
+          {memberFilter === "lastCollection" ? "Sorted by Collection" : "Sorted by Name"}
+        </Text>
+      </View>
       {error ? (
         <ResourceErrorCard message={error} />
       ) : loading || !members ? (
-        <>
-          <SkeletonCard />
-          <SkeletonCard />
-        </>
-      ) : members.length === 0 ? (
-        <SurfaceCard accent="#EEF4ED">
-          <Text style={styles.heroCaption}>No assigned members are ready in this field shell yet.</Text>
-        </SurfaceCard>
+        <LoadingStack />
+      ) : filteredMembers.length === 0 ? (
+        <WhiteCard className="p-5">
+          <Text className="text-unity-muted" style={styles.bodyText}>No assigned members are ready yet.</Text>
+        </WhiteCard>
       ) : (
-        <>
-          <SurfaceCard accent="rgba(255,255,255,0.78)" tone="soft">
-            <View style={styles.memberPortfolioHero}>
-              <View style={styles.memberPortfolioTop}>
-                <View>
-                  <View style={styles.summaryEyebrow}>
-                    <Text style={styles.summaryEyebrowText}>Assigned Portfolio</Text>
-                  </View>
-                  <Text style={styles.memberPortfolioLabel}>Members under your care</Text>
-                </View>
-                <View style={styles.memberPortfolioIcon}>
-                  <Ionicons color={colors.ink} name="people-outline" size={24} />
-                </View>
-              </View>
-              <Text style={styles.memberPortfolioValue}>{memberCount}</Text>
-              <View style={styles.memberPortfolioFooter}>
-                <Text style={styles.memberPortfolioHint}>{activeCount} active profiles</Text>
-                <View style={styles.memberPortfolioPill}>
-                  <Text style={styles.memberPortfolioPillText}>Live field book</Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.memberPortfolioGrid}>
-              <View style={styles.memberPortfolioMetric}>
-                <View style={[styles.memberPortfolioMetricIcon, { backgroundColor: "rgba(0, 184, 63, 0.12)" }]}>
-                  <Ionicons color={colors.success} name="wallet-outline" size={16} />
-                </View>
-                <Text style={styles.memberPortfolioMetricLabel}>Savings book</Text>
-                <Text adjustsFontSizeToFit numberOfLines={1} style={styles.memberPortfolioMetricValue}>
-                  {formatCurrency(totalSavings)}
-                </Text>
-              </View>
-              <View style={styles.memberPortfolioMetric}>
-                <View style={[styles.memberPortfolioMetricIcon, { backgroundColor: "rgba(255, 139, 61, 0.14)" }]}>
-                  <Ionicons color={colors.warning} name="card-outline" size={16} />
-                </View>
-                <Text style={styles.memberPortfolioMetricLabel}>Deposit book</Text>
-                <Text adjustsFontSizeToFit numberOfLines={1} style={styles.memberPortfolioMetricValue}>
-                  {formatCurrency(totalDeposits)}
-                </Text>
-              </View>
-            </View>
-          </SurfaceCard>
-
-          <View style={styles.memberSearchRow}>
-            <View style={styles.memberSearchBox}>
-              <Ionicons color={colors.inkMuted} name="search-outline" size={16} />
-              <Text style={styles.memberSearchPlaceholder}>Search member, code, or village</Text>
-            </View>
-            <View style={styles.memberSearchBadge}>
-              <Text style={styles.memberSearchBadgeText}>{memberCount}</Text>
-            </View>
-          </View>
-
-          {members.map((member) => (
-            <Pressable
-              key={member.id}
-              onPress={() => router.push(`/agent/members/${member.id}`)}
-              style={({ pressed }) => [styles.memberCard, pressed && styles.memberListRowPressed]}
-            >
-              <View style={styles.memberCardTop}>
-                <View style={styles.memberCardIdentity}>
-                  <View style={styles.memberCardAvatar}>
-                    <Ionicons color={colors.white} name="person-outline" size={18} />
-                  </View>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text numberOfLines={1} style={styles.memberCardName}>
-                      {member.fullName}
-                    </Text>
-                    <Text numberOfLines={1} style={styles.memberCardMeta}>
-                      {member.code} · {member.village}
-                    </Text>
-                  </View>
-                </View>
-                <View style={member.status === "active" ? styles.memberCardStatusActive : styles.memberCardStatusPending}>
-                  <Text style={member.status === "active" ? styles.memberCardStatusActiveText : styles.memberCardStatusPendingText}>
-                    {member.status === "active" ? "Active" : "Pending"}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.memberCardStats}>
-                <View style={styles.memberCardStat}>
-                  <Text style={styles.memberCardStatLabel}>Savings</Text>
-                  <Text numberOfLines={1} style={styles.memberCardStatValue}>
-                    {formatCurrency(member.savingsBalance)}
-                  </Text>
-                </View>
-                <View style={styles.memberCardDivider} />
-                <View style={styles.memberCardStat}>
-                  <Text style={styles.memberCardStatLabel}>Deposit</Text>
-                  <Text numberOfLines={1} style={styles.memberCardStatValue}>
-                    {formatCurrency(member.depositBalance)}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.memberCardFooter}>
-                <View style={styles.memberCardActivity}>
-                  <Ionicons color={colors.inkMuted} name="time-outline" size={14} />
-                  <Text numberOfLines={1} style={styles.memberCardActivityText}>
-                    {member.lastActivity}
-                  </Text>
-                </View>
-                <Ionicons color={colors.ink} name="chevron-forward" size={18} />
-              </View>
-            </Pressable>
-          ))}
-        </>
+        filteredMembers.map((member) => <AgentMemberCard key={member.id} member={member} />)
       )}
-    </Screen>
+      <Pressable onPress={() => router.push("/agent/members/add" as Href)} style={({ pressed }) => [styles.floatingAdd, pressed && styles.pressed]}>
+        <Ionicons color={colors.white} name="person-add" size={18} />
+        <Text className="ml-2 text-white" style={styles.floatingAddText}>Add Member</Text>
+      </Pressable>
+    </UnityPage>
   );
 }
 
 export function AgentMemberDetailScreen() {
   const params = useLocalSearchParams<{ memberId?: string | string[] }>();
   const memberId = getSingleParam(params.memberId) ?? "";
-  const loader = useMemo(
-    () => () => mobileData.getAssignedMemberDetail(memberId),
-    [memberId],
-  );
+  const loader = useMemo(() => () => mobileData.getAssignedMemberDetail(memberId), [memberId]);
   const { data, error, loading } = useResource(loader);
-  const member = data?.member ?? null;
-  const canTakeSavings = member?.status === "active" && !!data?.savingsTarget;
-  const canTakeDeposit = member?.status === "active" && !!data?.depositTarget;
-  const canTakeWithdrawal = member?.status === "active" && !!data?.withdrawalTarget;
-
-  if (!memberId) {
-    return (
-      <Screen subtitle="We could not identify which member to open." title="Member">
-        <SubmissionErrorCard message="This route is missing a member identifier." />
-      </Screen>
-    );
-  }
-
-  if (error) {
-    return (
-      <Screen subtitle="We could not load this member screen." title="Member">
-        <ResourceErrorCard message={error} />
-      </Screen>
-    );
-  }
-
-  if (loading) {
-    return (
-      <Screen subtitle="Loading member analytics and direct actions." title="Member">
-        <SkeletonCard />
-        <SkeletonCard />
-        <SkeletonCard />
-      </Screen>
-    );
-  }
-
-  if (!data || !member) {
-    return (
-      <Screen subtitle="The member could not be found in your assigned list." title="Member">
-        <SubmissionErrorCard message="No assigned member record matches this route." />
-      </Screen>
-    );
-  }
 
   return (
-    <Screen subtitle={`${member.code} · ${member.branchName}`} title={member.fullName}>
-      <SurfaceCard accent="rgba(255,255,255,0.78)" tone="soft">
-        <View style={styles.memberDetailHero}>
-          <View style={styles.memberDetailHeroTop}>
-            <View style={styles.memberDetailAvatar}>
-              <Ionicons color={colors.white} name="person-outline" size={30} />
-            </View>
-            <View style={styles.memberDetailHeroText}>
-              <View style={styles.summaryEyebrow}>
-                <Text style={styles.summaryEyebrowText}>Member Workspace</Text>
-              </View>
-              <Text style={styles.memberDetailName}>{member.fullName}</Text>
-              <Text style={styles.memberDetailMeta}>
-                {member.code} · {member.village}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.memberDetailHeroFooter}>
-            <StatusPill label={member.status === "active" ? "APPROVED" : "PENDING APPROVAL"} />
-            <Text style={styles.memberDetailActivity}>{member.lastActivity}</Text>
-          </View>
-        </View>
-
-        <View style={styles.memberDetailBalanceGrid}>
-          <View style={styles.memberDetailBalanceCard}>
-            <Text style={styles.memberDetailBalanceLabel}>Savings Balance</Text>
-            <Text adjustsFontSizeToFit numberOfLines={1} style={styles.memberDetailBalanceValue}>
-              {formatCurrency(member.savingsBalance)}
-            </Text>
-          </View>
-          <View style={styles.memberDetailBalanceCard}>
-            <Text style={styles.memberDetailBalanceLabel}>Deposit Balance</Text>
-            <Text adjustsFontSizeToFit numberOfLines={1} style={styles.memberDetailBalanceValue}>
-              {formatCurrency(member.depositBalance)}
-            </Text>
-          </View>
-        </View>
-      </SurfaceCard>
-
-      <SurfaceCard accent="rgba(255,255,255,0.78)" tone="soft">
-        <View style={styles.memberDetailInfoHeader}>
-          <Text style={styles.memberDetailSectionTitle}>Profile Snapshot</Text>
-          <View style={styles.memberDetailInfoIcon}>
-            <Ionicons color={colors.ink} name="document-text-outline" size={18} />
-          </View>
-        </View>
-        <View style={styles.memberDetailInfoGrid}>
-          <View style={styles.memberDetailInfoCard}>
-            <Text style={styles.memberDetailInfoLabel}>Phone</Text>
-            <Text style={styles.memberDetailInfoValue}>{member.phone}</Text>
-          </View>
-          <View style={styles.memberDetailInfoCard}>
-            <Text style={styles.memberDetailInfoLabel}>Branch</Text>
-            <Text style={styles.memberDetailInfoValue}>{member.branchName}</Text>
-          </View>
-          <View style={styles.memberDetailInfoCard}>
-            <Text style={styles.memberDetailInfoLabel}>Village</Text>
-            <Text style={styles.memberDetailInfoValue}>{member.village}</Text>
-          </View>
-          <View style={styles.memberDetailInfoCard}>
-            <Text style={styles.memberDetailInfoLabel}>Occupation</Text>
-            <Text style={styles.memberDetailInfoValue}>{member.occupation ?? "Pending profile"}</Text>
-          </View>
-        </View>
-      </SurfaceCard>
-
-      <SectionHeader title="Analytics" />
-      <SurfaceCard accent="rgba(255,255,255,0.78)" tone="soft">
-        <Text style={styles.sectionCaption}>Savings and deposit balances for this member.</Text>
-        <MiniBarChart data={data.analytics} formatValue />
-      </SurfaceCard>
-
-      <SectionHeader title="Direct Actions" />
-      <SurfaceCard accent="rgba(255,255,255,0.78)" tone="soft">
-        <Text style={styles.sectionCaption}>
-          Capture savings, deposit, or withdrawal activity from this dedicated member workspace.
-        </Text>
-        <View style={styles.memberActionGrid}>
-          <MemberActionCard
-            buttonLabel="Take Savings"
-            buttonVariant="primary"
-            caption="Collect savings directly against the member savings account."
-            disabled={!canTakeSavings}
-            icon="wallet-outline"
-            onPress={() => {
-              if (!canTakeSavings) {
-                return;
-              }
-
-              router.push({
-                pathname: "/agent/transactions/deposit",
-                params: { accountType: "savings", memberId: member.id },
-              });
-            }}
-            title="Savings"
-          />
-          <MemberActionCard
-            buttonLabel="Take Deposit"
-            buttonVariant="secondary"
-            caption="Post a deposit to the active deposit account."
-            disabled={!canTakeDeposit}
-            icon="card-outline"
-            onPress={() => {
-              if (!canTakeDeposit) {
-                return;
-              }
-
-              router.push({
-                pathname: "/agent/transactions/deposit",
-                params: { accountType: "deposit", memberId: member.id },
-              });
-            }}
-            title="Deposit"
-          />
-          <MemberActionCard
-            buttonLabel="Make Withdrawal"
-            buttonVariant="secondary"
-            caption="Initiate a withdrawal using the member deposit account."
-            disabled={!canTakeWithdrawal}
-            fullWidth
-            icon="swap-horizontal-outline"
-            onPress={() => {
-              if (!canTakeWithdrawal) {
-                return;
-              }
-
-              router.push({
-                pathname: "/agent/transactions/withdrawal",
-                params: { memberId: member.id, returnTo: "member" },
-              });
-            }}
-            title="Withdrawal"
-          />
-        </View>
-        {!canTakeSavings || !canTakeDeposit || !canTakeWithdrawal ? (
-          <Text style={styles.inlineNotice}>
-            {member.status !== "active"
-              ? "Direct collection and withdrawal are locked until this member becomes active."
-              : !data.savingsTarget
-                ? "Savings collection is unavailable because no active savings account was found."
-                : !data.depositTarget
-                  ? "Deposit collection is unavailable because no active deposit account was found."
-                  : "Withdrawal is unavailable because no eligible account was found for this member."}
-          </Text>
-        ) : null}
-      </SurfaceCard>
-
-      <SectionHeader title="Recent Activity" />
-      {data.recentTransactions.length === 0 ? (
-        <SurfaceCard accent="#EEF4ED">
-          <Text style={styles.heroCaption}>No transaction activity has been recorded for this member yet.</Text>
-        </SurfaceCard>
+    <UnitySimplePage subtitle="Member workspace and direct collection actions." title="Member">
+      {error ? (
+        <ResourceErrorCard message={error} />
+      ) : loading ? (
+        <LoadingStack />
+      ) : !data ? (
+        <ResourceErrorCard message="No assigned member record matches this route." />
       ) : (
-        data.recentTransactions.map((transaction) => (
-          <TransactionRow
-            key={transaction.id}
-            amount={transaction.amount}
-            dateLabel={formatTransactionRowDate(transaction.createdAt)}
-            detailLabel={`${transaction.accountType === "deposit" ? "Deposit" : "Savings"} · ${transaction.agentName}`}
-            onPress={() => router.push(`/agent/transactions/${transaction.id}` as Href)}
-            status={toStatusLabel(transaction.status)}
-            typeLabel={transaction.type === "deposit" ? "Deposit" : "Withdrawal"}
-          />
-        ))
+        <>
+          <WhiteCard className="p-5">
+            <View className="flex-row items-center">
+              <View className="h-20 w-20 items-center justify-center rounded-full bg-blue-100">
+                <Text className="text-unity-blue" style={styles.avatarText}>{initials(data.member.fullName)}</Text>
+              </View>
+              <View className="ml-4 flex-1">
+                <Text className="text-unity-ink" style={styles.cardTitle}>{data.member.fullName}</Text>
+                <Text className="mt-1 text-unity-muted" style={styles.bodyText}>{data.member.code} · {data.member.village}</Text>
+                <View className="mt-2 self-start">
+                  <StatusChip label={data.member.status === "active" ? "Active" : "Pending"} tone={data.member.status === "active" ? "success" : "warning"} />
+                </View>
+              </View>
+            </View>
+          </WhiteCard>
+          <View className="mt-5 flex-row gap-4">
+            <BalanceTile label="Savings Balance" value={currency(data.member.savingsBalance)} />
+            <BalanceTile label="Deposit Balance" value={currency(data.member.depositBalance)} />
+          </View>
+          <SectionTitle title="Actions" />
+          <View className="gap-3">
+            {data.savingsTarget ? <ActionWide icon="download-outline" label="Collect Savings" onPress={() => router.push(`/agent/transactions/deposit?memberId=${data.member.id}&accountType=savings` as Href)} tone="blue" /> : null}
+            {data.depositTarget ? <ActionWide icon="wallet-outline" label="Collect Deposit" onPress={() => router.push(`/agent/transactions/deposit?memberId=${data.member.id}&accountType=deposit` as Href)} tone="green" /> : null}
+            {data.withdrawalTarget ? <ActionWide icon="arrow-up-outline" label="Withdrawal" onPress={() => router.push(`/agent/transactions/withdrawal?memberId=${data.member.id}` as Href)} tone="orange" /> : null}
+          </View>
+          <SectionTitle title="Recent Activity" />
+          {data.recentTransactions.map((transaction) => (
+            <DepositHistoryRow
+              key={transaction.id}
+              amount={transaction.amount}
+              date={formatTransactionRowDate(transaction.createdAt)}
+              memberName={transaction.memberName}
+              onPress={() => router.push(`/agent/transactions/${transaction.id}` as Href)}
+              status={toStatusLabel(transaction.status)}
+            />
+          ))}
+        </>
       )}
-    </Screen>
+    </UnitySimplePage>
   );
 }
 
 export function AgentTransactionsScreen() {
   const { data: transactions, error, loading } = useResource(mobileData.getAgentTransactions);
-  const currentMonthKey = useMemo(() => getCurrentTransactionMonthKey(), []);
-  const [selectedMonthKey, setSelectedMonthKey] = useState(currentMonthKey);
-  const monthTabs = useMemo(
-    () => buildTransactionMonthTabs(transactions ?? [], currentMonthKey),
-    [currentMonthKey, transactions],
-  );
-  const selectedMonthLabel = useMemo(
-    () => monthTabs.find((tab) => tab.key === selectedMonthKey)?.label ?? formatTransactionMonthLabel(new Date()),
-    [monthTabs, selectedMonthKey],
-  );
-  const dayGroups = useMemo(
-    () => buildTransactionDayGroups(transactions ?? [], selectedMonthKey),
-    [selectedMonthKey, transactions],
+  const [statusFilter, setStatusFilter] = useState<AgentTransactionStatusFilter>("all");
+  const filteredTransactions = useMemo(
+    () =>
+      (transactions ?? []).filter((transaction) =>
+        matchesTransactionStatusFilter(transaction.status, statusFilter),
+      ),
+    [statusFilter, transactions],
   );
 
   return (
-    <Screen subtitle="Every money state stays explicit in the live field shell." title="Transactions">
-      <SurfaceCard accent="#EEF4ED">
-        <Text style={styles.heroTitle}>Transaction capture remains member-first.</Text>
-        <Text style={styles.heroCaption}>Use the deposit and withdrawal forms to preserve the write flow while read-only history now comes from Supabase.</Text>
-        <View style={styles.buttonRow}>
-          <View style={{ flex: 1 }}>
-            <PrimaryButton label="New Deposit" onPress={() => router.push("/agent/transactions/deposit")} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <SecondaryButton label="New Withdrawal" onPress={() => router.push("/agent/transactions/withdrawal")} />
-          </View>
-        </View>
-      </SurfaceCard>
-
+    <UnitySimplePage subtitle="Track all collections and approval status." title="Collection History">
+      <View className="mb-5 flex-row flex-wrap gap-3">
+        {agentTransactionStatusFilters.map((filter) => (
+          <FilterChip
+            key={filter.key}
+            active={filter.key === statusFilter}
+            label={filter.label}
+            onPress={() => setStatusFilter(filter.key)}
+          />
+        ))}
+      </View>
       {error ? (
         <ResourceErrorCard message={error} />
       ) : loading || !transactions ? (
-        <>
-          <SkeletonCard />
-          <SkeletonCard />
-        </>
+        <LoadingStack />
+      ) : filteredTransactions.length === 0 ? (
+        <WhiteCard className="p-5">
+          <Text className="text-unity-muted" style={styles.bodyText}>No collections are ready yet.</Text>
+        </WhiteCard>
       ) : (
-        <>
-          <MonthTabStrip onSelect={setSelectedMonthKey} selectedKey={selectedMonthKey} tabs={monthTabs} />
-          {dayGroups.length === 0 ? (
-            <SurfaceCard accent="#EEF4ED">
-              <Text style={styles.heroCaption}>No transactions recorded for {selectedMonthLabel} yet.</Text>
-            </SurfaceCard>
-          ) : (
-            dayGroups.map((group) => (
-              <View key={group.key}>
-                <TransactionDayHeader label={group.label} />
-                {group.transactions.map((transaction) => (
-                  <TransactionRow
-                    key={transaction.id}
-                    amount={transaction.amount}
-                    dateLabel={formatTransactionRowDate(transaction.createdAt)}
-                    detailLabel={transaction.memberName}
-                    onPress={() => router.push(`/agent/transactions/${transaction.id}` as Href)}
-                    status={toStatusLabel(transaction.status)}
-                    typeLabel={transaction.type === "deposit" ? "Deposit" : "Withdrawal"}
-                  />
-                ))}
-              </View>
-            ))
-          )}
-        </>
+        filteredTransactions.map((transaction) => (
+          <DepositHistoryRow
+            key={transaction.id}
+            amount={transaction.amount}
+            date={formatTransactionRowDate(transaction.createdAt)}
+            memberName={transaction.memberName}
+            onPress={() => router.push(`/agent/transactions/${transaction.id}` as Href)}
+            status={toStatusLabel(transaction.status)}
+          />
+        ))
       )}
-    </Screen>
-  );
-}
-
-export function AgentMoreScreen() {
-  const { signOut } = useAppSession();
-  const { data, error, loading } = useResource(mobileData.getAgentDashboard);
-
-  return (
-    <Screen subtitle="Utilities, support actions, and session controls for the signed-in shell." title="More">
-      {error ? <ResourceErrorCard message={error} /> : loading || !data ? <SkeletonCard /> : <StatusPill label={data.syncState} />}
-      <ActionTile
-        caption="Preview locally stored items until queue persistence returns."
-        icon="cloud-upload-outline"
-        onPress={() => router.push("/agent/more/sync-queue")}
-        title="Sync Queue"
-      />
-      <ActionTile
-        caption="Check expected vs actual cash and log differences."
-        icon="wallet-outline"
-        onPress={() => router.push("/agent/more/reconciliation")}
-        title="Cash Reconciliation"
-      />
-      <ActionTile
-        caption="See the agent profile card and branch contact details."
-        icon="person-circle-outline"
-        onPress={() => router.push("/agent/more/profile")}
-        title="Profile"
-      />
-      <ActionTile
-        caption="Review recent approval, sync, and activity alerts."
-        icon="notifications-outline"
-        onPress={() => router.push("/agent/notifications" as Href)}
-        title="Notifications"
-      />
-      <ActionTile
-        caption="Complete first-login security setup or revisit the secure-account screen."
-        icon="key-outline"
-        onPress={() => router.push("/agent/change-password")}
-        title="Change Password"
-      />
-      <SecondaryButton
-        label="Sign Out"
-        onPress={() => {
-          void signOut();
-        }}
-      />
-    </Screen>
+    </UnitySimplePage>
   );
 }
 
 export function AgentTransactionDetailScreen() {
   const params = useLocalSearchParams<{ transactionId?: string | string[] }>();
   const transactionId = getSingleParam(params.transactionId) ?? "";
-  const loader = useMemo(
-    () => () => mobileData.getAgentTransactionDetail(transactionId),
-    [transactionId],
-  );
-  const { data: transaction, error, loading } = useResource(loader);
-
-  if (!transactionId) {
-    return (
-      <Screen subtitle="We could not identify which transaction to open." title="Transaction">
-        <SubmissionErrorCard message="This route is missing a transaction identifier." />
-      </Screen>
-    );
-  }
+  const loader = useMemo(() => () => mobileData.getAgentTransactionDetail(transactionId), [transactionId]);
+  const { data, error, loading } = useResource(loader);
 
   return (
-    <Screen subtitle="Money movement state, member, and account stay explicit." title="Transaction">
+    <UnitySimplePage subtitle="Collection approval and sync status." title="Transaction">
       {error ? (
         <ResourceErrorCard message={error} />
       ) : loading ? (
-        <SkeletonCard />
-      ) : !transaction ? (
-        <SubmissionErrorCard message="No transaction matches this route for the signed-in agent." />
+        <LoadingStack />
+      ) : !data ? (
+        <ResourceErrorCard message="No transaction matches this route." />
       ) : (
         <>
-          <SurfaceCard accent={colors.foliwe} tone="hero">
-            <Text style={styles.moneyTitle}>{formatCurrency(transaction.amount)}</Text>
-            <Text style={styles.heroCaption}>
-              {transaction.type === "deposit" ? "Deposit" : "Withdrawal"} · {transaction.accountType.toUpperCase()}
-            </Text>
-            <StatusPill label={toStatusLabel(transaction.status)} />
-          </SurfaceCard>
-          <SurfaceCard>
-            <InfoRow label="Member" value={transaction.memberName} />
-            <InfoRow label="Agent" value={transaction.agentName} />
-            <InfoRow label="Branch" value={transaction.branchName} />
-            <InfoRow label="Date" value={formatTransactionRowDate(transaction.createdAt)} />
-            <InfoRow label="Reference" value={transaction.id.slice(0, 12).toUpperCase()} />
-          </SurfaceCard>
-          {transaction.note ? (
-            <SurfaceCard accent="#EEF4ED">
-              <Text style={styles.cardCaption}>{transaction.note}</Text>
-            </SurfaceCard>
+          <TealSummaryCard amount={currency(data.amount)} subtitle={data.memberName} title={data.type === "deposit" ? "Savings Deposit" : "Withdrawal"} />
+          <WhiteCard className="mt-5 p-5">
+            <DetailLine label="Member" value={data.memberName} />
+            <DetailLine label="Agent" value={data.agentName} />
+            <DetailLine label="Branch" value={data.branchName} />
+            <DetailLine label="Date" value={formatTransactionRowDate(data.createdAt)} />
+            <DetailLine label="Reference" value={data.id.slice(0, 12).toUpperCase()} />
+          </WhiteCard>
+          {data.note ? (
+            <WhiteCard className="mt-4 p-5">
+              <Text className="text-unity-muted" style={styles.bodyText}>{data.note}</Text>
+            </WhiteCard>
           ) : null}
-          <PrimaryButton
-            label="View Receipt"
-            onPress={() => router.push(`/agent/transactions/${transaction.id}/receipt` as Href)}
-          />
         </>
       )}
-    </Screen>
+    </UnitySimplePage>
   );
 }
 
-export function AgentReceiptScreen() {
-  const params = useLocalSearchParams<{ transactionId?: string | string[] }>();
-  const transactionId = getSingleParam(params.transactionId) ?? "";
-  const loader = useMemo(
-    () => () => mobileData.getAgentTransactionDetail(transactionId),
-    [transactionId],
-  );
-  const { data: transaction, error, loading } = useResource(loader);
-
-  return (
-    <Screen subtitle="Receipt preview for field confirmation and support follow-up." title="Receipt">
-      {error ? (
-        <ResourceErrorCard message={error} />
-      ) : loading ? (
-        <SkeletonCard />
-      ) : !transaction ? (
-        <SubmissionErrorCard message="No transaction receipt is available for this route." />
-      ) : (
-        <>
-          <SurfaceCard accent={colors.foliwe} tone="hero">
-            <Text style={styles.receiptLabel}>Credit Union Receipt</Text>
-            <Text style={styles.moneyTitle}>{formatCurrency(transaction.amount)}</Text>
-            <StatusPill label={toStatusLabel(transaction.status)} />
-          </SurfaceCard>
-          <SurfaceCard tone="receipt">
-            <InfoRow label="Type" value={transaction.type === "deposit" ? "Deposit" : "Withdrawal"} />
-            <InfoRow label="Account" value={transaction.accountType.toUpperCase()} />
-            <InfoRow label="Member" value={transaction.memberName} />
-            <InfoRow label="Agent" value={transaction.agentName} />
-            <InfoRow label="Branch" value={transaction.branchName} />
-            <InfoRow label="Created" value={formatTransactionRowDate(transaction.createdAt)} />
-            <InfoRow label="Receipt ID" value={transaction.id.slice(0, 12).toUpperCase()} />
-          </SurfaceCard>
-          <SecondaryButton label="Back To Transaction" onPress={() => router.back()} />
-        </>
-      )}
-    </Screen>
-  );
+export function AgentTransactionReceiptScreen() {
+  return <AgentTransactionDetailScreen />;
 }
 
 export function AgentNotificationsScreen() {
   const { data: notifications, error, loading } = useResource(mobileData.getAgentNotifications);
 
   return (
-    <Screen subtitle="Approval, sync, and transaction activity in one place." title="Notifications">
+    <UnitySimplePage subtitle="Manager approvals, sync state, and member activity." title="Notifications">
       {error ? (
         <ResourceErrorCard message={error} />
       ) : loading || !notifications ? (
-        <>
-          <SkeletonCard />
-          <SkeletonCard />
-        </>
+        <LoadingStack />
       ) : notifications.length === 0 ? (
-        <SurfaceCard accent="#EEF4ED">
-          <Text style={styles.heroCaption}>No field notifications are waiting right now.</Text>
-        </SurfaceCard>
+        <WhiteCard className="p-5">
+          <Text className="text-unity-muted" style={styles.bodyText}>No agent notifications are waiting right now.</Text>
+        </WhiteCard>
       ) : (
         notifications.map((item) => (
-          <SurfaceCard key={item.id}>
-            <View style={styles.rowBetween}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>{item.title}</Text>
-                <Text style={styles.cardCaption}>{item.subtitle}</Text>
-              </View>
-              {item.amount ? <Text style={styles.cardValue}>{formatCurrency(item.amount)}</Text> : null}
+          <WhiteCard key={item.id} className="mb-4 p-5">
+            <Text className="text-unity-ink" style={styles.cardTitle}>{item.title}</Text>
+            <Text className="mt-1 text-unity-muted" style={styles.bodyText}>{item.subtitle}</Text>
+            <View className="mt-4 flex-row items-center justify-between">
+              <StatusChip label={item.status} tone={statusTone(item.status)} />
+              {item.amount ? <Text className="text-unity-green" style={styles.amountSmall}>{currency(item.amount)}</Text> : null}
             </View>
-            <View style={styles.inlineWrap}>
-              <StatusPill label={item.status} />
-              <Text style={styles.cardCaption}>{formatTransactionRowDate(item.createdAt)}</Text>
-            </View>
-          </SurfaceCard>
+          </WhiteCard>
         ))
       )}
-    </Screen>
+    </UnitySimplePage>
   );
 }
 
 export function AgentAddMemberScreen() {
   const [fullName, setFullName] = useState("");
+  const [gender, setGender] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
   const [idCardNumber, setIdCardNumber] = useState("");
+  const [idIssueDate, setIdIssueDate] = useState("");
+  const [idExpiryDate, setIdExpiryDate] = useState("");
   const [phone, setPhone] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
-  const [createdAccess, setCreatedAccess] = useState<{
-    signInIdentifier: string;
-    temporaryPassword: string;
-  } | null>(null);
+  const [createdAccess, setCreatedAccess] = useState<{ signInIdentifier: string; temporaryPassword: string } | null>(null);
+  const today = useMemo(() => new Date(), []);
+  const idIssueDateValue = idIssueDate ? parseDateInputValue(idIssueDate) : undefined;
+
+  const submitMember = () => {
+    if (isSubmitting || createdAccess) {
+      return;
+    }
+
+    const requiredFields = [
+      [fullName, "Enter the member's full name."],
+      [gender, "Select the member's gender."],
+      [phone, "Enter the member's phone number."],
+      [dateOfBirth, "Select the member's date of birth."],
+      [idCardNumber, "Enter the national ID card number."],
+      [idIssueDate, "Select the national ID issue date."],
+      [idExpiryDate, "Select the national ID expiry date."],
+    ] as const;
+    const missingField = requiredFields.find(([value]) => !value.trim());
+
+    if (missingField) {
+      setSubmissionError(missingField[1]);
+      return;
+    }
+
+    if (idExpiryDate <= idIssueDate) {
+      setSubmissionError("National ID expiry date must be after the issue date.");
+      return;
+    }
+
+    setSubmissionError(null);
+    setCreatedAccess(null);
+    setIsSubmitting(true);
+
+    void mobileData
+      .createMember({
+        dateOfBirth,
+        fullName,
+        gender,
+        idCardNumber,
+        idExpiryDate,
+        idIssueDate,
+        phone,
+      })
+      .then((result) => setCreatedAccess(result))
+      .catch((nextError) => setSubmissionError(getErrorMessage(nextError, "We could not create the member.")))
+      .finally(() => setIsSubmitting(false));
+  };
 
   return (
-    <Screen subtitle="Create the member with core identity details only, then let the member complete the rest later." title="Add Member">
-      <SurfaceCard accent="#EEF4ED">
-        <Text style={styles.heroTitle}>New members can be created directly by the signed-in agent.</Text>
-        <Text style={styles.heroCaption}>This keeps the agent assignment and account setup, but leaves the rest of the profile for the member to complete later.</Text>
-      </SurfaceCard>
-
-      <InputField
-        label="Full Name"
-        onChangeText={setFullName}
-        placeholder="Enter full legal name"
-        value={fullName}
-      />
-      <InputField
-        autoCapitalize="characters"
-        label="ID Card Number"
-        onChangeText={setIdCardNumber}
-        placeholder="Enter ID card number"
-        value={idCardNumber}
-      />
-      <InputField label="Phone" onChangeText={setPhone} placeholder="+233..." value={phone} />
-      {createdAccess ? (
-        <SurfaceCard accent="#EEF4ED">
-          <StatusPill label="APPROVED" />
-          <Text style={[styles.heroCaption, { marginTop: spacing.sm }]}>
-            Member created. Share these first-login details with the member.
-          </Text>
-          <InfoRow label="Sign-in Code" value={createdAccess.signInIdentifier} />
-          <InfoRow label="Temporary Password" value={createdAccess.temporaryPassword} />
-          <View style={{ marginTop: spacing.sm }}>
-            <SecondaryButton label="Back To Members" onPress={() => router.replace("/agent/members")} />
-          </View>
-        </SurfaceCard>
-      ) : null}
-      {submissionError ? <SubmissionErrorCard message={submissionError} /> : null}
-      <PrimaryButton
-        label={isSubmitting ? "Creating Member..." : "Create Member"}
-        onPress={() => {
-          if (isSubmitting || createdAccess) {
-            return;
-          }
-
-          setSubmissionError(null);
-          setCreatedAccess(null);
-          setIsSubmitting(true);
-
-          void mobileData
-            .createMember({
-              fullName,
-              idCardNumber,
-              phone,
-            })
-            .then((result) => {
-              setCreatedAccess({
-                signInIdentifier: result.signInIdentifier,
-                temporaryPassword: result.temporaryPassword,
-              });
-            })
-            .catch((nextError) => {
-              setSubmissionError(getErrorMessage(nextError, "We could not create the member."));
-            })
-            .finally(() => {
-              setIsSubmitting(false);
-            });
-        }}
-      />
-    </Screen>
+    <UnityPage
+      headerContent={<RegistrationStepper />}
+      headerHeight={420}
+      showBack
+      subtitle="Add a new member to the credit union"
+      title="Register Member"
+    >
+      <WhiteCard className="p-4">
+        <Text className="mb-3 text-unity-ink" style={styles.sectionHeading}>Personal Information</Text>
+        <FormInput icon="person-outline" label="Full Name" onChangeText={setFullName} placeholder="Enter full name" value={fullName} />
+        <GenderSelect value={gender} onChange={setGender} />
+        <FormInput
+          icon="call-outline"
+          keyboardType="phone-pad"
+          label="Phone Number"
+          onChangeText={setPhone}
+          placeholder="080 1234 5678"
+          value={phone}
+        />
+        <RegistrationDatePicker
+          field="dateOfBirth"
+          label="Date of Birth"
+          maximumDate={today}
+          onChange={setDateOfBirth}
+          placeholder="Select date of birth"
+          value={dateOfBirth}
+        />
+        <Text className="mb-3 mt-2 text-unity-ink" style={styles.sectionHeading}>National ID Card</Text>
+        <FormInput
+          autoCapitalize="characters"
+          icon="card-outline"
+          label="National ID Card Number"
+          onChangeText={setIdCardNumber}
+          placeholder="Enter national ID number"
+          value={idCardNumber}
+        />
+        <RegistrationDatePicker
+          field="idIssueDate"
+          label="Issue Date"
+          maximumDate={today}
+          onChange={setIdIssueDate}
+          placeholder="Select issue date"
+          value={idIssueDate}
+        />
+        <RegistrationDatePicker
+          field="idExpiryDate"
+          label="Expiry Date"
+          minimumDate={idIssueDateValue}
+          onChange={setIdExpiryDate}
+          placeholder="Select expiry date"
+          value={idExpiryDate}
+        />
+        <InfoNotice text="New members remain pending until approved by a manager. You will be notified once approval is completed." />
+        {createdAccess ? (
+          <WhiteCard className="mb-4 p-4">
+            <StatusChip label="Completed" tone="success" />
+            <DetailLine label="Sign-in Code" value={createdAccess.signInIdentifier} />
+            <DetailLine label="Temporary Password" value={createdAccess.temporaryPassword} />
+          </WhiteCard>
+        ) : null}
+        {submissionError ? <ResourceErrorCard message={submissionError} /> : null}
+        <PrimaryGradientButton
+          label={isSubmitting ? "Submitting..." : "Submit for Verification"}
+          onPress={submitMember}
+        />
+      </WhiteCard>
+    </UnityPage>
   );
 }
 
 export function AgentDepositScreen() {
-  const params = useLocalSearchParams<{
-    accountType?: string | string[];
-    memberId?: string | string[];
-  }>();
+  const params = useLocalSearchParams<{ accountType?: string | string[]; memberId?: string | string[] }>();
   const memberId = getSingleParam(params.memberId);
   const targetAccountType = getTargetAccountType(params.accountType);
+  const memberListLoader = useMemo(
+    () => (memberId ? async () => [] as AgentTransactionTarget[] : mobileData.getEligibleDepositMembers),
+    [memberId],
+  );
   const depositLoader = useMemo(
     () =>
       memberId && targetAccountType
         ? () => mobileData.getDepositTargetForMember(memberId, targetAccountType)
-        : mobileData.getDepositTarget,
+        : async () => null,
     [memberId, targetAccountType],
   );
+  const { data: memberTargets, error: membersError, loading: membersLoading } = useResource(memberListLoader);
   const { data: target, error, loading } = useResource(depositLoader);
-  const [amount, setAmount] = useState("10000");
-  const [note, setNote] = useState("Daily collections from market round");
+  const [amount, setAmount] = useState("15,000.00");
+  const [note, setNote] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (targetAccountType === "deposit") {
-      setNote("Deposit collection taken directly for this member");
-      return;
-    }
-
-    if (targetAccountType === "savings") {
-      setNote("Savings collection taken directly for this member");
-      return;
-    }
-
-    setNote("Daily collections from market round");
+    setNote(targetAccountType ? `${targetAccountType} collection taken directly for this member` : "");
   }, [targetAccountType]);
 
-  const screenTitle =
-    targetAccountType === "deposit"
-      ? "Take Deposit"
-      : targetAccountType === "savings"
-        ? "Take Savings"
-        : "Deposit";
-  const emptyStateMessage =
-    targetAccountType && memberId
-      ? `No active ${targetAccountType} account is ready for deposit capture for this member yet.`
-      : "No assigned member with an active account is ready for deposit capture yet.";
+  if (!memberId) {
+    return (
+      <UnitySimplePage subtitle="Choose a member before entering the deposit." title="Collect Deposit">
+        <InfoNotice text="Select the member first, then enter the deposit amount on the next screen." />
+        <Text className="mb-3 mt-6 text-unity-ink" style={styles.sectionHeading}>Select Member</Text>
+        {membersError ? (
+          <ResourceErrorCard message={membersError} />
+        ) : membersLoading || !memberTargets ? (
+          <LoadingStack />
+        ) : memberTargets.length === 0 ? (
+          <ResourceErrorCard message="No assigned member with an active account is ready for deposit capture yet." />
+        ) : (
+          memberTargets.map((memberTarget) => (
+            <Pressable
+              key={`${memberTarget.memberId}-${memberTarget.accountId}`}
+              onPress={() =>
+                router.push(
+                  `/agent/transactions/deposit?memberId=${memberTarget.memberId}&accountType=${memberTarget.accountType}` as Href,
+                )
+              }
+              style={({ pressed }) => [styles.depositCard, unityStyles.cardShadow, pressed && styles.pressed]}
+            >
+              <IconBubble icon="person-outline" size={38} tone="blue" />
+              <View className="ml-3 flex-1">
+                <Text className="text-unity-ink" style={styles.rowTitle}>{memberTarget.memberName}</Text>
+                <Text className="mt-1 text-unity-muted" style={styles.bodyText}>
+                  {memberTarget.memberCode} · {memberTarget.accountType === "deposit" ? "Deposit" : "Savings"}
+                </Text>
+                <Text className="mt-1 text-unity-muted" style={styles.bodyText}>
+                  Savings {currency(memberTarget.savingsBalance)} · Deposit {currency(memberTarget.depositBalance)}
+                </Text>
+              </View>
+              <Ionicons color={colors.inkMuted} name="chevron-forward" size={18} />
+            </Pressable>
+          ))
+        )}
+      </UnitySimplePage>
+    );
+  }
 
   return (
-    <Screen
-      subtitle={
-        targetAccountType && memberId
-          ? "Collect directly into the selected member account."
-          : "Step 3 of the guided cash capture flow."
-      }
-      title={screenTitle}
-    >
+    <CollectScreenFrame title="Collect Deposit">
       {error ? (
         <ResourceErrorCard message={error} />
       ) : loading ? (
-        <SkeletonCard />
+        <LoadingStack />
       ) : !target ? (
-        <SubmissionErrorCard message={emptyStateMessage} />
+        <ResourceErrorCard message="No assigned member with an active account is ready for deposit capture yet." />
       ) : (
         <>
-          <SurfaceCard>
-            <InfoRow label="Member" value={target.memberName} />
-            <InfoRow label="Code" value={target.memberCode} />
-            <InfoRow label="Account" value={`${target.accountNumber} · ${target.accountType.toUpperCase()}`} />
-            <InfoRow label="Current balance" value={formatCurrency(target.availableBalance)} />
-          </SurfaceCard>
-          <InputField label="Amount" onChangeText={setAmount} placeholder="0" value={amount} />
-          <InputField label="Note" multiline onChangeText={setNote} placeholder="Add collection context" value={note} />
-          <StatusPill label="PENDING APPROVAL" />
-          {submissionError ? <SubmissionErrorCard message={submissionError} /> : null}
-          <View style={{ marginTop: spacing.md }}>
-            <PrimaryButton
-              label={isSubmitting ? "Submitting Deposit..." : "Submit Deposit"}
-              onPress={() => {
-                if (isSubmitting) {
-                  return;
-                }
-
-                setSubmissionError(null);
-                setIsSubmitting(true);
-
-                void submitTransaction(target, "deposit", amount, note)
-                  .then(() => {
-                    if (memberId) {
-                      router.replace(`/agent/members/${memberId}`);
-                      return;
-                    }
-
-                    router.replace("/agent/transactions");
-                  })
-                  .catch((nextError) => {
-                    setSubmissionError(getErrorMessage(nextError, "We could not submit the deposit."));
-                  })
-                  .finally(() => {
-                    setIsSubmitting(false);
-                  });
-              }}
-            />
+          <InfoNotice text="Deposits require manager approval before they are posted to the member's account." />
+          <Text className="mb-3 mt-6 text-unity-ink" style={styles.sectionHeading}>Member</Text>
+          <TargetMemberCard target={target} />
+          <Text className="mb-3 mt-7 text-unity-ink" style={styles.sectionHeading}>Deposit Amount</Text>
+          <AmountBox amount={amount} onChangeText={setAmount} />
+          <Text className="mb-3 mt-7 text-unity-ink" style={styles.sectionHeading}>Payment Method</Text>
+          <WhiteCard className="flex-row items-center p-4">
+            <IconBubble icon="business-outline" size={38} tone="blue" />
+            <View className="ml-3 flex-1">
+              <Text className="text-unity-ink" style={styles.cardTitle}>Cash</Text>
+              <Text className="mt-1 text-unity-muted" style={styles.bodyText}>Physical cash received</Text>
+            </View>
+            <Ionicons color={colors.inkMuted} name="chevron-down" size={18} />
+          </WhiteCard>
+          <Text className="mb-3 mt-7 text-unity-ink" style={styles.sectionHeading}>Notes <Text style={styles.bodyText}>(Optional)</Text></Text>
+          <TextInput
+            multiline
+            onChangeText={setNote}
+            placeholder="Add a note about this deposit..."
+            placeholderTextColor={colors.inkMuted}
+            style={styles.noteInput}
+            value={note}
+          />
+          <View className="mt-5 flex-row gap-4">
+            <MiniConfirm icon="location-outline" label="Location Captured" sublabel="Lagos, Nigeria" tone="green" />
+            <MiniConfirm icon="wifi-outline" label="Will sync when online" sublabel="Saved locally" tone="blue" />
           </View>
+          {submissionError ? <ResourceErrorCard message={submissionError} /> : null}
+          <PrimaryGradientButton
+            label={isSubmitting ? "Submitting Deposit..." : "Submit Deposit"}
+            onPress={() => {
+              if (isSubmitting) {
+                return;
+              }
+
+              setSubmissionError(null);
+              setIsSubmitting(true);
+
+              void submitTransaction(target, "deposit", amount, note)
+                .then(() => router.replace(memberId ? `/agent/members/${memberId}` : "/agent/transactions"))
+                .catch((nextError) => setSubmissionError(getErrorMessage(nextError, "We could not submit the deposit.")))
+                .finally(() => setIsSubmitting(false));
+            }}
+          />
         </>
       )}
-    </Screen>
+    </CollectScreenFrame>
   );
 }
 
 export function AgentWithdrawalScreen() {
-  const params = useLocalSearchParams<{
-    memberId?: string | string[];
-    returnTo?: string | string[];
-  }>();
+  const params = useLocalSearchParams<{ memberId?: string | string[]; returnTo?: string | string[] }>();
   const memberId = getSingleParam(params.memberId);
   const returnTo = getSingleParam(params.returnTo);
-  const memberListLoader = useMemo(
-    () =>
-      memberId
-        ? async () => [] as AgentTransactionTarget[]
-        : mobileData.getEligibleWithdrawalMembers,
-    [memberId],
-  );
-  const targetLoader = useMemo(
-    () =>
-      memberId
-        ? () => mobileData.getWithdrawalTargetForMember(memberId)
-        : async () => null,
-    [memberId],
-  );
-  const {
-    data: eligibleMembers,
-    error: memberListError,
-    loading: memberListLoading,
-  } = useResource(memberListLoader);
+  const memberListLoader = useMemo(() => (memberId ? async () => [] as AgentTransactionTarget[] : mobileData.getEligibleWithdrawalMembers), [memberId]);
+  const targetLoader = useMemo(() => (memberId ? () => mobileData.getWithdrawalTargetForMember(memberId) : async () => null), [memberId]);
+  const { data: memberTargets, error: membersError, loading: membersLoading } = useResource(memberListLoader);
   const { data: target, error: targetError, loading: targetLoading } = useResource(targetLoader);
-  const [amount, setAmount] = useState("5000");
-  const [reason, setReason] = useState("Working capital withdrawal request");
-  const [transactionPin, setTransactionPin] = useState("");
+  const [amount, setAmount] = useState("10000");
+  const [note, setNote] = useState("Member cash withdrawal");
+  const [pin, setPin] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
 
   if (!memberId) {
     return (
-      <Screen subtitle="Choose which eligible assigned member needs a withdrawal." title="Withdrawal">
-        {memberListError ? (
-          <ResourceErrorCard message={memberListError} />
-        ) : memberListLoading ? (
-          <>
-            <SkeletonCard />
-            <SkeletonCard />
-          </>
-        ) : !eligibleMembers || eligibleMembers.length === 0 ? (
-          <SubmissionErrorCard message="No eligible assigned member is ready for withdrawal capture yet." />
+      <UnitySimplePage subtitle="Choose a member before withdrawal." title="Withdrawal">
+        {membersError ? (
+          <ResourceErrorCard message={membersError} />
+        ) : membersLoading || !memberTargets ? (
+          <LoadingStack />
         ) : (
-          <>
-            <SurfaceCard accent="#F7EEE0">
-              <Text style={styles.sectionCaption}>
-                Select a member first so the withdrawal form opens with the correct account and available balance.
-              </Text>
-            </SurfaceCard>
-            {eligibleMembers.map((memberTarget) => (
-              <Pressable
-                key={`${memberTarget.memberId}-${memberTarget.accountId}`}
-                onPress={() =>
-                  router.push({
-                    pathname: "/agent/transactions/withdrawal",
-                    params: { memberId: memberTarget.memberId },
-                  })
-                }
-                style={({ pressed }) => [styles.memberListRow, pressed && styles.memberListRowPressed]}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.memberListName}>{memberTarget.memberName}</Text>
-                  <Text style={styles.cardCaption}>
-                    {memberTarget.memberCode} · {memberTarget.accountType.toUpperCase()} · {formatCurrency(memberTarget.availableBalance)}
-                  </Text>
-                </View>
-                <Ionicons color={colors.inkMuted} name="chevron-forward" size={18} />
-              </Pressable>
-            ))}
-          </>
+          memberTargets.map((memberTarget) => (
+            <Pressable
+              key={memberTarget.memberId}
+              onPress={() => router.push(`/agent/transactions/withdrawal?memberId=${memberTarget.memberId}` as Href)}
+              style={({ pressed }) => [styles.depositCard, unityStyles.cardShadow, pressed && styles.pressed]}
+            >
+              <IconBubble icon="person-outline" size={38} tone="blue" />
+              <View className="ml-3 flex-1">
+                <Text className="text-unity-ink" style={styles.rowTitle}>{memberTarget.memberName}</Text>
+                <Text className="mt-1 text-unity-muted" style={styles.bodyText}>{memberTarget.memberCode} · {currency(memberTarget.availableBalance)}</Text>
+              </View>
+              <Ionicons color={colors.inkMuted} name="chevron-forward" size={18} />
+            </Pressable>
+          ))
         )}
-      </Screen>
+      </UnitySimplePage>
     );
   }
 
   return (
-    <Screen subtitle="Withdrawals stay explicit about approvals and available cash." title="Withdrawal">
+    <CollectScreenFrame title="Withdrawal">
       {targetError ? (
         <ResourceErrorCard message={targetError} />
       ) : targetLoading ? (
-        <SkeletonCard />
+        <LoadingStack />
       ) : !target ? (
-        <SubmissionErrorCard message="No eligible withdrawal account is ready for this member yet." />
+        <ResourceErrorCard message="No withdrawal target is ready for this member." />
       ) : (
         <>
-          <SurfaceCard accent="#F7EEE0">
-            <InfoRow label="Member" value={target.memberName} />
-            <InfoRow label="Code" value={target.memberCode} />
-            <InfoRow label="Account" value={`${target.accountNumber} · ${target.accountType.toUpperCase()}`} />
-            <InfoRow label="Available balance" value={formatCurrency(target.availableBalance)} />
-            <InfoRow label="Branch rule" value="Requires approval above teller threshold" />
-          </SurfaceCard>
-          <InputField label="Amount" onChangeText={setAmount} placeholder="0" value={amount} />
-          <InputField label="Reason" multiline onChangeText={setReason} placeholder="Describe why the cash is needed" value={reason} />
-          <InputField
-            label="Transaction PIN"
-            onChangeText={setTransactionPin}
-            placeholder="Enter your 4-digit PIN"
-            secureTextEntry
-            value={transactionPin}
+          <TargetMemberCard target={target} />
+          <Text className="mb-3 mt-7 text-unity-ink" style={styles.sectionHeading}>Withdrawal Amount</Text>
+          <AmountBox amount={amount} onChangeText={setAmount} />
+          <FormInput icon="lock-closed-outline" label="Transaction PIN" onChangeText={setPin} placeholder="Enter PIN" secureTextEntry value={pin} />
+          <TextInput
+            multiline
+            onChangeText={setNote}
+            placeholder="Add withdrawal context"
+            placeholderTextColor={colors.inkMuted}
+            style={styles.noteInput}
+            value={note}
           />
-          <StatusPill label="PENDING APPROVAL" />
-          {submissionError ? <SubmissionErrorCard message={submissionError} /> : null}
-          <View style={{ marginTop: spacing.md }}>
-            <PrimaryButton
-              label={isSubmitting ? "Submitting Withdrawal..." : "Submit Withdrawal"}
-              onPress={() => {
-                if (isSubmitting) {
-                  return;
-                }
+          {submissionError ? <ResourceErrorCard message={submissionError} /> : null}
+          <PrimaryGradientButton
+            label={isSubmitting ? "Submitting Withdrawal..." : "Submit Withdrawal"}
+            onPress={() => {
+              if (isSubmitting) {
+                return;
+              }
 
-                setSubmissionError(null);
-                setIsSubmitting(true);
+              setSubmissionError(null);
+              setIsSubmitting(true);
 
-                void submitTransaction(target, "withdrawal", amount, reason, transactionPin)
-                  .then(() => {
-                    if (returnTo === "member") {
-                      router.replace(`/agent/members/${memberId}`);
-                      return;
-                    }
-
-                    router.replace("/agent/transactions");
-                  })
-                  .catch((nextError) => {
-                    setSubmissionError(getErrorMessage(nextError, "We could not submit the withdrawal."));
-                  })
-                  .finally(() => {
-                    setIsSubmitting(false);
-                  });
-              }}
-            />
-          </View>
+              void submitTransaction(target, "withdrawal", amount, note, pin)
+                .then(() => router.replace(returnTo === "member" ? `/agent/members/${memberId}` : "/agent/transactions"))
+                .catch((nextError) => setSubmissionError(getErrorMessage(nextError, "We could not submit the withdrawal.")))
+                .finally(() => setIsSubmitting(false));
+            }}
+          />
         </>
       )}
-    </Screen>
+    </CollectScreenFrame>
   );
 }
 
 export function AgentSyncQueueScreen() {
   const { data: queue, error, loading, reload } = useResource(mobileData.getSyncQueue);
-  const [actionError, setActionError] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
-  async function runSync(action: "sync" | "retry") {
-    if (isSyncing) {
-      return;
-    }
-
-    setActionError(null);
+  async function runSync(mode: "all" | "failed") {
     setIsSyncing(true);
+    setSyncError(null);
 
     try {
-      if (action === "retry") {
+      if (mode === "failed") {
         await mobileData.retryFailedSyncQueue();
       } else {
         await mobileData.syncQueue();
       }
-
       await reload();
     } catch (nextError) {
-      setActionError(getErrorMessage(nextError, "We could not sync the offline queue."));
+      setSyncError(getErrorMessage(nextError, "We could not sync the queue."));
     } finally {
       setIsSyncing(false);
     }
   }
 
   return (
-    <Screen subtitle="Everything waiting locally is visible before reconnecting persistence." title="Sync Queue">
-      <StatusPill
-        label={
-          queue?.some((item) => item.status === "FAILED TO SYNC")
-            ? "FAILED TO SYNC"
-            : queue && queue.length > 0
-              ? "PENDING SYNC"
-              : "ONLINE"
-        }
-      />
+    <UnitySimplePage subtitle="Offline collections saved locally." title="Sync Queue">
       {error ? (
         <ResourceErrorCard message={error} />
       ) : loading || !queue ? (
-        <>
-          <SkeletonCard />
-          <SkeletonCard />
-        </>
+        <LoadingStack />
       ) : queue.length === 0 ? (
-        <SurfaceCard accent="#EEF4ED">
-          <Text style={styles.heroCaption}>No offline items are waiting to sync right now.</Text>
-        </SurfaceCard>
+        <WhiteCard className="p-5">
+          <Text className="text-unity-muted" style={styles.bodyText}>No offline items are waiting to sync right now.</Text>
+        </WhiteCard>
       ) : (
-        queue.map((item) => <QueueCard item={item} key={item.id} />)
+        queue.map((item: SyncQueueItem) => <QueueRow item={item} key={item.id} />)
       )}
-      {actionError ? <SubmissionErrorCard message={actionError} /> : null}
-      <PrimaryButton
-        label={isSyncing ? "Syncing Queue..." : "Sync Now"}
-        onPress={() => {
-          void runSync("sync");
-        }}
-      />
-      <View style={{ marginTop: spacing.sm }}>
-        <SecondaryButton
-          label={isSyncing ? "Working..." : "Retry Failed"}
-          onPress={() => {
-            void runSync("retry");
-          }}
-        />
+      {syncError ? <ResourceErrorCard message={syncError} /> : null}
+      <View className="mt-4 flex-row gap-4">
+        <View className="flex-1">
+          <PrimaryGradientButton label={isSyncing ? "Syncing..." : "Sync All"} onPress={() => void runSync("all")} />
+        </View>
+        <View className="flex-1">
+          <PrimaryGradientButton label="Retry Failed" onPress={() => void runSync("failed")} />
+        </View>
       </View>
-    </Screen>
+    </UnitySimplePage>
   );
 }
 
@@ -1325,153 +993,107 @@ export function AgentReconciliationScreen() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!data) {
-      return;
+    if (data) {
+      setActualCash(String(data.actualCash));
+      setVarianceReason(data.varianceReason ?? "");
     }
-
-    setActualCash(String(data.actualCash));
-    setVarianceReason(data.varianceReason ?? "");
   }, [data]);
 
-  if (error) {
-    return (
-      <Screen subtitle="We could not load reconciliation data." title="Reconciliation">
-        <ResourceErrorCard message={error} />
-      </Screen>
-    );
-  }
-
-  if (loading || !data) {
-    return (
-      <Screen subtitle="Loading reconciliation snapshot." title="Reconciliation">
-        <SkeletonCard />
-      </Screen>
-    );
-  }
-
-  const difference = Number(actualCash || "0") - data.expectedCash;
-  const needsVarianceReason = Math.abs(difference) > 0.001;
-
   return (
-    <Screen subtitle="Submit counted cash for review and track the branch-manager decision here." title="Reconciliation">
-      <SurfaceCard accent="#EEF4ED">
-        <InfoRow label="Expected cash" value={formatCurrency(data.expectedCash)} />
-        <InfoRow label="Status" value={data.statusLabel} />
-        {data.submittedAt ? <InfoRow label="Submitted" value={data.submittedAt} /> : null}
-        {data.reviewedAt ? <InfoRow label="Reviewed" value={data.reviewedAt} /> : null}
-      </SurfaceCard>
-      <InputField
-        editable={data.canSubmit && !isSubmitting}
-        label="Actual Cash"
-        onChangeText={setActualCash}
-        placeholder="Enter counted amount"
-        value={actualCash}
-      />
-      {needsVarianceReason || data.varianceReason ? (
-        <InputField
-          editable={data.canSubmit && !isSubmitting}
-          label="Variance Reason"
-          multiline
-          onChangeText={setVarianceReason}
-          placeholder="Explain the variance for branch review"
-          value={varianceReason}
-        />
-      ) : null}
-      <SurfaceCard>
-        <InfoRow label="Difference" value={formatCurrency(difference)} />
-        <StatusPill label={data.statusLabel} />
-        {data.reviewNote ? (
-          <Text style={[styles.heroCaption, { marginTop: spacing.sm }]}>Review note: {data.reviewNote}</Text>
-        ) : null}
-      </SurfaceCard>
-      {successMessage ? (
-        <SurfaceCard accent="#EEF4ED">
-          <StatusPill label="APPROVED" />
-          <Text style={[styles.heroCaption, { marginTop: spacing.sm }]}>{successMessage}</Text>
-        </SurfaceCard>
-      ) : null}
-      {submissionError ? <SubmissionErrorCard message={submissionError} /> : null}
-      <PrimaryButton
-        label={
-          data.canSubmit
-            ? isSubmitting
-              ? "Submitting Reconciliation..."
-              : "Submit Reconciliation"
-            : "Refresh Status"
-        }
-        onPress={() => {
-          if (!data.canSubmit) {
-            void reload();
-            return;
-          }
+    <UnitySimplePage subtitle="Compare expected cash against counted cash." title="Reconcile Cash">
+      {error ? (
+        <ResourceErrorCard message={error} />
+      ) : loading || !data ? (
+        <LoadingStack />
+      ) : (
+        <>
+          <TealSummaryCard amount={currency(data.expectedCash)} subtitle={`Difference ${currency(data.difference)}`} title="Expected Cash" />
+          <FormInput icon="wallet-outline" label="Actual Cash" onChangeText={setActualCash} placeholder="0" value={actualCash} />
+          <TextInput
+            multiline
+            onChangeText={setVarianceReason}
+            placeholder="Explain any variance"
+            placeholderTextColor={colors.inkMuted}
+            style={styles.noteInput}
+            value={varianceReason}
+          />
+          <StatusChip label={data.statusLabel} tone={statusTone(data.statusLabel)} />
+          {data.reviewNote ? <Text className="mt-3 text-unity-muted" style={styles.bodyText}>Review note: {data.reviewNote}</Text> : null}
+          {successMessage ? <Text className="mt-3 text-unity-green" style={styles.bodyText}>{successMessage}</Text> : null}
+          {submissionError ? <ResourceErrorCard message={submissionError} /> : null}
+          <View className="mt-5">
+            <PrimaryGradientButton
+              label={isSubmitting ? "Submitting..." : "Submit Reconciliation"}
+              onPress={() => {
+                if (isSubmitting || !data.canSubmit) {
+                  return;
+                }
 
-          if (isSubmitting) {
-            return;
-          }
+                setIsSubmitting(true);
+                setSubmissionError(null);
+                setSuccessMessage(null);
 
-          setSubmissionError(null);
-          setSuccessMessage(null);
-          setIsSubmitting(true);
-
-          void mobileData
-            .submitAgentReconciliation({
-              actualCash,
-              varianceReason,
-            })
-            .then((nextData) => {
-              setActualCash(String(nextData.actualCash));
-              setVarianceReason(nextData.varianceReason ?? "");
-              setSuccessMessage("Reconciliation submitted. The branch manager can now review it.");
-              void reload();
-            })
-            .catch((nextError) => {
-              setSubmissionError(getErrorMessage(nextError, "We could not submit the reconciliation."));
-            })
-            .finally(() => {
-              setIsSubmitting(false);
-            });
-        }}
-      />
-    </Screen>
+                void mobileData
+                  .submitAgentReconciliation({
+                    actualCash,
+                    varianceReason,
+                  })
+                  .then((nextData) => {
+                    setActualCash(String(nextData.actualCash));
+                    setVarianceReason(nextData.varianceReason ?? "");
+                    setSuccessMessage("Reconciliation submitted. The branch manager can now review it.");
+                    void reload();
+                  })
+                  .catch((nextError) => setSubmissionError(getErrorMessage(nextError, "We could not submit the reconciliation.")))
+                  .finally(() => setIsSubmitting(false));
+              }}
+            />
+          </View>
+        </>
+      )}
+    </UnitySimplePage>
   );
 }
 
 export function AgentProfileScreen() {
+  const { signOut } = useAppSession();
   const { data, error, loading } = useResource(mobileData.getAgentDashboard);
 
-  if (error) {
-    return (
-      <Screen subtitle="We could not load the agent profile." title="Profile">
-        <ResourceErrorCard message={error} />
-      </Screen>
-    );
-  }
-
-  if (loading || !data) {
-    return (
-      <Screen subtitle="Loading profile preview." title="Profile">
-        <SkeletonCard />
-      </Screen>
-    );
-  }
-
   return (
-    <Screen subtitle="Operational profile card for the field agent shell." title="Profile">
-      <SurfaceCard>
-        <Text style={styles.heroTitle}>{data.agentName}</Text>
-        <Text style={styles.heroCaption}>{data.agentCode}</Text>
-        <View style={styles.inlineWrap}>
-          <StatusPill label={data.syncState} />
-          <StatusPill label="RECONCILIATION REQUIRED" />
-        </View>
-      </SurfaceCard>
-      <SurfaceCard accent="#EEF4ED">
-        <InfoRow label="Branch" value={data.branchName} />
-        <InfoRow label="Support" value="Branch operations desk" />
-        <InfoRow label="Contact" value="See the assigned branch record in Supabase" />
-        <InfoRow label="Mode" value="Signed-in live read shell" />
-      </SurfaceCard>
-    </Screen>
+    <UnityPage headerHeight={350} subtitle="Operational profile and field settings" title="My Profile">
+      {error ? (
+        <ResourceErrorCard message={error} />
+      ) : loading || !data ? (
+        <LoadingStack />
+      ) : (
+        <>
+          <WhiteCard className="mb-5 p-4">
+            <View className="flex-row items-center">
+              <View className="h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-blue-100" style={unityStyles.cardShadow}>
+                <Text className="text-unity-blue" style={styles.profileInitials}>{initials(data.agentName)}</Text>
+              </View>
+              <View className="ml-4 flex-1">
+                <Text className="text-unity-ink" style={styles.profileName}>{data.agentName}</Text>
+                <Text className="mt-2 text-unity-muted" style={styles.bodyText}>{data.agentCode}</Text>
+                <ProfileMeta icon="business-outline" text={data.branchName} />
+                <ProfileMeta icon="cloud-done-outline" text={data.syncState} />
+              </View>
+            </View>
+          </WhiteCard>
+          <SettingsSection
+            rows={[
+              ["wallet-outline", "Reconcile Cash", () => router.push("/agent/more/reconciliation" as Href), "green"],
+              ["cloud-upload-outline", "Sync Queue", () => router.push("/agent/more/sync-queue" as Href), "blue"],
+              ["lock-closed-outline", "Secure Account", () => router.push("/agent/change-password" as Href), "purple"],
+            ]}
+            title="Field Operations"
+          />
+          <Pressable onPress={() => void signOut()} style={({ pressed }) => [styles.signOutButton, pressed && styles.pressed]}>
+            <Text className="text-unity-red" style={styles.buttonText}>Sign Out</Text>
+          </Pressable>
+        </>
+      )}
+    </UnityPage>
   );
 }
 
@@ -1488,102 +1110,49 @@ export function AgentChangePasswordScreen() {
 
   if (!profile || profile.role !== "agent") {
     return (
-      <Screen subtitle="Agent security setup is only available for signed-in agents." title="Secure Account">
-        <SubmissionErrorCard message="Sign in with an agent account to complete secure setup." />
-      </Screen>
+      <UnitySimplePage subtitle="Agent security setup is only available for signed-in agents." title="Secure Account">
+        <ResourceErrorCard message="Sign in with an agent account to complete secure setup." />
+      </UnitySimplePage>
     );
   }
 
-  const needsPasswordChange = profile.mustChangePassword;
-  const needsPinSetup = profile.requiresPinSetup;
-
   return (
-    <Screen
-      subtitle={
-        needsPasswordChange || needsPinSetup
-          ? "Finish first-login security before entering the field workspace."
-          : "First-login security is already complete for this account."
-      }
-      title="Secure Account"
-    >
-      <SurfaceCard accent="#EEF4ED">
-        <Text style={styles.heroCaption}>
-          {needsPasswordChange || needsPinSetup
-            ? "Set your permanent password and transaction PIN now. Withdrawals stay locked until this step is complete."
-            : "Password reset and PIN rotation stay outside this pass. You can return to the field workspace now."}
-        </Text>
-      </SurfaceCard>
-      {needsPasswordChange ? (
+    <UnitySimplePage subtitle="Finish first-login security before entering the field workspace." title="Secure Account">
+      {profile.mustChangePassword ? (
         <>
-          <InputField
-            label="Current Password"
-            onChangeText={setOldPassword}
-            placeholder="Enter current temporary password"
-            secureTextEntry
-            value={oldPassword}
-          />
-          <InputField
-            label="New Password"
-            onChangeText={setNewPassword}
-            placeholder="Choose a new password"
-            secureTextEntry
-            value={newPassword}
-          />
-          <InputField
-            label="Confirm New Password"
-            onChangeText={setConfirmNewPassword}
-            placeholder="Re-enter new password"
-            secureTextEntry
-            value={confirmNewPassword}
-          />
+          <FormInput icon="lock-closed-outline" label="Current Password" onChangeText={setOldPassword} placeholder="Enter current password" secureTextEntry value={oldPassword} />
+          <FormInput icon="lock-open-outline" label="New Password" onChangeText={setNewPassword} placeholder="Choose a new password" secureTextEntry value={newPassword} />
+          <FormInput icon="checkmark-circle-outline" label="Confirm New Password" onChangeText={setConfirmNewPassword} placeholder="Re-enter new password" secureTextEntry value={confirmNewPassword} />
         </>
       ) : null}
-      {needsPinSetup ? (
+      {profile.requiresPinSetup ? (
         <>
-          <InputField
-            label="Transaction PIN"
-            onChangeText={setPin}
-            placeholder="Create a 4-digit PIN"
-            secureTextEntry
-            value={pin}
-          />
-          <InputField
-            label="Confirm Transaction PIN"
-            onChangeText={setConfirmPin}
-            placeholder="Re-enter your 4-digit PIN"
-            secureTextEntry
-            value={confirmPin}
-          />
+          <FormInput icon="keypad-outline" label="Transaction PIN" onChangeText={setPin} placeholder="Enter PIN" secureTextEntry value={pin} />
+          <FormInput icon="keypad-outline" label="Confirm Transaction PIN" onChangeText={setConfirmPin} placeholder="Confirm PIN" secureTextEntry value={confirmPin} />
         </>
       ) : null}
-      {submissionError ? <SubmissionErrorCard message={submissionError} /> : null}
-      {successMessage ? (
-        <SurfaceCard accent="#EEF4ED">
-          <StatusPill label="APPROVED" />
-          <Text style={[styles.heroCaption, { marginTop: spacing.sm }]}>{successMessage}</Text>
-        </SurfaceCard>
-      ) : null}
-      <PrimaryButton
-        label={
-          needsPasswordChange || needsPinSetup
-            ? isSubmitting
-              ? "Securing Account..."
-              : "Secure Account"
-            : "Back To Agent Home"
-        }
+      {submissionError ? <ResourceErrorCard message={submissionError} /> : null}
+      {successMessage ? <Text className="mb-4 text-unity-green" style={styles.bodyText}>{successMessage}</Text> : null}
+      <PrimaryGradientButton
+        label={isSubmitting ? "Saving..." : "Save Security Settings"}
         onPress={() => {
-          if (!needsPasswordChange && !needsPinSetup) {
-            router.replace("/agent");
-            return;
-          }
-
           if (isSubmitting) {
             return;
           }
 
+          if (profile.mustChangePassword && newPassword.trim() !== confirmNewPassword.trim()) {
+            setSubmissionError("Your new password and confirmation must match.");
+            return;
+          }
+
+          if (profile.requiresPinSetup && pin.trim() !== confirmPin.trim()) {
+            setSubmissionError("Your transaction PIN and confirmation must match.");
+            return;
+          }
+
+          setIsSubmitting(true);
           setSubmissionError(null);
           setSuccessMessage(null);
-          setIsSubmitting(true);
 
           void mobileData
             .changeAgentCredentials({
@@ -1595,851 +1164,891 @@ export function AgentChangePasswordScreen() {
             })
             .then(async () => {
               await refreshProfile();
-              setSuccessMessage("Security setup complete. Redirecting to your field workspace.");
+              setSuccessMessage("Security setup completed.");
               router.replace("/agent");
             })
-            .catch((nextError) => {
-              setSubmissionError(getErrorMessage(nextError, "We could not secure the account."));
-            })
-            .finally(() => {
-              setIsSubmitting(false);
-            });
+            .catch((nextError) => setSubmissionError(getErrorMessage(nextError, "We could not save security setup.")))
+            .finally(() => setIsSubmitting(false));
         }}
       />
-    </Screen>
+    </UnitySimplePage>
   );
 }
 
-function MemberActionCard({
-  icon,
-  title,
-  caption,
-  buttonLabel,
-  onPress,
-  disabled,
-  buttonVariant,
-  fullWidth = false,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  caption: string;
-  buttonLabel: string;
-  onPress: () => void;
-  disabled: boolean;
-  buttonVariant: "primary" | "secondary";
-  fullWidth?: boolean;
-}) {
-  return (
-    <View style={[styles.memberActionCard, fullWidth && styles.memberActionCardFull]}>
-      <View style={styles.memberActionHeader}>
-        <View style={styles.memberActionIcon}>
-          <Ionicons color={colors.ink} name={icon} size={18} />
-        </View>
-        <Text style={styles.memberActionTitle}>{title}</Text>
-      </View>
-      <Text style={styles.memberActionCaption}>{caption}</Text>
-      {buttonVariant === "primary" ? (
-        <PrimaryButton disabled={disabled} label={buttonLabel} onPress={onPress} />
-      ) : (
-        <SecondaryButton disabled={disabled} label={buttonLabel} onPress={onPress} />
-      )}
-    </View>
-  );
+export function AgentMoreScreen() {
+  return <AgentProfileScreen />;
 }
 
-function SummaryMetricCard({
+export function AgentReceiptScreen() {
+  return <AgentTransactionDetailScreen />;
+}
+
+function HeroStat({
   icon,
   label,
+  tone,
   value,
-  hint,
-  iconBackgroundColor,
-  iconColor,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
+  tone: "green" | "orange" | "purple";
   value: string;
-  hint: string;
-  iconBackgroundColor: string;
-  iconColor: string;
 }) {
+  const iconColor = tone === "orange" ? colors.warning : tone === "purple" ? colors.purple : colors.white;
+
   return (
-    <View style={styles.summaryMetricCard}>
-      <View style={[styles.summaryMetricIcon, { backgroundColor: iconBackgroundColor }]}>
-        <Ionicons color={iconColor} name={icon} size={16} />
+    <View className="flex-1 flex-row items-center">
+        <Ionicons color={iconColor} name={icon} size={20} />
+      <View className="ml-2 flex-1">
+        <Text className="text-white" style={styles.heroStatValue}>{value}</Text>
+        <Text className="text-white" style={styles.heroStatLabel}>{label}</Text>
       </View>
-      <Text numberOfLines={1} style={styles.summaryMetricLabel}>
-        {label}
-      </Text>
-      <Text adjustsFontSizeToFit numberOfLines={1} style={styles.summaryMetricValue}>
-        {value}
-      </Text>
-      <Text numberOfLines={2} style={styles.summaryMetricHint}>
-        {hint}
-      </Text>
     </View>
   );
 }
 
-function HeaderIconButton({
+function RegistrationStepper() {
+  return (
+    <View className="mt-7 flex-row items-start justify-between px-1">
+      {["Member Info", "Contact & Details", "KYC Documents", "Review"].map((label, index) => {
+        const step = index + 1;
+        const isActive = step === 1;
+
+        return (
+          <View key={label} className="flex-1 items-center">
+            <View className="w-full flex-row items-center">
+              <View className="h-px flex-1 bg-white/30" />
+              <View
+                className={isActive
+                  ? "h-11 w-11 items-center justify-center rounded-full bg-unity-teal"
+                  : "h-11 w-11 items-center justify-center rounded-full border border-white/55 bg-white/5"}
+              >
+                <Text className="text-white" style={styles.stepNumber}>{step}</Text>
+              </View>
+              <View className="h-px flex-1 bg-white/30" />
+            </View>
+            <Text className="mt-2 text-center text-white" numberOfLines={2} style={styles.stepLabel}>
+              {label}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function ActionSquare({
   icon,
   label,
   onPress,
+  tone,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   onPress: () => void;
+  tone: "blue" | "green" | "purple" | "orange";
 }) {
   return (
-    <Pressable
-      accessibilityLabel={label}
-      onPress={onPress}
-      style={({ pressed }) => [styles.headerIconButton, pressed && styles.headerIconButtonPressed]}
-    >
-      <Ionicons color={colors.brand} name={icon} size={24} />
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.actionSquare, unityStyles.cardShadow, pressed && styles.pressed]}>
+      <IconBubble icon={icon} size={34} tone={tone === "orange" ? "orange" : tone} />
+      <Text adjustsFontSizeToFit className="mt-2 text-center text-unity-ink" numberOfLines={1} style={styles.actionLabel}>{label}</Text>
     </Pressable>
   );
 }
 
-function QueueCard({ item }: { item: SyncQueueItem }) {
+function CollectionRow({
+  amount,
+  initials: avatarInitials,
+  isLast,
+  memberCode,
+  name,
+  status,
+  time,
+}: {
+  amount: number;
+  initials: string;
+  isLast?: boolean;
+  memberCode: string;
+  name: string;
+  status: string;
+  time: string;
+}) {
   return (
-    <SurfaceCard>
-      <View style={styles.rowBetween}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.cardTitle}>{item.type}</Text>
-          <Text style={styles.cardCaption}>
-            {item.memberName} · {item.id}
-          </Text>
-        </View>
-        {item.amount > 0 ? <Text style={styles.cardValue}>{formatCurrency(item.amount)}</Text> : null}
+    <View className={`flex-row items-center px-4 py-2.5 ${isLast ? "" : "border-b border-unity-line"}`}>
+      <View className="h-10 w-10 items-center justify-center rounded-full bg-unity-green-soft">
+        <Text className="text-unity-green" style={styles.avatarText}>{avatarInitials}</Text>
       </View>
-      <Text style={styles.cardCaption}>{item.note}</Text>
-      <StatusPill label={item.status} />
-    </SurfaceCard>
+      <View className="ml-3 flex-1">
+        <Text className="text-unity-ink" style={styles.rowTitle}>{name}</Text>
+        <Text className="mt-1 text-unity-muted" style={styles.bodyText}>{memberCode}</Text>
+      </View>
+      <View className="items-end">
+        <Text className="text-unity-green" style={styles.amountSmall}>+ {currency(amount)}</Text>
+        <Text className="text-unity-muted" style={styles.bodyText}>{time}</Text>
+      </View>
+      <View className="ml-2">
+        <StatusChip label={status} tone={statusTone(status)} />
+      </View>
+    </View>
   );
 }
 
-function toStatusLabel(status: TransactionRequest["status"]) {
-  const map: Record<TransactionRequest["status"], string> = {
-    approved: "APPROVED",
-    draft: "PENDING SYNC",
-    pending_approval: "PENDING APPROVAL",
-    rejected: "REJECTED",
-    reversed: "REJECTED",
-    sync_conflict: "FAILED TO SYNC",
-    unsynced: "PENDING SYNC",
+function FilterChip({
+  active = false,
+  label,
+  onPress,
+}: {
+  active?: boolean;
+  label: string;
+  onPress?: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.filterChip,
+        active && styles.filterChipActive,
+        pressed && styles.pressed,
+      ]}
+    >
+      <Text className={active ? "text-white" : "text-unity-ink"} style={styles.filterText}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function AgentMemberCard({ member }: { member: AssignedMember }) {
+  const activity = member.lastActivity || (member.status === "active" ? "Collected today" : "Due soon");
+  const activityTone = activity.toLowerCase().includes("overdue")
+    ? "warning"
+    : activity.toLowerCase().includes("due")
+      ? "info"
+      : "success";
+
+  return (
+    <Pressable
+      onPress={() => router.push(`/agent/members/${member.id}` as Href)}
+      style={({ pressed }) => [styles.memberCard, unityStyles.cardShadow, pressed && styles.pressed]}
+    >
+      <View className="h-12 w-12 items-center justify-center rounded-full bg-blue-100">
+        <Text className="text-unity-blue" style={styles.avatarText}>{initials(member.fullName)}</Text>
+      </View>
+      <View className="ml-3 flex-1">
+        <Text className="text-unity-ink" numberOfLines={1} style={styles.memberListName}>{member.fullName}</Text>
+        <Text className="mt-1 text-unity-muted" style={styles.bodyText}>ID: {member.code}</Text>
+        <Text className="mt-1 text-unity-muted" style={styles.bodyText}>☎ {member.phone}</Text>
+      </View>
+      <View className="items-end">
+        <Text adjustsFontSizeToFit className="text-unity-green" numberOfLines={1} style={styles.memberListAmount}>{currency(member.savingsBalance)}</Text>
+        <Text className="mt-1 text-unity-muted" style={styles.bodyText}>Savings Balance</Text>
+        <View className="mt-2">
+          <StatusChip label={activity} tone={activityTone} />
+        </View>
+      </View>
+      <Ionicons color={colors.inkMuted} name="chevron-forward" size={18} style={{ marginLeft: 6 }} />
+    </Pressable>
+  );
+}
+
+function BalanceTile({ label, value }: { label: string; value: string }) {
+  return (
+    <WhiteCard className="flex-1 p-4">
+      <Text className="text-unity-muted" style={styles.bodyText}>{label}</Text>
+      <Text adjustsFontSizeToFit numberOfLines={1} className="mt-2 text-unity-green" style={styles.cardTitle}>{value}</Text>
+    </WhiteCard>
+  );
+}
+
+function ActionWide({
+  icon,
+  label,
+  onPress,
+  tone,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+  tone: "blue" | "green" | "orange";
+}) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.actionWide, pressed && styles.pressed]}>
+      <IconBubble icon={icon} size={38} tone={tone} />
+      <Text className="ml-3 text-unity-ink" style={styles.buttonText}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function DepositHistoryRow({
+  amount,
+  date,
+  memberName,
+  onPress,
+  status,
+}: {
+  amount: number;
+  date: string;
+  memberName: string;
+  onPress: () => void;
+  status: string;
+}) {
+  const tone = statusTone(status);
+
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.depositCard, unityStyles.cardShadow, pressed && styles.pressed]}>
+      <IconBubble icon={tone === "warning" ? "time-outline" : tone === "danger" ? "close-circle-outline" : "checkmark-outline"} size={38} tone={tone === "danger" ? "red" : tone === "warning" ? "orange" : "green"} />
+      <View className="ml-3 flex-1">
+        <Text className="text-unity-ink" style={styles.rowTitle}>Savings Deposit</Text>
+        <Text className="mt-1 text-unity-muted" style={styles.bodyText}>{date}</Text>
+        <Text className="mt-1 text-unity-muted" style={styles.bodyText}>Member: <Text className="text-unity-blue" style={styles.mediumInline}>{memberName}</Text></Text>
+      </View>
+      <View className="items-end">
+        <Text className={tone === "danger" ? "text-unity-red" : tone === "warning" ? "text-unity-blue" : "text-unity-green"} style={styles.amountSmall}>+ {currency(amount)}</Text>
+        <View className="mt-2">
+          <StatusChip label={status} tone={tone} />
+        </View>
+      </View>
+      <Ionicons color={colors.inkMuted} name="chevron-forward" size={18} style={{ marginLeft: 6 }} />
+    </Pressable>
+  );
+}
+
+function CollectScreenFrame({ children, title }: { children: React.ReactNode; title: string }) {
+  return (
+    <UnityPage headerHeight={180} showBack showBell={false} showLogo={false}>
+      <View className="absolute left-0 right-0 top-[-170px] flex-row items-center justify-between px-1">
+        <Pressable onPress={() => router.canGoBack() && router.back()}>
+          <Ionicons color={colors.white} name="arrow-back" size={24} />
+        </Pressable>
+        <View className="items-center">
+          <Text className="text-white" style={styles.collectTitle}>{title}</Text>
+          <Text className="text-unity-teal" style={styles.bodyText}>Unity Credit</Text>
+        </View>
+        <View className="items-center">
+          <Ionicons color={colors.white} name="cloud-outline" size={22} />
+          <Text className="text-white" style={styles.bodyText}>Offline</Text>
+        </View>
+      </View>
+      {children}
+    </UnityPage>
+  );
+}
+
+function InfoNotice({ text }: { text: string }) {
+  return (
+    <View className="flex-row items-center rounded-xl border border-blue-200 bg-blue-50 p-4">
+      <Ionicons color={colors.brand} name="information-circle-outline" size={28} />
+      <Text className="ml-3 flex-1 text-blue-900" style={styles.noticeText}>{text}</Text>
+    </View>
+  );
+}
+
+function TargetMemberCard({ target }: { target: AgentTransactionTarget }) {
+  return (
+    <WhiteCard className="flex-row items-center p-4">
+      <IconBubble icon="person-outline" size={38} tone="blue" />
+      <View className="ml-3 flex-1">
+        <Text className="text-unity-ink" style={styles.cardTitle}>{target.memberName}</Text>
+        <Text className="mt-1 text-unity-muted" style={styles.bodyText}>Member ID: {target.memberCode}</Text>
+        <View className="mt-2 self-start">
+          <StatusChip label="Active" tone="success" />
+        </View>
+      </View>
+      <Ionicons color={colors.inkMuted} name="chevron-forward" size={18} />
+    </WhiteCard>
+  );
+}
+
+function AmountBox({ amount, onChangeText }: { amount: string; onChangeText: (next: string) => void }) {
+  return (
+    <View className="rounded-xl border border-unity-line bg-white p-5" style={styles.amountBox}>
+      <View className="flex-row items-center">
+        <Text className="text-unity-ink" style={styles.bigCurrency}>CFA</Text>
+        <TextInput
+          keyboardType="numeric"
+          onChangeText={onChangeText}
+          style={styles.amountInput}
+          value={amount}
+        />
+      </View>
+      <Text className="mt-2 text-unity-muted" style={styles.bodyText}>Amount in CFA</Text>
+    </View>
+  );
+}
+
+function MiniConfirm({
+  icon,
+  label,
+  sublabel,
+  tone,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  sublabel: string;
+  tone: "blue" | "green";
+}) {
+  return (
+    <View className="flex-1 flex-row items-center rounded-xl border border-unity-line bg-white p-3">
+      <Ionicons color={tone === "green" ? colors.success : colors.brand} name={icon} size={24} />
+      <View className="ml-3 flex-1">
+        <Text className="text-unity-ink" style={styles.smallText}>{label}</Text>
+        <Text className="text-unity-muted" style={styles.smallText}>{sublabel}</Text>
+      </View>
+      <Ionicons color={tone === "green" ? colors.success : colors.brand} name="checkmark-circle" size={20} />
+    </View>
+  );
+}
+
+function QueueRow({ item }: { item: SyncQueueItem }) {
+  return (
+    <WhiteCard className="mb-4 p-5">
+      <View className="flex-row items-start justify-between">
+        <View className="flex-1">
+          <Text className="text-unity-ink" style={styles.cardTitle}>{item.type}</Text>
+          <Text className="mt-1 text-unity-muted" style={styles.bodyText}>{item.memberName}</Text>
+        </View>
+        {item.amount > 0 ? <Text className="text-unity-green" style={styles.amountSmall}>{currency(item.amount)}</Text> : null}
+      </View>
+      <Text className="mt-3 text-unity-muted" style={styles.bodyText}>{item.note}</Text>
+      <View className="mt-3 self-start">
+        <StatusChip label={item.status} tone={statusTone(item.status)} />
+      </View>
+    </WhiteCard>
+  );
+}
+
+function ProfileMeta({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: string }) {
+  return (
+    <View className="mt-3 flex-row items-start">
+      <Ionicons color={colors.brand} name={icon} size={16} />
+      <Text className="ml-3 flex-1 text-unity-muted" style={styles.bodyText}>{text}</Text>
+    </View>
+  );
+}
+
+function SettingsSection({
+  rows,
+  title,
+}: {
+  rows: [keyof typeof Ionicons.glyphMap, string, () => void, "blue" | "green" | "orange" | "purple"][];
+  title: string;
+}) {
+  return (
+    <WhiteCard className="mb-5">
+      <View className="border-b border-unity-line px-5 py-3">
+        <Text className="text-unity-ink" style={styles.sectionHeading}>{title}</Text>
+      </View>
+      {rows.map(([icon, label, onPress, tone], index) => (
+        <Pressable key={label} onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
+          <View className={`flex-row items-center px-4 py-3 ${index === rows.length - 1 ? "" : "border-b border-unity-line"}`}>
+            <IconBubble icon={icon} size={30} tone={tone} />
+            <Text className="ml-3 flex-1 text-unity-ink" style={styles.rowTitle}>{label}</Text>
+            <Ionicons color={colors.inkMuted} name="chevron-forward" size={18} />
+          </View>
+        </Pressable>
+      ))}
+    </WhiteCard>
+  );
+}
+
+function DetailLine({ label, value }: { label: string; value: string }) {
+  return (
+    <View className="mt-4 flex-row justify-between border-t border-unity-line pt-4">
+      <Text className="text-unity-muted" style={styles.bodyText}>{label}</Text>
+      <Text className="max-w-[58%] text-right text-unity-ink" style={styles.mediumInline}>{value}</Text>
+    </View>
+  );
+}
+
+function FormInput({
+  autoCapitalize = "sentences",
+  icon,
+  keyboardType = "default",
+  label,
+  onChangeText,
+  placeholder,
+  secureTextEntry = false,
+  value,
+}: {
+  autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  icon: keyof typeof Ionicons.glyphMap;
+  keyboardType?: KeyboardTypeOptions;
+  label: string;
+  onChangeText: (next: string) => void;
+  placeholder: string;
+  secureTextEntry?: boolean;
+  value: string;
+}) {
+  return (
+    <View className="mb-4 flex-row items-center rounded-xl border border-unity-line bg-white px-4">
+      <Ionicons color={colors.inkMuted} name={icon} size={20} />
+      <View className="ml-3 flex-1 py-3">
+        <Text className="text-unity-muted" style={styles.smallText}>{label}</Text>
+        <TextInput
+          autoCapitalize={autoCapitalize}
+          keyboardType={keyboardType}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={colors.inkMuted}
+          secureTextEntry={secureTextEntry}
+          style={styles.formInput}
+          value={value}
+        />
+      </View>
+    </View>
+  );
+}
+
+function GenderSelect({
+  onChange,
+  value,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const options = ["Female", "Male", "Other"];
+
+  return (
+    <View className="mb-4 rounded-xl border border-unity-line bg-white px-4 py-3">
+      <View className="flex-row items-center">
+        <Ionicons color={colors.inkMuted} name="people-outline" size={20} />
+        <Text className="ml-3 text-unity-muted" style={styles.smallText}>Gender</Text>
+      </View>
+      <View className="mt-3 flex-row gap-2">
+        {options.map((option) => {
+          const isSelected = value === option;
+
+          return (
+            <Pressable
+              key={option}
+              onPress={() => onChange(option)}
+              style={({ pressed }) => [
+                styles.genderOption,
+                isSelected && styles.genderOptionSelected,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text
+                className={isSelected ? "text-white" : "text-unity-ink"}
+                style={styles.genderOptionText}
+              >
+                {option}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+function RegistrationDatePicker({
+  field,
+  label,
+  maximumDate,
+  minimumDate,
+  onChange,
+  placeholder,
+  value,
+}: {
+  field: RegistrationDateField;
+  label: string;
+  maximumDate?: Date;
+  minimumDate?: Date;
+  onChange: (next: string) => void;
+  placeholder: string;
+  value: string;
+}) {
+  const [showPicker, setShowPicker] = useState(false);
+  const os = process.env.EXPO_OS;
+  const fallbackDate =
+    value || !minimumDate ? new Date(1990, 0, 1) : minimumDate;
+  const selectedDate = parseDateInputValue(value, fallbackDate);
+
+  const handleChange = (_event: DateTimePickerEvent, nextDate?: Date) => {
+    if (os === "android") {
+      setShowPicker(false);
+    }
+
+    if (nextDate) {
+      onChange(toDateInputValue(nextDate));
+    }
   };
 
-  return map[status];
+  const openPicker = () => {
+    if (os === "android") {
+      DateTimePickerAndroid.open({
+        display: "default",
+        maximumDate,
+        minimumDate,
+        mode: "date",
+        onChange: handleChange,
+        value: selectedDate,
+      });
+      return;
+    }
+
+    setShowPicker((current) => !current);
+  };
+
+  return (
+    <View className="mb-4">
+      <Pressable
+        accessibilityLabel={`Select ${label.toLowerCase()}`}
+        onPress={openPicker}
+        style={({ pressed }) => [styles.dateField, pressed && styles.pressed]}
+      >
+        <Ionicons color={colors.inkMuted} name="calendar-outline" size={20} />
+        <View className="ml-3 flex-1 py-3">
+          <Text className="text-unity-muted" style={styles.smallText}>{label}</Text>
+          <Text
+            className={value ? "text-unity-ink" : "text-unity-muted"}
+            style={styles.dateFieldValue}
+          >
+            {formatDateInputValue(value, placeholder)}
+          </Text>
+        </View>
+        <Ionicons color={colors.inkMuted} name="chevron-down" size={18} />
+      </Pressable>
+      {showPicker && os !== "android" ? (
+        <View style={styles.inlineDatePicker}>
+          <DateTimePicker
+            display={os === "ios" ? "spinner" : "default"}
+            maximumDate={maximumDate}
+            minimumDate={minimumDate}
+            mode="date"
+            onChange={handleChange}
+            testID={`${field}-picker`}
+            value={selectedDate}
+          />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function PrimaryGradientButton({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
+      <LinearGradient
+        colors={["#08BFA9", "#00B99F"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.primaryGradient}
+      >
+        <Text className="text-white" style={styles.primaryButtonText}>{label}</Text>
+        <View className="absolute right-5 h-10 w-10 items-center justify-center rounded-full bg-white/20">
+          <Ionicons color={colors.white} name="arrow-forward" size={22} />
+        </View>
+      </LinearGradient>
+    </Pressable>
+  );
 }
 
 const styles = StyleSheet.create({
-  headerIconButton: {
-    alignItems: "center",
-    backgroundColor: "transparent",
-    borderColor: "transparent",
-    borderRadius: 999,
-    borderWidth: 0,
-    height: 26,
-    justifyContent: "center",
-    width: 26,
+  agentHomeSummaryOverlap: {
+    marginBottom: 6,
+    marginTop: -84,
+    position: "relative",
+    zIndex: 3,
   },
-  headerIconButtonPressed: {
-    opacity: 0.8,
-  },
-  heroTitle: {
-    color: colors.ink,
-    fontFamily: typography.heading,
-    fontSize: 22,
-    lineHeight: 28,
-    textAlign: "center",
-  },
-  heroCaption: {
-    color: colors.inkMuted,
-    fontFamily: typography.body,
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  moneyTitle: {
-    color: colors.ink,
-    fontFamily: typography.display,
-    fontSize: 40,
-    lineHeight: 46,
-    textAlign: "center",
-  },
-  balanceHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  receiptLabel: {
-    color: colors.inkMuted,
+  actionLabel: {
     fontFamily: typography.medium,
-    fontSize: 13,
-    textTransform: "uppercase",
-  },
-  sectionCaption: {
-    color: colors.inkMuted,
-    fontFamily: typography.body,
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  inlineWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-  },
-  quickActionsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-  },
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-  },
-  summaryHero: {
-    backgroundColor: "rgba(255,255,255,0.84)",
-    borderColor: "rgba(223, 246, 213, 0.95)",
-    borderRadius: 26,
-    borderWidth: 1,
-    marginBottom: spacing.md,
-    padding: spacing.md,
-  },
-  summaryHeroTop: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: spacing.md,
-  },
-  summaryEyebrow: {
-    alignSelf: "flex-start",
-    backgroundColor: "rgba(5,5,5,0.06)",
-    borderRadius: radii.pill,
-    marginBottom: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 5,
-  },
-  summaryEyebrowText: {
-    color: colors.inkMuted,
-    fontFamily: typography.medium,
-    fontSize: 10,
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-  },
-  summaryHeroLabel: {
-    color: colors.ink,
-    fontFamily: typography.medium,
-    fontSize: 15,
-  },
-  summaryHeroIcon: {
-    alignItems: "center",
-    backgroundColor: colors.foliwe,
-    borderRadius: radii.pill,
-    height: 42,
-    justifyContent: "center",
-    width: 42,
-  },
-  summaryHeroValue: {
-    color: colors.ink,
-    fontFamily: typography.display,
-    fontSize: 34,
-    lineHeight: 40,
-  },
-  summaryHeroFooter: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: spacing.sm,
-  },
-  summaryHeroHint: {
-    color: colors.inkMuted,
-    fontFamily: typography.body,
     fontSize: 12,
+    lineHeight: 15,
   },
-  summaryVariancePill: {
-    borderRadius: radii.pill,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
-  },
-  summaryVarianceBalanced: {
-    backgroundColor: "rgba(0, 184, 63, 0.12)",
-  },
-  summaryVarianceWarning: {
-    backgroundColor: "rgba(255, 139, 61, 0.14)",
-  },
-  summaryVarianceDanger: {
-    backgroundColor: "rgba(255, 84, 92, 0.12)",
-  },
-  summaryVarianceText: {
-    fontFamily: typography.medium,
-    fontSize: 10,
-  },
-  summaryVarianceBalancedText: {
-    color: colors.success,
-  },
-  summaryVarianceWarningText: {
-    color: colors.warning,
-  },
-  summaryVarianceDangerText: {
-    color: colors.danger,
-  },
-  summaryMetricGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-  },
-  summaryMetricCard: {
-    backgroundColor: "rgba(255,255,255,0.9)",
-    borderColor: "rgba(223, 246, 213, 0.95)",
-    borderRadius: 22,
+  actionSquare: {
+    alignItems: "center",
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderRadius: 14,
     borderWidth: 1,
-    flexBasis: "48%",
-    flexGrow: 1,
-    gap: spacing.xs,
-    minHeight: 128,
-    padding: spacing.md,
-  },
-  summaryMetricIcon: {
-    alignItems: "center",
-    borderRadius: radii.pill,
-    height: 32,
+    flex: 1,
     justifyContent: "center",
-    marginBottom: spacing.xs,
-    width: 32,
+    minHeight: 78,
+    paddingHorizontal: 6,
+    paddingVertical: 10,
   },
-  summaryMetricLabel: {
-    color: colors.inkMuted,
+  actionWide: {
+    alignItems: "center",
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    width: "100%",
+    padding: 10,
+  },
+  amountBox: {
+    borderBottomColor: colors.success,
+    borderBottomWidth: 3,
+  },
+  amountInput: {
+    color: colors.ink,
+    flex: 1,
+    fontFamily: typography.body,
+    fontSize: 32,
+    lineHeight: 38,
+    marginLeft: 12,
+  },
+  amountSmall: {
     fontFamily: typography.medium,
     fontSize: 11,
+    lineHeight: 15,
   },
-  summaryMetricValue: {
-    color: colors.ink,
-    fontFamily: typography.heading,
-    fontSize: 24,
-    lineHeight: 29,
-  },
-  summaryMetricHint: {
-    color: colors.inkMuted,
-    fontFamily: typography.body,
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: "auto",
-  },
-  rowBetween: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.md,
-    justifyContent: "space-between",
-  },
-  buttonRow: {
-    flexDirection: "row",
-    gap: spacing.md,
-    marginTop: spacing.sm,
-  },
-  fullWidthButton: {
-    flex: 1,
-  },
-  cardTitle: {
-    color: colors.ink,
+  avatarText: {
     fontFamily: typography.medium,
     fontSize: 16,
   },
-  cardCaption: {
-    color: colors.inkMuted,
+  bigCurrency: {
     fontFamily: typography.body,
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 28,
+    lineHeight: 34,
   },
-  cardValue: {
-    color: colors.ink,
-    fontFamily: typography.medium,
-    fontSize: 14,
-  },
-  memberListRow: {
-    alignItems: "center",
-    backgroundColor: colors.card,
-    borderRadius: radii.pill,
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-    marginBottom: spacing.sm,
-    minHeight: 44,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 7,
-  },
-  memberListRowPressed: {
-    opacity: 0.82,
-  },
-  memberListName: {
-    color: colors.ink,
-    flex: 1,
+  bodyText: {
     fontFamily: typography.body,
     fontSize: 12,
+    lineHeight: 17,
   },
-  memberPortfolioHero: {
-    backgroundColor: "rgba(255,255,255,0.88)",
-    borderColor: "rgba(223, 246, 213, 0.95)",
-    borderRadius: 26,
-    borderWidth: 1,
-    marginBottom: spacing.md,
-    padding: spacing.md,
-  },
-  memberPortfolioTop: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: spacing.md,
-  },
-  memberPortfolioLabel: {
-    color: colors.ink,
+  buttonText: {
     fontFamily: typography.medium,
-    fontSize: 15,
+    fontSize: 17,
   },
-  memberPortfolioIcon: {
-    alignItems: "center",
-    backgroundColor: colors.foliwe,
-    borderRadius: radii.pill,
-    height: 42,
-    justifyContent: "center",
-    width: 42,
-  },
-  memberPortfolioValue: {
-    color: colors.ink,
-    fontFamily: typography.display,
-    fontSize: 36,
-    lineHeight: 42,
-  },
-  memberPortfolioFooter: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: spacing.sm,
-  },
-  memberPortfolioHint: {
-    color: colors.inkMuted,
-    fontFamily: typography.body,
-    fontSize: 12,
-  },
-  memberPortfolioPill: {
-    backgroundColor: "rgba(5,5,5,0.06)",
-    borderRadius: radii.pill,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
-  },
-  memberPortfolioPillText: {
-    color: colors.ink,
-    fontFamily: typography.medium,
-    fontSize: 10,
-  },
-  memberPortfolioGrid: {
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  memberPortfolioMetric: {
-    backgroundColor: "rgba(255,255,255,0.9)",
-    borderColor: "rgba(223, 246, 213, 0.95)",
-    borderRadius: 22,
-    borderWidth: 1,
-    flex: 1,
-    gap: spacing.xs,
-    minHeight: 116,
-    padding: spacing.md,
-  },
-  memberPortfolioMetricIcon: {
-    alignItems: "center",
-    borderRadius: radii.pill,
-    height: 32,
-    justifyContent: "center",
-    marginBottom: spacing.xs,
-    width: 32,
-  },
-  memberPortfolioMetricLabel: {
-    color: colors.inkMuted,
-    fontFamily: typography.medium,
-    fontSize: 11,
-  },
-  memberPortfolioMetricValue: {
-    color: colors.ink,
+  cardTitle: {
     fontFamily: typography.heading,
-    fontSize: 20,
+    fontSize: 19,
+    lineHeight: 24,
+  },
+  collectTitle: {
+    fontFamily: typography.heading,
+    fontSize: 21,
     lineHeight: 26,
   },
-  memberSearchRow: {
+  dateField: {
     alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  memberSearchBox: {
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.88)",
-    borderColor: "rgba(223, 246, 213, 0.95)",
-    borderRadius: radii.pill,
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderRadius: 14,
     borderWidth: 1,
-    flex: 1,
     flexDirection: "row",
-    gap: spacing.sm,
-    minHeight: 48,
-    paddingHorizontal: spacing.md,
+    minHeight: 58,
+    paddingHorizontal: 16,
   },
-  memberSearchPlaceholder: {
-    color: colors.inkMuted,
-    flex: 1,
+  dateFieldValue: {
     fontFamily: typography.body,
-    fontSize: 12,
+    fontSize: 16,
+    lineHeight: 22,
   },
-  memberSearchBadge: {
+  depositCard: {
     alignItems: "center",
-    backgroundColor: colors.foliwe,
-    borderRadius: radii.pill,
-    height: 42,
-    justifyContent: "center",
-    minWidth: 42,
-    paddingHorizontal: spacing.sm,
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    marginBottom: 10,
+    padding: 10,
   },
-  memberSearchBadgeText: {
-    color: colors.ink,
+  filterChip: {
+    alignItems: "center",
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    minHeight: 32,
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  filterChipActive: {
+    backgroundColor: colors.teal,
+    borderColor: colors.teal,
+  },
+  filterText: {
     fontFamily: typography.medium,
     fontSize: 12,
+    lineHeight: 16,
   },
-  searchBox: {
-    backgroundColor: colors.card,
-    borderRadius: radii.pill,
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  searchPlaceholder: {
-    color: "#B4B4B4",
-    fontFamily: typography.body,
-    fontSize: 11,
-  },
-  memberSummaryRow: {
+  floatingAdd: {
     alignItems: "center",
+    alignSelf: "flex-end",
+    backgroundColor: colors.teal,
+    borderRadius: 999,
     flexDirection: "row",
-    gap: spacing.md,
-    minHeight: 106,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    position: "absolute",
+    right: 20,
+    top: -23,
+    zIndex: 4,
   },
-  memberSummaryIcon: {
-    alignItems: "center",
-    backgroundColor: colors.brandSoft,
-    borderRadius: radii.pill,
-    height: 48,
-    justifyContent: "center",
-    width: 48,
+  floatingAddText: {
+    fontFamily: typography.medium,
+    fontSize: 13,
+    lineHeight: 17,
   },
-  memberCount: {
+  formInput: {
     color: colors.ink,
     fontFamily: typography.body,
-    fontSize: 22,
+    fontSize: 16,
+    minHeight: 28,
+    padding: 0,
   },
-  addMemberButton: {
+  genderOption: {
     alignItems: "center",
-    backgroundColor: colors.foliwe,
-    borderRadius: radii.pill,
-    height: 44,
+    borderColor: colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
     justifyContent: "center",
-    width: 44,
+    minHeight: 42,
+    paddingHorizontal: 8,
   },
-  memberRowAvatar: {
-    alignItems: "center",
+  genderOptionSelected: {
     backgroundColor: colors.brand,
-    borderRadius: radii.pill,
-    height: 30,
-    justifyContent: "center",
-    width: 30,
+    borderColor: colors.brand,
+  },
+  genderOptionText: {
+    fontFamily: typography.medium,
+    fontSize: 13,
+    lineHeight: 17,
+  },
+  greetingName: {
+    fontFamily: typography.heading,
+    fontSize: 21,
+    lineHeight: 26,
+  },
+  greetingSub: {
+    fontFamily: typography.body,
+    fontSize: 13,
+    lineHeight: 17,
+  },
+  greetingText: {
+    fontFamily: typography.body,
+    fontSize: 15,
+    lineHeight: 19,
+  },
+  heroStatLabel: {
+    fontFamily: typography.body,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  heroStatValue: {
+    fontFamily: typography.heading,
+    fontSize: 18,
+    lineHeight: 23,
+  },
+  inlineDatePicker: {
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 8,
+    overflow: "hidden",
+  },
+  linkText: {
+    fontFamily: typography.medium,
+    fontSize: 13,
+    lineHeight: 17,
+  },
+  mediumInline: {
+    fontFamily: typography.medium,
+    fontSize: 12,
+    lineHeight: 17,
   },
   memberCard: {
-    backgroundColor: "rgba(255,255,255,0.9)",
-    borderColor: "rgba(223, 246, 213, 0.95)",
-    borderRadius: 24,
+    alignItems: "center",
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderRadius: 14,
     borderWidth: 1,
-    gap: spacing.md,
-    marginBottom: spacing.sm,
-    padding: spacing.md,
-  },
-  memberCardTop: {
-    alignItems: "flex-start",
     flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
+    marginBottom: 10,
+    padding: 10,
   },
-  memberCardIdentity: {
-    alignItems: "center",
-    flex: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    minWidth: 0,
+  memberListAmount: {
+    fontFamily: typography.heading,
+    fontSize: 13,
+    lineHeight: 17,
   },
-  memberCardAvatar: {
-    alignItems: "center",
-    backgroundColor: colors.brand,
-    borderRadius: radii.pill,
-    height: 36,
-    justifyContent: "center",
-    width: 36,
-  },
-  memberCardName: {
-    color: colors.ink,
-    fontFamily: typography.medium,
-    fontSize: 15,
-  },
-  memberCardMeta: {
-    color: colors.inkMuted,
-    fontFamily: typography.body,
-    fontSize: 11,
-    marginTop: 2,
-  },
-  memberCardStatusActive: {
-    backgroundColor: "rgba(0, 184, 63, 0.12)",
-    borderRadius: radii.pill,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
-  },
-  memberCardStatusActiveText: {
-    color: colors.success,
-    fontFamily: typography.medium,
-    fontSize: 10,
-  },
-  memberCardStatusPending: {
-    backgroundColor: "rgba(255, 139, 61, 0.14)",
-    borderRadius: radii.pill,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
-  },
-  memberCardStatusPendingText: {
-    color: colors.warning,
-    fontFamily: typography.medium,
-    fontSize: 10,
-  },
-  memberCardStats: {
-    alignItems: "center",
-    backgroundColor: "rgba(5,5,5,0.03)",
-    borderRadius: radii.md,
-    flexDirection: "row",
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-  },
-  memberCardStat: {
-    flex: 1,
-    gap: 4,
-  },
-  memberCardDivider: {
-    backgroundColor: "rgba(5,5,5,0.08)",
-    height: 32,
-    marginHorizontal: spacing.sm,
-    width: 1,
-  },
-  memberCardStatLabel: {
-    color: colors.inkMuted,
-    fontFamily: typography.body,
-    fontSize: 11,
-  },
-  memberCardStatValue: {
-    color: colors.ink,
+  memberListName: {
     fontFamily: typography.medium,
     fontSize: 13,
+    lineHeight: 17,
   },
-  memberCardFooter: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-  },
-  memberCardActivity: {
-    alignItems: "center",
-    flex: 1,
-    flexDirection: "row",
-    gap: spacing.xs,
-    minWidth: 0,
-  },
-  memberCardActivityText: {
-    color: colors.inkMuted,
-    flex: 1,
-    fontFamily: typography.body,
-    fontSize: 11,
-  },
-  memberDetailHero: {
-    backgroundColor: "rgba(255,255,255,0.88)",
-    borderColor: "rgba(223, 246, 213, 0.95)",
-    borderRadius: 26,
+  noteInput: {
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderRadius: 14,
     borderWidth: 1,
-    padding: spacing.md,
-  },
-  memberDetailHeroTop: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.md,
-  },
-  memberDetailAvatar: {
-    alignItems: "center",
-    backgroundColor: colors.brand,
-    borderRadius: radii.pill,
-    height: 56,
-    justifyContent: "center",
-    width: 56,
-  },
-  memberDetailHeroText: {
-    flex: 1,
-    minWidth: 0,
-  },
-  memberDetailName: {
     color: colors.ink,
+    fontFamily: typography.body,
+    fontSize: 16,
+    minHeight: 112,
+    padding: 16,
+    textAlignVertical: "top",
+  },
+  noticeText: {
+    fontFamily: typography.body,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  pressed: {
+    opacity: 0.78,
+  },
+  primaryButton: {
+    borderRadius: 16,
+    marginTop: 22,
+    overflow: "hidden",
+  },
+  primaryButtonText: {
+    fontFamily: typography.heading,
+    fontSize: 20,
+  },
+  primaryGradient: {
+    alignItems: "center",
+    borderRadius: 16,
+    minHeight: 62,
+    justifyContent: "center",
+  },
+  profileInitials: {
     fontFamily: typography.heading,
     fontSize: 24,
-    lineHeight: 30,
   },
-  memberDetailMeta: {
-    color: colors.inkMuted,
-    fontFamily: typography.body,
-    fontSize: 12,
-    marginTop: 4,
+  profileName: {
+    fontFamily: typography.heading,
+    fontSize: 18,
+    lineHeight: 23,
   },
-  memberDetailHeroFooter: {
+  rowTitle: {
+    fontFamily: typography.medium,
+    fontSize: 13,
+    lineHeight: 17,
+  },
+  sectionHeading: {
+    fontFamily: typography.heading,
+    fontSize: 17,
+    lineHeight: 22,
+  },
+  signOutButton: {
     alignItems: "center",
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-    marginTop: spacing.md,
-  },
-  memberDetailActivity: {
-    color: colors.inkMuted,
-    flex: 1,
-    fontFamily: typography.body,
-    fontSize: 12,
-    textAlign: "right",
-  },
-  memberDetailBalanceGrid: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  memberDetailBalanceCard: {
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderColor: "rgba(223, 246, 213, 0.95)",
-    borderRadius: 22,
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderRadius: 14,
     borderWidth: 1,
-    flex: 1,
-    gap: spacing.xs,
-    minHeight: 112,
-    padding: spacing.md,
+    marginBottom: 24,
+    padding: 16,
   },
-  memberDetailBalanceLabel: {
-    color: colors.inkMuted,
-    fontFamily: typography.medium,
-    fontSize: 11,
-  },
-  memberDetailBalanceValue: {
-    color: colors.ink,
-    fontFamily: typography.display,
-    fontSize: 24,
-    lineHeight: 30,
-    marginTop: "auto",
-  },
-  memberDetailInfoHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: spacing.sm,
-  },
-  memberDetailSectionTitle: {
-    color: colors.ink,
-    fontFamily: typography.medium,
-    fontSize: 15,
-  },
-  memberDetailInfoIcon: {
-    alignItems: "center",
-    backgroundColor: colors.foliwe,
-    borderRadius: radii.pill,
-    height: 34,
-    justifyContent: "center",
-    width: 34,
-  },
-  memberDetailInfoGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-  },
-  memberDetailInfoCard: {
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderColor: "rgba(223, 246, 213, 0.95)",
-    borderRadius: 20,
-    borderWidth: 1,
-    flexBasis: "48%",
-    flexGrow: 1,
-    gap: 4,
-    minHeight: 88,
-    padding: spacing.md,
-  },
-  memberDetailInfoLabel: {
-    color: colors.inkMuted,
-    fontFamily: typography.medium,
-    fontSize: 10,
-    textTransform: "uppercase",
-  },
-  memberDetailInfoValue: {
-    color: colors.ink,
+  smallText: {
     fontFamily: typography.body,
     fontSize: 13,
     lineHeight: 18,
-    marginTop: "auto",
   },
-  memberActionGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-    marginTop: spacing.sm,
-  },
-  memberActionCard: {
-    backgroundColor: "rgba(255,255,255,0.9)",
-    borderColor: "rgba(223, 246, 213, 0.95)",
-    borderRadius: 22,
-    borderWidth: 1,
-    flexBasis: "48%",
-    flexGrow: 1,
-    gap: spacing.sm,
-    minHeight: 170,
-    padding: spacing.md,
-  },
-  memberActionCardFull: {
-    flexBasis: "100%",
-  },
-  memberActionHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  memberActionIcon: {
-    alignItems: "center",
-    backgroundColor: colors.foliwe,
-    borderRadius: radii.pill,
-    height: 34,
-    justifyContent: "center",
-    width: 34,
-  },
-  memberActionTitle: {
-    color: colors.ink,
-    fontFamily: typography.medium,
-    fontSize: 14,
-  },
-  memberActionCaption: {
-    color: colors.inkMuted,
+  stepLabel: {
     fontFamily: typography.body,
     fontSize: 12,
-    lineHeight: 18,
+    lineHeight: 16,
   },
-  inlineNotice: {
-    color: colors.inkMuted,
-    fontFamily: typography.body,
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: spacing.sm,
+  stepNumber: {
+    fontFamily: typography.heading,
+    fontSize: 17,
+    lineHeight: 22,
   },
 });
