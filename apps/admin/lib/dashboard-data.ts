@@ -2,7 +2,6 @@ import {
   calculateMonthlyInterest,
   calculateNextLoanPaymentDueAt,
   FRAUD_RULES,
-  isLoanPaymentOverdue,
   resolveLoanRepaymentStatus,
   type AdminDashboardSummary,
   type AgentPerformance,
@@ -18,6 +17,7 @@ import {
 } from "@credit-union/shared";
 
 import { requireRole, type AdminProfile } from "./auth";
+import { getLoanScheduleRows, type LoanScheduleRow } from "./loan-schedule";
 import { summarizeMemberDetailCards } from "./member-detail-summary";
 import { hasSupabaseEnv } from "./supabase/env";
 
@@ -276,14 +276,7 @@ export type LoanRepaymentHistoryRow = {
   repaymentMode: string;
 };
 
-export type LoanScheduleRow = {
-  id: string;
-  dueAt: string;
-  dueLabel: string;
-  paidAt: string | null;
-  paidLabel: string | null;
-  state: "Paid" | "Paid late" | "Upcoming" | "Overdue" | "Pending";
-};
+export type { LoanScheduleRow };
 
 export type LoanAuditEventRow = {
   action: string;
@@ -672,57 +665,6 @@ function getLoanRiskLabel(isOverdue: boolean, nextDueAt: string): "Low" | "Mediu
   const weekFromNow = now.getTime() + 7 * 24 * 60 * 60 * 1000;
 
   return dueTime <= weekFromNow ? "Medium" : "Low";
-}
-
-function getLoanScheduleRows(
-  loan: Pick<LoanRow, "created_at" | "status">,
-  repayments: RepaymentRow[],
-  termMonths: number,
-): LoanScheduleRow[] {
-  const rowCount = Math.max(3, Math.min(Math.max(termMonths, repayments.length + 3), 12));
-  const sortedRepayments = [...repayments].sort(
-    (left, right) =>
-      new Date(left.created_at ?? "").getTime() -
-      new Date(right.created_at ?? "").getTime(),
-  );
-  const paidInstallmentCount = Math.max(0, sortedRepayments.length - 1);
-
-  return Array.from({ length: rowCount }, (_, index) => {
-    const dueAt = calculateNextLoanPaymentDueAt({
-      createdAt: loan.created_at,
-      repaymentCount: index + 1,
-    });
-    const repayment = index < paidInstallmentCount ? sortedRepayments[index] : undefined;
-    const paidAt = repayment?.created_at ?? null;
-    const paidLate = paidAt
-      ? startOfDay(paidAt).getTime() > startOfDay(dueAt).getTime()
-      : false;
-    const overdue = !paidAt && isLoanPaymentOverdue(dueAt);
-    const state = paidAt
-      ? paidLate
-        ? "Paid late"
-        : "Paid"
-      : overdue
-        ? "Overdue"
-        : index === paidInstallmentCount
-          ? "Upcoming"
-          : "Pending";
-
-    return {
-      id: `payment-${index + 1}`,
-      dueAt: dueAt.toISOString(),
-      dueLabel: formatShortDate(dueAt),
-      paidAt,
-      paidLabel: paidAt ? formatShortDate(paidAt) : null,
-      state,
-    };
-  });
-}
-
-function startOfDay(value: string | Date) {
-  const date = new Date(value);
-
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
 function formatSupabaseError(error: SupabaseErrorLike) {
