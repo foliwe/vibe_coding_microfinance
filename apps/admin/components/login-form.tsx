@@ -42,19 +42,32 @@ async function signInAction(formData: FormData) {
     redirect("/login?reason=invalid-credentials");
   }
 
-  const { data: profileRows } = await supabase.rpc("get_my_profile");
+  const { data: profileRows, error: profileError } = await supabase.rpc("get_my_profile");
   const profile = Array.isArray(profileRows) ? profileRows[0] : null;
   const role = profile?.role;
 
-  if (role === "admin" || role === "branch_manager") {
-    const identity = await getCurrentWorkstationIdentity();
-    await recordStaffAuthEvent(supabase, {
-      channel: "admin_web",
-      deviceId: identity.id,
-      deviceKind: identity.kind,
-      deviceName: identity.name,
-    });
+  if (profileError || !profile) {
+    await supabase.auth.signOut();
+    redirect("/login?reason=profile-missing");
   }
+
+  if (role !== "admin" && role !== "branch_manager") {
+    await supabase.auth.signOut();
+    redirect("/login?reason=unauthorized");
+  }
+
+  if (!profile.is_active) {
+    await supabase.auth.signOut();
+    redirect("/login?reason=unauthorized");
+  }
+
+  const identity = await getCurrentWorkstationIdentity();
+  await recordStaffAuthEvent(supabase, {
+    channel: "admin_web",
+    deviceId: identity.id,
+    deviceKind: identity.kind,
+    deviceName: identity.name,
+  });
 
   if (role === "branch_manager" && profile && !isBranchManagerSetupComplete(profile)) {
     redirect("/setup");
@@ -81,7 +94,7 @@ export function LoginForm() {
                 autoComplete="email"
                 id="email"
                 name="email"
-                placeholder="admin@example.com"
+                placeholder="Enter email address"
                 required
                 type="email"
               />

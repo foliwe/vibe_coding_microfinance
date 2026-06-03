@@ -69,6 +69,8 @@ type MemberProfileRow = {
   branch_id: string;
   date_of_birth: string | null;
   gender: string | null;
+  id_expiry_date?: string | null;
+  id_issue_date?: string | null;
   id_number: string | null;
   id_type: string | null;
   next_of_kin_address: string | null;
@@ -769,6 +771,7 @@ async function getAgentTransactionTarget(
 }
 
 export const mobileData = {
+  getEligibleDepositMembers: () => getAgentTransactionTargets("deposit"),
   getDepositTarget: () => getAgentTransactionTarget("deposit"),
   getDepositTargetForMember: (
     memberId: string,
@@ -1435,8 +1438,12 @@ export const mobileData = {
   },
 
   async createMember(input: {
+    dateOfBirth: string;
     fullName: string;
+    gender: string;
     idCardNumber: string;
+    idExpiryDate: string;
+    idIssueDate: string;
     phone: string;
   }): Promise<CreateMemberResponse> {
     const supabase = getSupabaseClient();
@@ -1454,8 +1461,12 @@ export const mobileData = {
       body: {
         deviceId: device.id,
         deviceName: device.name,
+        dateOfBirth: input.dateOfBirth.trim(),
         fullName: input.fullName.trim(),
+        gender: input.gender.trim(),
         idCardNumber: input.idCardNumber.trim(),
+        idExpiryDate: input.idExpiryDate.trim(),
+        idIssueDate: input.idIssueDate.trim(),
         phone: input.phone.trim(),
       },
       headers: {

@@ -46,26 +46,26 @@ export default async function CreateManagerPage({
         <form action={createManagerAction}>
           <AdminFieldGrid className="mb-5">
             <AdminFormField htmlFor="fullName" label="Full Name">
-              <Input id="fullName" name="fullName" placeholder="Bamenda Manager" required />
+              <Input id="fullName" name="fullName" placeholder="Enter manager full name" required />
             </AdminFormField>
             <AdminFormField htmlFor="email" label="Email">
               <Input
                 id="email"
                 name="email"
-                placeholder="manager@example.com"
+                placeholder="Enter email address"
                 required
                 type="email"
               />
             </AdminFormField>
             <AdminFormField htmlFor="phone" label="Phone">
-              <Input id="phone" name="phone" placeholder="+2376..." required />
+              <Input id="phone" name="phone" placeholder="Enter phone number" required />
             </AdminFormField>
             <AdminFormField htmlFor="password" label="Temporary Password">
               <Input
                 id="password"
                 minLength={8}
                 name="password"
-                placeholder="Manager123456!"
+                placeholder="Enter temporary password"
                 required
               />
             </AdminFormField>

@@ -1,8 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
+import DateTimePicker, {
+  DateTimePickerAndroid,
+  type DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams, type Href } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View, type KeyboardTypeOptions } from "react-native";
 
 import {
   IconBubble,
@@ -17,7 +21,7 @@ import {
 import { formatCurrency } from "@/lib/format";
 import { useAppSession } from "@/lib/app-session";
 import { getErrorMessage } from "@/lib/errors";
-import { mobileData } from "@/lib/mobile-data";
+import { formatDateLabel, mobileData } from "@/lib/mobile-data";
 import type { AgentTransactionTarget } from "@/lib/mobile-data";
 import { formatTransactionRowDate } from "@/lib/transaction-history";
 import { useResource } from "@/lib/use-resource";
@@ -27,6 +31,7 @@ import { colors, typography } from "@/theme/tokens";
 
 type AgentTransactionStatusFilter = "all" | "pending" | "approved" | "rejected";
 type AgentMemberFilter = "all" | "active" | "overdue" | "dueToday" | "lastCollection";
+type RegistrationDateField = "dateOfBirth" | "idIssueDate" | "idExpiryDate";
 
 const agentTransactionStatusFilters: { key: AgentTransactionStatusFilter; label: string }[] = [
   { key: "all", label: "All" },
@@ -55,6 +60,33 @@ function getTargetAccountType(value?: string | string[]) {
 
 function currency(amount: number) {
   return formatCurrency(amount);
+}
+
+function toDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateInputValue(value: string, fallbackDate = new Date()) {
+  const [yearValue, monthValue, dayValue] = value.split("-").map(Number);
+  const parsed = new Date(yearValue, monthValue - 1, dayValue);
+
+  return Number.isNaN(parsed.getTime()) ? fallbackDate : parsed;
+}
+
+function formatDateInputValue(value: string, placeholder: string) {
+  if (!value) {
+    return placeholder;
+  }
+
+  return formatDateLabel(parseDateInputValue(value), {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function firstName(name: string) {
@@ -424,7 +456,7 @@ export function AgentMemberDetailScreen() {
             <BalanceTile label="Deposit Balance" value={currency(data.member.depositBalance)} />
           </View>
           <SectionTitle title="Actions" />
-          <View className="flex-row flex-wrap gap-4">
+          <View className="gap-3">
             {data.savingsTarget ? <ActionWide icon="download-outline" label="Collect Savings" onPress={() => router.push(`/agent/transactions/deposit?memberId=${data.member.id}&accountType=savings` as Href)} tone="blue" /> : null}
             {data.depositTarget ? <ActionWide icon="wallet-outline" label="Collect Deposit" onPress={() => router.push(`/agent/transactions/deposit?memberId=${data.member.id}&accountType=deposit` as Href)} tone="green" /> : null}
             {data.withdrawalTarget ? <ActionWide icon="arrow-up-outline" label="Withdrawal" onPress={() => router.push(`/agent/transactions/withdrawal?memberId=${data.member.id}` as Href)} tone="orange" /> : null}
@@ -563,11 +595,62 @@ export function AgentNotificationsScreen() {
 
 export function AgentAddMemberScreen() {
   const [fullName, setFullName] = useState("");
+  const [gender, setGender] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
   const [idCardNumber, setIdCardNumber] = useState("");
+  const [idIssueDate, setIdIssueDate] = useState("");
+  const [idExpiryDate, setIdExpiryDate] = useState("");
   const [phone, setPhone] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [createdAccess, setCreatedAccess] = useState<{ signInIdentifier: string; temporaryPassword: string } | null>(null);
+  const today = useMemo(() => new Date(), []);
+  const idIssueDateValue = idIssueDate ? parseDateInputValue(idIssueDate) : undefined;
+
+  const submitMember = () => {
+    if (isSubmitting || createdAccess) {
+      return;
+    }
+
+    const requiredFields = [
+      [fullName, "Enter the member's full name."],
+      [gender, "Select the member's gender."],
+      [phone, "Enter the member's phone number."],
+      [dateOfBirth, "Select the member's date of birth."],
+      [idCardNumber, "Enter the national ID card number."],
+      [idIssueDate, "Select the national ID issue date."],
+      [idExpiryDate, "Select the national ID expiry date."],
+    ] as const;
+    const missingField = requiredFields.find(([value]) => !value.trim());
+
+    if (missingField) {
+      setSubmissionError(missingField[1]);
+      return;
+    }
+
+    if (idExpiryDate <= idIssueDate) {
+      setSubmissionError("National ID expiry date must be after the issue date.");
+      return;
+    }
+
+    setSubmissionError(null);
+    setCreatedAccess(null);
+    setIsSubmitting(true);
+
+    void mobileData
+      .createMember({
+        dateOfBirth,
+        fullName,
+        gender,
+        idCardNumber,
+        idExpiryDate,
+        idIssueDate,
+        phone,
+      })
+      .then((result) => setCreatedAccess(result))
+      .catch((nextError) => setSubmissionError(getErrorMessage(nextError, "We could not create the member.")))
+      .finally(() => setIsSubmitting(false));
+  };
 
   return (
     <UnityPage
@@ -580,37 +663,48 @@ export function AgentAddMemberScreen() {
       <WhiteCard className="p-4">
         <Text className="mb-3 text-unity-ink" style={styles.sectionHeading}>Personal Information</Text>
         <FormInput icon="person-outline" label="Full Name" onChangeText={setFullName} placeholder="Enter full name" value={fullName} />
-        <View className="flex-row gap-3">
-          <View className="flex-1">
-            <FormInput icon="call-outline" label="Phone Number" onChangeText={setPhone} placeholder="080 1234 5678" value={phone} />
-          </View>
-          <View className="flex-1">
-            <ReadonlyField icon="calendar-outline" label="Date of Birth" value="DD / MM / YYYY" />
-          </View>
-        </View>
-        <ReadonlyField icon="people-outline" label="Gender" value="Select gender" />
-        <Text className="mb-3 mt-2 text-unity-ink" style={styles.sectionHeading}>Address Information</Text>
-        <ReadonlyField icon="location-outline" label="Residential Address" value="Enter full residential address" />
-        <View className="flex-row gap-3">
-          <View className="flex-1">
-            <ReadonlyField icon="business-outline" label="State" value="Select state" />
-          </View>
-          <View className="flex-1">
-            <ReadonlyField icon="business-outline" label="LGA" value="Select LGA" />
-          </View>
-        </View>
-        <Text className="mb-3 mt-2 text-unity-ink" style={styles.sectionHeading}>Membership Details</Text>
-        <ReadonlyField icon="business-outline" label="Branch" value="Select branch" />
-        <FormInput icon="person-add-outline" label="Assigned Agent" onChangeText={setIdCardNumber} placeholder="Chidinma Okafor" value={idCardNumber} />
-        <Text className="mb-3 mt-2 text-unity-ink" style={styles.sectionHeading}>ID / KYC Documents</Text>
-        <View className="mb-5 flex-row gap-3">
-          {["Means of ID", "Proof of Address", "Passport Photo"].map((label) => (
-            <View key={label} className="flex-1 items-center rounded-xl border border-dashed border-unity-line p-3">
-              <Text className="text-center text-unity-ink" style={styles.smallText}>{label}</Text>
-              <Text className="text-center text-unity-muted" style={styles.smallText}>Upload</Text>
-            </View>
-          ))}
-        </View>
+        <GenderSelect value={gender} onChange={setGender} />
+        <FormInput
+          icon="call-outline"
+          keyboardType="phone-pad"
+          label="Phone Number"
+          onChangeText={setPhone}
+          placeholder="080 1234 5678"
+          value={phone}
+        />
+        <RegistrationDatePicker
+          field="dateOfBirth"
+          label="Date of Birth"
+          maximumDate={today}
+          onChange={setDateOfBirth}
+          placeholder="Select date of birth"
+          value={dateOfBirth}
+        />
+        <Text className="mb-3 mt-2 text-unity-ink" style={styles.sectionHeading}>National ID Card</Text>
+        <FormInput
+          autoCapitalize="characters"
+          icon="card-outline"
+          label="National ID Card Number"
+          onChangeText={setIdCardNumber}
+          placeholder="Enter national ID number"
+          value={idCardNumber}
+        />
+        <RegistrationDatePicker
+          field="idIssueDate"
+          label="Issue Date"
+          maximumDate={today}
+          onChange={setIdIssueDate}
+          placeholder="Select issue date"
+          value={idIssueDate}
+        />
+        <RegistrationDatePicker
+          field="idExpiryDate"
+          label="Expiry Date"
+          minimumDate={idIssueDateValue}
+          onChange={setIdExpiryDate}
+          placeholder="Select expiry date"
+          value={idExpiryDate}
+        />
         <InfoNotice text="New members remain pending until approved by a manager. You will be notified once approval is completed." />
         {createdAccess ? (
           <WhiteCard className="mb-4 p-4">
@@ -622,21 +716,7 @@ export function AgentAddMemberScreen() {
         {submissionError ? <ResourceErrorCard message={submissionError} /> : null}
         <PrimaryGradientButton
           label={isSubmitting ? "Submitting..." : "Submit for Verification"}
-          onPress={() => {
-            if (isSubmitting || createdAccess) {
-              return;
-            }
-
-            setSubmissionError(null);
-            setCreatedAccess(null);
-            setIsSubmitting(true);
-
-            void mobileData
-              .createMember({ fullName, idCardNumber, phone })
-              .then((result) => setCreatedAccess(result))
-              .catch((nextError) => setSubmissionError(getErrorMessage(nextError, "We could not create the member.")))
-              .finally(() => setIsSubmitting(false));
-          }}
+          onPress={submitMember}
         />
       </WhiteCard>
     </UnityPage>
@@ -647,13 +727,18 @@ export function AgentDepositScreen() {
   const params = useLocalSearchParams<{ accountType?: string | string[]; memberId?: string | string[] }>();
   const memberId = getSingleParam(params.memberId);
   const targetAccountType = getTargetAccountType(params.accountType);
+  const memberListLoader = useMemo(
+    () => (memberId ? async () => [] as AgentTransactionTarget[] : mobileData.getEligibleDepositMembers),
+    [memberId],
+  );
   const depositLoader = useMemo(
     () =>
       memberId && targetAccountType
         ? () => mobileData.getDepositTargetForMember(memberId, targetAccountType)
-        : mobileData.getDepositTarget,
+        : async () => null,
     [memberId, targetAccountType],
   );
+  const { data: memberTargets, error: membersError, loading: membersLoading } = useResource(memberListLoader);
   const { data: target, error, loading } = useResource(depositLoader);
   const [amount, setAmount] = useState("15,000.00");
   const [note, setNote] = useState("");
@@ -663,6 +748,46 @@ export function AgentDepositScreen() {
   useEffect(() => {
     setNote(targetAccountType ? `${targetAccountType} collection taken directly for this member` : "");
   }, [targetAccountType]);
+
+  if (!memberId) {
+    return (
+      <UnitySimplePage subtitle="Choose a member before entering the deposit." title="Collect Deposit">
+        <InfoNotice text="Select the member first, then enter the deposit amount on the next screen." />
+        <Text className="mb-3 mt-6 text-unity-ink" style={styles.sectionHeading}>Select Member</Text>
+        {membersError ? (
+          <ResourceErrorCard message={membersError} />
+        ) : membersLoading || !memberTargets ? (
+          <LoadingStack />
+        ) : memberTargets.length === 0 ? (
+          <ResourceErrorCard message="No assigned member with an active account is ready for deposit capture yet." />
+        ) : (
+          memberTargets.map((memberTarget) => (
+            <Pressable
+              key={`${memberTarget.memberId}-${memberTarget.accountId}`}
+              onPress={() =>
+                router.push(
+                  `/agent/transactions/deposit?memberId=${memberTarget.memberId}&accountType=${memberTarget.accountType}` as Href,
+                )
+              }
+              style={({ pressed }) => [styles.depositCard, unityStyles.cardShadow, pressed && styles.pressed]}
+            >
+              <IconBubble icon="person-outline" size={38} tone="blue" />
+              <View className="ml-3 flex-1">
+                <Text className="text-unity-ink" style={styles.rowTitle}>{memberTarget.memberName}</Text>
+                <Text className="mt-1 text-unity-muted" style={styles.bodyText}>
+                  {memberTarget.memberCode} · {memberTarget.accountType === "deposit" ? "Deposit" : "Savings"}
+                </Text>
+                <Text className="mt-1 text-unity-muted" style={styles.bodyText}>
+                  Savings {currency(memberTarget.savingsBalance)} · Deposit {currency(memberTarget.depositBalance)}
+                </Text>
+              </View>
+              <Ionicons color={colors.inkMuted} name="chevron-forward" size={18} />
+            </Pressable>
+          ))
+        )}
+      </UnitySimplePage>
+    );
+  }
 
   return (
     <CollectScreenFrame title="Collect Deposit">
@@ -1434,14 +1559,18 @@ function DetailLine({ label, value }: { label: string; value: string }) {
 }
 
 function FormInput({
+  autoCapitalize = "sentences",
   icon,
+  keyboardType = "default",
   label,
   onChangeText,
   placeholder,
   secureTextEntry = false,
   value,
 }: {
+  autoCapitalize?: "none" | "sentences" | "words" | "characters";
   icon: keyof typeof Ionicons.glyphMap;
+  keyboardType?: KeyboardTypeOptions;
   label: string;
   onChangeText: (next: string) => void;
   placeholder: string;
@@ -1454,6 +1583,8 @@ function FormInput({
       <View className="ml-3 flex-1 py-3">
         <Text className="text-unity-muted" style={styles.smallText}>{label}</Text>
         <TextInput
+          autoCapitalize={autoCapitalize}
+          keyboardType={keyboardType}
           onChangeText={onChangeText}
           placeholder={placeholder}
           placeholderTextColor={colors.inkMuted}
@@ -1466,23 +1597,130 @@ function FormInput({
   );
 }
 
-function ReadonlyField({
-  icon,
-  label,
+function GenderSelect({
+  onChange,
   value,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const options = ["Female", "Male", "Other"];
+
+  return (
+    <View className="mb-4 rounded-xl border border-unity-line bg-white px-4 py-3">
+      <View className="flex-row items-center">
+        <Ionicons color={colors.inkMuted} name="people-outline" size={20} />
+        <Text className="ml-3 text-unity-muted" style={styles.smallText}>Gender</Text>
+      </View>
+      <View className="mt-3 flex-row gap-2">
+        {options.map((option) => {
+          const isSelected = value === option;
+
+          return (
+            <Pressable
+              key={option}
+              onPress={() => onChange(option)}
+              style={({ pressed }) => [
+                styles.genderOption,
+                isSelected && styles.genderOptionSelected,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text
+                className={isSelected ? "text-white" : "text-unity-ink"}
+                style={styles.genderOptionText}
+              >
+                {option}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+function RegistrationDatePicker({
+  field,
+  label,
+  maximumDate,
+  minimumDate,
+  onChange,
+  placeholder,
+  value,
+}: {
+  field: RegistrationDateField;
   label: string;
+  maximumDate?: Date;
+  minimumDate?: Date;
+  onChange: (next: string) => void;
+  placeholder: string;
   value: string;
 }) {
+  const [showPicker, setShowPicker] = useState(false);
+  const os = process.env.EXPO_OS;
+  const fallbackDate =
+    value || !minimumDate ? new Date(1990, 0, 1) : minimumDate;
+  const selectedDate = parseDateInputValue(value, fallbackDate);
+
+  const handleChange = (_event: DateTimePickerEvent, nextDate?: Date) => {
+    if (os === "android") {
+      setShowPicker(false);
+    }
+
+    if (nextDate) {
+      onChange(toDateInputValue(nextDate));
+    }
+  };
+
+  const openPicker = () => {
+    if (os === "android") {
+      DateTimePickerAndroid.open({
+        display: "default",
+        maximumDate,
+        minimumDate,
+        mode: "date",
+        onChange: handleChange,
+        value: selectedDate,
+      });
+      return;
+    }
+
+    setShowPicker((current) => !current);
+  };
+
   return (
-    <View className="mb-4 flex-row items-center rounded-xl border border-unity-line bg-white px-4">
-      <Ionicons color={colors.inkMuted} name={icon} size={20} />
-      <View className="ml-3 flex-1 py-3">
-        <Text className="text-unity-muted" style={styles.smallText}>{label}</Text>
-        <Text className="text-unity-muted" style={styles.bodyText}>{value}</Text>
-      </View>
-      <Ionicons color={colors.inkMuted} name="chevron-down" size={18} />
+    <View className="mb-4">
+      <Pressable
+        accessibilityLabel={`Select ${label.toLowerCase()}`}
+        onPress={openPicker}
+        style={({ pressed }) => [styles.dateField, pressed && styles.pressed]}
+      >
+        <Ionicons color={colors.inkMuted} name="calendar-outline" size={20} />
+        <View className="ml-3 flex-1 py-3">
+          <Text className="text-unity-muted" style={styles.smallText}>{label}</Text>
+          <Text
+            className={value ? "text-unity-ink" : "text-unity-muted"}
+            style={styles.dateFieldValue}
+          >
+            {formatDateInputValue(value, placeholder)}
+          </Text>
+        </View>
+        <Ionicons color={colors.inkMuted} name="chevron-down" size={18} />
+      </Pressable>
+      {showPicker && os !== "android" ? (
+        <View style={styles.inlineDatePicker}>
+          <DateTimePicker
+            display={os === "ios" ? "spinner" : "default"}
+            maximumDate={maximumDate}
+            minimumDate={minimumDate}
+            mode="date"
+            onChange={handleChange}
+            testID={`${field}-picker`}
+            value={selectedDate}
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -1536,7 +1774,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     flexDirection: "row",
-    minWidth: "47%",
+    width: "100%",
     padding: 10,
   },
   amountBox: {
@@ -1583,6 +1821,21 @@ const styles = StyleSheet.create({
     fontFamily: typography.heading,
     fontSize: 21,
     lineHeight: 26,
+  },
+  dateField: {
+    alignItems: "center",
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    minHeight: 58,
+    paddingHorizontal: 16,
+  },
+  dateFieldValue: {
+    fontFamily: typography.body,
+    fontSize: 16,
+    lineHeight: 22,
   },
   depositCard: {
     alignItems: "center",
@@ -1638,6 +1891,25 @@ const styles = StyleSheet.create({
     minHeight: 28,
     padding: 0,
   },
+  genderOption: {
+    alignItems: "center",
+    borderColor: colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 42,
+    paddingHorizontal: 8,
+  },
+  genderOptionSelected: {
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
+  },
+  genderOptionText: {
+    fontFamily: typography.medium,
+    fontSize: 13,
+    lineHeight: 17,
+  },
   greetingName: {
     fontFamily: typography.heading,
     fontSize: 21,
@@ -1662,6 +1934,14 @@ const styles = StyleSheet.create({
     fontFamily: typography.heading,
     fontSize: 18,
     lineHeight: 23,
+  },
+  inlineDatePicker: {
+    backgroundColor: colors.white,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 8,
+    overflow: "hidden",
   },
   linkText: {
     fontFamily: typography.medium,

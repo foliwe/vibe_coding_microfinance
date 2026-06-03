@@ -76,6 +76,35 @@ test("member-specific withdrawal lookup resolves the correct member and account"
   assert.equal(targets[0]?.accountNumber, "BR-SAV-010");
 });
 
+test("deposit member list defaults to the member deposit account", () => {
+  const targets = listAgentTransactionTargets({
+    accountRows: [
+      {
+        account_number: "BR-SAV-020",
+        account_type: "savings",
+        id: "acc-20-savings",
+        member_profile_id: "member-20",
+      },
+      {
+        account_number: "BR-DEP-020",
+        account_type: "deposit",
+        id: "acc-20-deposit",
+        member_profile_id: "member-20",
+      },
+    ],
+    balancesByMemberId: new Map([
+      ["member-20", { depositBalance: 30000, savingsBalance: 12000 }],
+    ]),
+    memberRows: [{ profile_id: "member-20", sign_in_code: "MMBAM020" }],
+    profileMap: new Map([["member-20", { full_name: "Efe" }]]),
+    transactionType: "deposit",
+  });
+
+  assert.equal(targets.length, 1);
+  assert.equal(targets[0]?.accountType, "deposit");
+  assert.equal(targets[0]?.accountNumber, "BR-DEP-020");
+});
+
 test("member-specific withdrawal lookup returns null when no eligible account exists", () => {
   const target = resolveAgentTransactionTarget({
     accountRows: [],

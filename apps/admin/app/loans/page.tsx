@@ -255,7 +255,7 @@ export default async function LoansPage({
                       id="requestedAmount"
                       min="0.01"
                       name="requestedAmount"
-                      placeholder="80000"
+                      placeholder="Enter amount"
                       required
                       step="0.01"
                       type="number"
@@ -267,7 +267,7 @@ export default async function LoansPage({
                       id="monthlyInterestRate"
                       min="0"
                       name="monthlyInterestRate"
-                      placeholder="0.03"
+                      placeholder="Enter rate"
                       required
                       step="0.000001"
                       type="number"
@@ -275,7 +275,7 @@ export default async function LoansPage({
                   </AdminFormField>
 
                   <AdminFormField htmlFor="termMonths" label="Term (months)">
-                    <Input id="termMonths" min="1" name="termMonths" placeholder="12" required step="1" type="number" />
+                    <Input id="termMonths" min="1" name="termMonths" placeholder="Enter term" required step="1" type="number" />
                   </AdminFormField>
 
                   <AdminFormField htmlFor="collateralRequired" label="Collateral required">

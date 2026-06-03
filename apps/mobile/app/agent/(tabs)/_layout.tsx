@@ -56,7 +56,7 @@ export default function AgentTabsLayout() {
         listeners={{
           tabPress: (event) => {
             event.preventDefault();
-            router.push("/agent/members");
+            router.push("/agent/transactions/deposit");
           },
         }}
         options={{ title: "Collect" }}

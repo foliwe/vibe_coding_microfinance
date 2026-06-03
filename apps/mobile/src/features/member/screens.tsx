@@ -170,6 +170,28 @@ function matchesTransactionStatusFilter(
   return status === "rejected" || status === "reversed";
 }
 
+function isPendingTransaction(status: TransactionRequest["status"]) {
+  return (
+    status === "draft" ||
+    status === "pending_approval" ||
+    status === "sync_conflict" ||
+    status === "unsynced"
+  );
+}
+
+function pendingSummary(transactions: TransactionRequest[], accountType?: "deposit" | "savings") {
+  const pending = transactions.filter(
+    (transaction) =>
+      isPendingTransaction(transaction.status) &&
+      (!accountType || transaction.accountType === accountType),
+  );
+
+  return {
+    amount: pending.reduce((sum, transaction) => sum + transaction.amount, 0),
+    count: pending.length,
+  };
+}
+
 function statusTone(status: string): "success" | "warning" | "danger" | "info" | "muted" {
   const normalized = status.toLowerCase();
 
@@ -266,6 +288,10 @@ export function MemberHomeScreen() {
   }
 
   const recent = transactions?.slice(0, 4) ?? [];
+  const pendingDeposits = pendingSummary(
+    (transactions ?? []).filter((transaction) => transaction.type === "deposit"),
+    "deposit",
+  );
   const liveRows = recent.map((transaction, index) => ({
     amount: transaction.amount,
     icon: transaction.type === "deposit" ? "download-outline" as const : "arrow-up-outline" as const,
@@ -309,10 +335,10 @@ export function MemberHomeScreen() {
 
       <WhiteCard className="flex-row items-center justify-between px-3 py-2">
         <MiniMetric
-          amount={currency(data.depositBalance)}
+          amount={currency(pendingDeposits.amount)}
           icon="calendar-outline"
           label="Pending Deposits"
-          sublabel="2 pending"
+          sublabel={pendingDeposits.count > 0 ? `${pendingDeposits.count} pending` : "No pending deposits"}
           tone="blue"
         />
         <View className="mx-2 h-10 w-px bg-unity-line" />
@@ -380,6 +406,10 @@ export function MemberAccountTypeScreen({ accountType }: { accountType: "deposit
     () => (transactions ?? []).filter((transaction) => transaction.accountType === accountType),
     [accountType, transactions],
   );
+  const accountPending = useMemo(
+    () => pendingSummary(accountTransactions),
+    [accountTransactions],
+  );
   const rows = useMemo(
     () =>
       [...accountTransactions]
@@ -408,12 +438,12 @@ export function MemberAccountTypeScreen({ accountType }: { accountType: "deposit
             <View className="flex-row items-center">
               <View className="flex-1">
                 <Text className="text-white/90" style={styles.balanceFooterLabel}>Total Approved</Text>
-                <Text className="mt-1 text-white" style={styles.balanceFooterValue}>{currency(Math.max(amount - 25000, 0))}</Text>
+                <Text className="mt-1 text-white" style={styles.balanceFooterValue}>{currency(amount)}</Text>
               </View>
               <View className="mx-5 h-12 w-px bg-white/40" />
               <View className="flex-1">
                 <Text className="text-white/90" style={styles.balanceFooterLabel}>Pending Approval</Text>
-                <Text className="mt-1 text-white" style={styles.balanceFooterValue}>{currency(25000)}</Text>
+                <Text className="mt-1 text-white" style={styles.balanceFooterValue}>{currency(accountPending.amount)}</Text>
               </View>
             </View>
           }
@@ -740,6 +770,8 @@ export function MemberNotificationsScreen() {
 export function MemberMoreScreen() {
   const { signOut } = useAppSession();
   const insets = useSafeAreaInsets();
+  const { data: profile, error, loading } = useResource(mobileData.getMemberProfile);
+  const profileAddress = profile?.address || profile?.village;
 
   return (
     <View style={styles.memberProfileScreen}>
@@ -774,25 +806,31 @@ export function MemberMoreScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.memberIdentityCard}>
-          <View style={styles.memberIdentityRow}>
-            <Image resizeMode="cover" source={memberProfileAvatar} style={styles.memberAvatar} />
-            <View style={styles.memberIdentityCopy}>
-              <Text style={styles.memberIdentityName}>Chidinma Okafor</Text>
-              <View style={styles.memberIdRow}>
-                <Text adjustsFontSizeToFit minimumFontScale={0.82} numberOfLines={1} style={styles.memberIdText}>Member ID: UCRD-00078593</Text>
-                <Ionicons color={colors.brand} name="copy-outline" size={18} />
+        {error ? (
+          <ResourceErrorCard message={error} />
+        ) : loading || !profile ? (
+          <LoadingStack />
+        ) : (
+          <View style={styles.memberIdentityCard}>
+            <View style={styles.memberIdentityRow}>
+              <Image resizeMode="cover" source={memberProfileAvatar} style={styles.memberAvatar} />
+              <View style={styles.memberIdentityCopy}>
+                <Text style={styles.memberIdentityName}>{profile.fullName}</Text>
+                <View style={styles.memberIdRow}>
+                  <Text adjustsFontSizeToFit minimumFontScale={0.82} numberOfLines={1} style={styles.memberIdText}>Member ID: {profile.code}</Text>
+                  <Ionicons color={colors.brand} name="copy-outline" size={18} />
+                </View>
+                <ProfileMeta icon="home-outline" text={profile.branchName} />
+                <ProfileMeta icon="call-outline" text={profile.phone} />
+                <ProfileMeta icon="location-outline" text={profileAddress || "Address not provided"} />
               </View>
-              <ProfileMeta icon="home-outline" text="Main Branch, Lagos" />
-              <ProfileMeta icon="call-outline" text="+234 810 234 5678" />
-              <ProfileMeta icon="location-outline" text="23 Adeola Odeku St, Victoria Island, Lagos, Nigeria" />
+            </View>
+            <View style={styles.verifiedBadge}>
+              <Ionicons color={colors.success} name="checkmark-circle" size={18} />
+              <Text style={styles.verifiedBadgeText}>{profile.status === "active" ? "Verified Member" : "Profile Pending"}</Text>
             </View>
           </View>
-          <View style={styles.verifiedBadge}>
-            <Ionicons color={colors.success} name="checkmark-circle" size={18} />
-            <Text style={styles.verifiedBadgeText}>Verified Member</Text>
-          </View>
-        </View>
+        )}
 
         <SettingsSection
           rows={[

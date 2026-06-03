@@ -77,7 +77,7 @@ export function AdminTransactionForm({
               id="amount"
               min="0.01"
               name="amount"
-              placeholder="25000"
+              placeholder="Enter amount"
               required
               step="0.01"
               type="number"

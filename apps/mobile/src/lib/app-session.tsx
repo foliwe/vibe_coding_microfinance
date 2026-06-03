@@ -80,7 +80,7 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const hydrateSession = useCallback(
-    async (nextSession?: Session | null) => {
+    async (nextSession: Session | null = null) => {
       const requestId = ++hydrateRequestIdRef.current;
 
       if (!envReady) {
